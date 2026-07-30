@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# Python
+backend/.venv/
+__pycache__/
+*.py[cod]
+
+# Environment Variables
+.env
+.env.*
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# SQLite
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# Build
+dist/
+build/
+
+# Python caches
+.pytest_cache/
+.mypy_cache/
+
+# Cursor
+.cursor/index/
