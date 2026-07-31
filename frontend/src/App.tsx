@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Toaster } from '@/components/ui/toast'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { AdminRoutes } from '@/routes/AdminRoutes'
+import { DisplayRoutes } from '@/routes/DisplayRoutes'
 import { ParticipantRoutes } from '@/routes/ParticipantRoutes'
 
 const queryClient = new QueryClient({
@@ -24,6 +25,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/admin" replace />} />
             <Route path="/admin/*" element={<AdminRoutes />} />
+            <Route path="/display/*" element={<DisplayRoutes />} />
             <Route path="/*" element={<ParticipantRoutes />} />
           </Routes>
           <Toaster />

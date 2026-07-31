@@ -72,12 +72,7 @@ export function DisplayShell({
           className,
         )}
       >
-        <div
-          key={typeof children === 'object' ? undefined : String(children)}
-          className="display-screen-enter flex min-h-0 flex-1 flex-col"
-        >
-          {children}
-        </div>
+        <div className="display-screen-enter flex min-h-0 flex-1 flex-col">{children}</div>
       </main>
 
       <footer className="relative z-10 border-t border-[var(--border)]/50 bg-[var(--background)]/80 px-6 py-3 text-center backdrop-blur-sm lg:px-10">
