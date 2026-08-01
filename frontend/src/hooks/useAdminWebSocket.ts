@@ -333,9 +333,9 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
   const reconnectAttempt = useRef(0)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const intentionalClose = useRef(false)
-  const skipNextReconnect = useRef(false)
   const enabledRef = useRef(enabled)
   const roomIdRef = useRef(roomId)
+  const connectRef = useRef<(() => void) | null>(null)
 
   enabledRef.current = enabled
   roomIdRef.current = roomId
@@ -345,6 +345,14 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
       clearTimeout(reconnectTimer.current)
       reconnectTimer.current = null
     }
+  }, [])
+
+  const detachSocket = useCallback((ws: WebSocket | null) => {
+    if (!ws) return
+    ws.onopen = null
+    ws.onmessage = null
+    ws.onerror = null
+    ws.onclose = null
   }, [])
 
   const connect = useCallback(() => {
@@ -358,9 +366,16 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
       return
     }
 
-    if (wsRef.current) {
-      skipNextReconnect.current = true
-      wsRef.current.close()
+    // Replace any existing socket without letting its onclose schedule reconnect
+    // or clear the new wsRef (StrictMode / manual reconnect race).
+    const previous = wsRef.current
+    if (previous) {
+      detachSocket(previous)
+      try {
+        previous.close()
+      } catch {
+        // ignore
+      }
       wsRef.current = null
     }
 
@@ -372,11 +387,13 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
     wsRef.current = ws
 
     ws.onopen = () => {
+      if (wsRef.current !== ws) return
       reconnectAttempt.current = 0
       dispatch({ type: 'STATUS', status: 'connected' })
     }
 
     ws.onmessage = (event) => {
+      if (wsRef.current !== ws) return
       try {
         const message = JSON.parse(String(event.data)) as WsMessage
         if (message.type === 'ping') {
@@ -411,17 +428,15 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
     }
 
     ws.onerror = () => {
+      if (wsRef.current !== ws) return
       dispatch({ type: 'STATUS', status: 'error' })
     }
 
     ws.onclose = () => {
+      // Ignore stale sockets replaced by a newer connection or cleanup.
+      if (wsRef.current !== ws) return
       wsRef.current = null
       if (intentionalClose.current) {
-        dispatch({ type: 'STATUS', status: 'disconnected' })
-        return
-      }
-      if (skipNextReconnect.current) {
-        skipNextReconnect.current = false
         dispatch({ type: 'STATUS', status: 'disconnected' })
         return
       }
@@ -430,9 +445,13 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
       const delay = Math.min(30_000, 1000 * 2 ** attempt)
       reconnectAttempt.current = attempt + 1
       clearReconnectTimer()
-      reconnectTimer.current = setTimeout(connect, delay)
+      reconnectTimer.current = setTimeout(() => {
+        connectRef.current?.()
+      }, delay)
     }
-  }, [clearReconnectTimer])
+  }, [clearReconnectTimer, detachSocket])
+
+  connectRef.current = connect
 
   const send = useCallback((type: string, payload: Record<string, unknown> = {}) => {
     const ws = wsRef.current
@@ -452,32 +471,41 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
   const disconnect = useCallback(() => {
     intentionalClose.current = true
     clearReconnectTimer()
-    if (wsRef.current) {
-      wsRef.current.close()
+    const ws = wsRef.current
+    if (ws) {
+      detachSocket(ws)
+      try {
+        ws.close()
+      } catch {
+        // ignore
+      }
       wsRef.current = null
     }
     dispatch({ type: 'STATUS', status: 'disconnected' })
-  }, [clearReconnectTimer])
+  }, [clearReconnectTimer, detachSocket])
 
   const reconnect = useCallback(() => {
     intentionalClose.current = false
     reconnectAttempt.current = 0
     clearReconnectTimer()
     dispatch({ type: 'CLEAR_ERROR' })
-    if (wsRef.current) {
-      // Closing an open socket must not schedule a second connect via onclose.
-      skipNextReconnect.current = true
-      wsRef.current.close()
-      wsRef.current = null
-    } else {
-      skipNextReconnect.current = false
-    }
     connect()
   }, [clearReconnectTimer, connect])
 
   useEffect(() => {
     if (!enabled || !roomId) {
-      disconnect()
+      intentionalClose.current = true
+      clearReconnectTimer()
+      const ws = wsRef.current
+      if (ws) {
+        detachSocket(ws)
+        try {
+          ws.close()
+        } catch {
+          // ignore
+        }
+        wsRef.current = null
+      }
       dispatch({ type: 'RESET' })
       return
     }
@@ -487,15 +515,31 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
 
     const onOnline = () => {
       if (!enabledRef.current || !roomIdRef.current) return
-      reconnect()
+      intentionalClose.current = false
+      reconnectAttempt.current = 0
+      clearReconnectTimer()
+      connectRef.current?.()
     }
     window.addEventListener('online', onOnline)
 
     return () => {
       window.removeEventListener('online', onOnline)
-      disconnect()
+      intentionalClose.current = true
+      clearReconnectTimer()
+      const socket = wsRef.current
+      if (socket) {
+        detachSocket(socket)
+        try {
+          socket.close()
+        } catch {
+          // ignore
+        }
+        wsRef.current = null
+      }
     }
-  }, [roomId, enabled, connect, disconnect, reconnect])
+    // Only re-bind when room/enabled identity changes — not when connect() identity churns.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- connect/detach are stable via refs
+  }, [roomId, enabled])
 
   return {
     ...state,

@@ -24,6 +24,14 @@ export interface UseParticipantWebSocketOptions {
   onAuthFailed?: () => void
 }
 
+function detachSocket(ws: WebSocket | null) {
+  if (!ws) return
+  ws.onopen = null
+  ws.onmessage = null
+  ws.onerror = null
+  ws.onclose = null
+}
+
 export function useParticipantWebSocket({
   enabled = true,
   onAuthFailed,
@@ -38,6 +46,9 @@ export function useParticipantWebSocket({
   const connectRef = useRef<(() => void) | null>(null)
   const onAuthFailedRef = useRef(onAuthFailed)
   const authFailedHandledRef = useRef(false)
+  const enabledRef = useRef(enabled)
+
+  enabledRef.current = enabled
 
   useEffect(() => {
     onAuthFailedRef.current = onAuthFailed
@@ -63,26 +74,35 @@ export function useParticipantWebSocket({
     }
   }, [state.authFailed])
 
-  const clearReconnectTimer = () => {
+  const clearReconnectTimer = useCallback(() => {
     if (reconnectTimer.current) {
       clearTimeout(reconnectTimer.current)
       reconnectTimer.current = null
     }
-  }
-
-  const handleAuthFailure = useCallback((message?: string) => {
-    if (authFailedRef.current) return
-    authFailedRef.current = true
-    authFailedHandledRef.current = true
-    intentionalClose.current = true
-    clearReconnectTimer()
-    if (wsRef.current) {
-      wsRef.current.close()
-      wsRef.current = null
-    }
-    dispatch({ type: 'AUTH_FAILED', message: message ?? 'Session expired' })
-    onAuthFailedRef.current?.()
   }, [])
+
+  const handleAuthFailure = useCallback(
+    (message?: string) => {
+      if (authFailedRef.current) return
+      authFailedRef.current = true
+      authFailedHandledRef.current = true
+      intentionalClose.current = true
+      clearReconnectTimer()
+      const ws = wsRef.current
+      if (ws) {
+        detachSocket(ws)
+        try {
+          ws.close()
+        } catch {
+          // ignore
+        }
+        wsRef.current = null
+      }
+      dispatch({ type: 'AUTH_FAILED', message: message ?? 'Session expired' })
+      onAuthFailedRef.current?.()
+    },
+    [clearReconnectTimer],
+  )
 
   const send = useCallback((type: string, payload: Record<string, unknown> = {}) => {
     const ws = wsRef.current
@@ -135,34 +155,39 @@ export function useParticipantWebSocket({
   const disconnect = useCallback(() => {
     intentionalClose.current = true
     clearReconnectTimer()
-    if (wsRef.current) {
-      wsRef.current.close()
+    const ws = wsRef.current
+    if (ws) {
+      detachSocket(ws)
+      try {
+        ws.close()
+      } catch {
+        // ignore
+      }
       wsRef.current = null
     }
     dispatch({ type: 'STATUS', status: 'disconnected' satisfies WsConnectionStatus })
-  }, [])
+  }, [clearReconnectTimer])
 
   const reconnect = useCallback(() => {
-    if (!enabled || authFailedRef.current) return
+    if (!enabledRef.current || authFailedRef.current) return
     intentionalClose.current = false
     reconnectAttempt.current = 0
     clearReconnectTimer()
     dispatch({ type: 'CLEAR_ERROR' })
-    const existing = wsRef.current
-    if (existing) {
-      intentionalClose.current = true
-      existing.close()
-      wsRef.current = null
-      intentionalClose.current = false
-    }
     connectRef.current?.()
-  }, [enabled])
+  }, [clearReconnectTimer])
 
   useEffect(() => {
     const onOnline = () => {
       dispatch({ type: 'SET_OFFLINE', offline: false })
-      if (!enabled || authFailedRef.current) return
-      reconnect()
+      if (!enabledRef.current || authFailedRef.current) return
+      intentionalClose.current = false
+      reconnectAttempt.current = 0
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current)
+        reconnectTimer.current = null
+      }
+      connectRef.current?.()
     }
     const onOffline = () => dispatch({ type: 'SET_OFFLINE', offline: true })
     window.addEventListener('online', onOnline)
@@ -172,11 +197,22 @@ export function useParticipantWebSocket({
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
     }
-  }, [enabled, reconnect])
+  }, [])
 
   useEffect(() => {
     if (!enabled) {
-      disconnect()
+      intentionalClose.current = true
+      clearReconnectTimer()
+      const existing = wsRef.current
+      if (existing) {
+        detachSocket(existing)
+        try {
+          existing.close()
+        } catch {
+          // ignore
+        }
+        wsRef.current = null
+      }
       dispatch({ type: 'RESET' })
       authFailedRef.current = false
       authFailedHandledRef.current = false
@@ -186,15 +222,25 @@ export function useParticipantWebSocket({
     intentionalClose.current = false
     authFailedRef.current = false
     authFailedHandledRef.current = false
-    let cancelled = false
 
     const connect = () => {
-      if (cancelled || intentionalClose.current || authFailedRef.current) return
+      if (intentionalClose.current || authFailedRef.current || !enabledRef.current) return
 
       const token = getSessionToken()
       if (!token) {
         handleAuthFailure('Your session expired. Please join again.')
         return
+      }
+
+      const previous = wsRef.current
+      if (previous) {
+        detachSocket(previous)
+        try {
+          previous.close()
+        } catch {
+          // ignore
+        }
+        wsRef.current = null
       }
 
       const base = getWsBaseUrl()
@@ -205,11 +251,13 @@ export function useParticipantWebSocket({
       wsRef.current = ws
 
       ws.onopen = () => {
+        if (wsRef.current !== ws) return
         reconnectAttempt.current = 0
         dispatch({ type: 'STATUS', status: 'connected' })
       }
 
       ws.onmessage = (event) => {
+        if (wsRef.current !== ws) return
         try {
           const message = JSON.parse(String(event.data)) as WsMessage
           if (message.type === 'ping') {
@@ -241,12 +289,14 @@ export function useParticipantWebSocket({
       }
 
       ws.onerror = () => {
+        if (wsRef.current !== ws) return
         dispatch({ type: 'STATUS', status: 'error' })
       }
 
       ws.onclose = () => {
+        if (wsRef.current !== ws) return
         wsRef.current = null
-        if (cancelled || intentionalClose.current || authFailedRef.current) {
+        if (intentionalClose.current || authFailedRef.current) {
           if (!authFailedRef.current) {
             dispatch({ type: 'STATUS', status: 'disconnected' })
           }
@@ -257,7 +307,9 @@ export function useParticipantWebSocket({
         const delay = computeReconnectDelay(attempt)
         reconnectAttempt.current = attempt + 1
         clearReconnectTimer()
-        reconnectTimer.current = setTimeout(connect, delay)
+        reconnectTimer.current = setTimeout(() => {
+          connectRef.current?.()
+        }, delay)
       }
     }
 
@@ -265,16 +317,22 @@ export function useParticipantWebSocket({
     connect()
 
     return () => {
-      cancelled = true
       intentionalClose.current = true
       connectRef.current = null
       clearReconnectTimer()
-      if (wsRef.current) {
-        wsRef.current.close()
+      const ws = wsRef.current
+      if (ws) {
+        detachSocket(ws)
+        try {
+          ws.close()
+        } catch {
+          // ignore
+        }
         wsRef.current = null
       }
     }
-  }, [enabled, disconnect, handleAuthFailure])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bind only on enabled; handlers via refs
+  }, [enabled])
 
   const suggestedRoute = getParticipantRouteForRoomState(state.room?.state)
 
