@@ -1,5 +1,7 @@
 """Live room and session snapshot data access (DATABASE_SCHEMA.md §7)."""
 
+from __future__ import annotations
+
 from uuid import UUID
 
 from sqlalchemy import func, select

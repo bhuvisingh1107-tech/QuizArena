@@ -1,5 +1,7 @@
 """Answer option CRUD business logic (API_SPEC.md §9, PROJECT_SPEC FR-023/029)."""
 
+from __future__ import annotations
+
 from uuid import UUID
 
 from sqlalchemy.orm import Session

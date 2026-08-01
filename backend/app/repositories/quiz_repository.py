@@ -1,5 +1,7 @@
 """Quiz data access (DATABASE_SCHEMA.md §6.1)."""
 
+from __future__ import annotations
+
 from uuid import UUID
 
 from sqlalchemy import func, or_, select

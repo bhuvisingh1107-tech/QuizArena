@@ -1,5 +1,7 @@
 """Structured logging configuration (NFR-063)."""
 
+from __future__ import annotations
+
 import logging
 import sys
 from typing import Any
