@@ -608,12 +608,18 @@ export function displayLiveReducer(
               (nested.state as SessionQuestionState | undefined) ??
               (qData.state as SessionQuestionState | undefined)
             const reveal = qState === 'Revealed' || qState === 'Scored'
-            const mapped = mapQuestion(
-              { ...data, question: data.question },
-              state.question,
-              { reveal },
-            )
+            // Pass the question wrapper (or nested) so mapQuestion can unwrap once.
+            const mapped = mapQuestion(qData, state.question, { reveal })
             question = mapped ?? state.question
+            if (question) {
+              const timerFromPayload =
+                (qData.timerEndsAt as string | undefined) ??
+                (nested.timerEndsAt as string | undefined) ??
+                (asRecord(data.timer).endsAt as string | undefined)
+              if (timerFromPayload) {
+                question = { ...question, timerEndsAt: timerFromPayload }
+              }
+            }
           } else if (data.question === null) {
             question = null
           }

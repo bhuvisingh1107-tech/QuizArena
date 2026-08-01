@@ -393,6 +393,41 @@ describe('displayLiveReducer', () => {
     expect(next.viewMode).toBe('question')
   })
 
+  it('unwraps nested resync question payloads for late join', () => {
+    const next = displayLiveReducer(
+      initialDisplayLiveState,
+      event('resync', {
+        room: {
+          id: 'r1',
+          roomCode: 'ABC123',
+          state: 'Active',
+          quizTitle: 'Live',
+        },
+        question: {
+          questionIndex: 0,
+          timerEndsAt: '2099-01-01T00:00:30.000Z',
+          question: {
+            id: 'q1',
+            promptText: 'Capital of France?',
+            state: 'Open',
+            timeLimitSeconds: 30,
+            timerEndsAt: '2099-01-01T00:00:30.000Z',
+            options: [
+              { id: 'a', text: 'Paris', sortOrder: 0 },
+              { id: 'b', text: 'Lyon', sortOrder: 1 },
+            ],
+          },
+        },
+      }),
+    )
+
+    expect(next.question?.id).toBe('q1')
+    expect(next.question?.promptText).toBe('Capital of France?')
+    expect(next.question?.options).toHaveLength(2)
+    expect(next.question?.timerEndsAt).toBe('2099-01-01T00:00:30.000Z')
+    expect(next.viewMode).toBe('question')
+  })
+
   it('updates participant count from participant:count', () => {
     const next = displayLiveReducer(
       initialDisplayLiveState,

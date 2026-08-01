@@ -124,8 +124,31 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
             const mapped = mapParticipant(asRecord(item))
             if (mapped) participants[mapped.id] = mapped
           }
-          const question = data.question
-            ? (asRecord(data.question) as unknown as LiveQuestionSnapshot)
+          const questionRaw = data.question ? asRecord(data.question) : null
+          const nestedQ = questionRaw?.question
+            ? asRecord(questionRaw.question)
+            : questionRaw
+          const question = nestedQ
+            ? ({
+                ...(nestedQ as unknown as LiveQuestionSnapshot),
+                id: String(nestedQ.id ?? ''),
+                index:
+                  typeof questionRaw?.questionIndex === 'number'
+                    ? questionRaw.questionIndex
+                    : typeof nestedQ.questionIndex === 'number'
+                      ? nestedQ.questionIndex
+                      : typeof nestedQ.index === 'number'
+                        ? nestedQ.index
+                        : 0,
+                state: (nestedQ.state as LiveQuestionSnapshot['state']) ?? undefined,
+                promptText:
+                  (nestedQ.promptText as string | null | undefined) ?? null,
+                timerEndsAt:
+                  (nestedQ.timerEndsAt as string | null | undefined) ??
+                  (questionRaw?.timerEndsAt as string | null | undefined) ??
+                  (asRecord(data.timer).endsAt as string | null | undefined) ??
+                  null,
+              } as LiveQuestionSnapshot)
             : null
           const leaderboard = Array.isArray(data.leaderboard)
             ? (data.leaderboard as LeaderboardEntry[])

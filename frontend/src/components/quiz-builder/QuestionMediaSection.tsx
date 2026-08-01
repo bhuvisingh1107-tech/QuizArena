@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { useMedia, useMediaMutations } from '@/hooks/queries/useMedia'
 import { useQuestionMutations } from '@/hooks/queries/useQuestions'
 import { apiClient, unwrapData } from '@/lib/api-client'
+import { getToken } from '@/lib/auth-token'
+import { mediaContentUrl } from '@/lib/media-url'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
 import type { ApiEnvelope, MediaCategory, MediaFile } from '@/types/api'
 
@@ -41,6 +43,9 @@ export function QuestionMediaSection({
   const attachedQuery = useMedia(mediaFileId ?? undefined, Boolean(mediaFileId))
 
   const canAttach = Boolean(questionId) && !disabledReason
+  const adminToken = getToken()
+  const previewUrl =
+    mediaFileId && adminToken ? mediaContentUrl(mediaFileId, adminToken) : null
 
   const uploadFile = async (file: File, category: MediaCategory): Promise<MediaFile> => {
     const form = new FormData()
@@ -186,15 +191,15 @@ export function QuestionMediaSection({
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
-          {attachedQuery.data.mimeType.startsWith('image/') ? (
+          {previewUrl && attachedQuery.data?.mimeType.startsWith('image/') ? (
             <img
-              src={attachedQuery.data.url}
+              src={previewUrl}
               alt=""
               className="mt-2 max-h-40 rounded-md object-contain"
             />
           ) : null}
-          {attachedQuery.data.mimeType.startsWith('audio/') ? (
-            <audio controls src={attachedQuery.data.url} className="mt-2 w-full" />
+          {previewUrl && attachedQuery.data?.mimeType.startsWith('audio/') ? (
+            <audio controls src={previewUrl} className="mt-2 w-full" />
           ) : null}
         </div>
       ) : mediaFileId ? (
