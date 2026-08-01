@@ -89,7 +89,7 @@ export function SettingsPage() {
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle>Administrator profile</CardTitle>
-          <CardDescription>Loaded from GET /admin/me</CardDescription>
+          <CardDescription>Your signed-in administrator account</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div className="flex justify-between gap-4 border-b border-[var(--border)] py-2">
@@ -101,7 +101,7 @@ export function SettingsPage() {
             <span className="font-medium text-[var(--heading)]">{admin?.role ?? '—'}</span>
           </div>
           <div className="flex justify-between gap-4 py-2">
-            <span className="text-[var(--muted-foreground)]">Admin ID</span>
+            <span className="text-[var(--muted-foreground)]">Account ID</span>
             <span className="max-w-[60%] truncate font-mono text-xs text-[var(--heading)]">
               {admin?.id ?? '—'}
             </span>
@@ -112,7 +112,9 @@ export function SettingsPage() {
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle>Change password</CardTitle>
-          <CardDescription>POST /admin/change-password</CardDescription>
+          <CardDescription>
+            Use at least 12 characters with upper, lower, number, and special character
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit} noValidate>
@@ -168,7 +170,7 @@ export function SettingsPage() {
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle>Appearance</CardTitle>
-          <CardDescription>Stored in localStorage as qa_admin_theme</CardDescription>
+          <CardDescription>Choose light or dark for the admin console</CardDescription>
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-4">
           <div>
@@ -188,7 +190,7 @@ export function SettingsPage() {
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle>Session</CardTitle>
-          <CardDescription>JWT expiry from auth helpers</CardDescription>
+          <CardDescription>When your signed-in session will expire</CardDescription>
         </CardHeader>
         <CardContent className="text-sm">
           <div className="flex justify-between gap-4 py-2">

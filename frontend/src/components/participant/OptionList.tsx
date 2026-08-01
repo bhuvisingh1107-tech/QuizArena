@@ -1,4 +1,4 @@
-import { useCallback, useRef, type KeyboardEvent } from 'react'
+import { memo, useCallback, useRef, type KeyboardEvent } from 'react'
 
 import type { AnswerSubmitState, ParticipantLiveOption } from '@/types/api'
 import { cn } from '@/lib/utils'
@@ -14,7 +14,7 @@ interface OptionListProps {
   className?: string
 }
 
-export function OptionList({
+export const OptionList = memo(function OptionList({
   options,
   selectedOptionIds,
   allowMultiple = false,
@@ -84,10 +84,16 @@ export function OptionList({
       ref={listRef}
       className={cn('space-y-3', className)}
       role="listbox"
+      aria-label="Answer options"
       aria-multiselectable={allowMultiple}
       tabIndex={locked ? -1 : 0}
       onKeyDown={onKeyDown}
     >
+      {options.length === 0 ? (
+        <li className="rounded-xl border border-dashed border-[var(--border)] px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">
+          Waiting for answer choices…
+        </li>
+      ) : null}
       {options.map((option, index) => {
         const selected = selectedOptionIds.includes(option.id)
         const letter = String.fromCharCode(65 + index)
@@ -124,11 +130,11 @@ export function OptionList({
               >
                 {letter}
               </span>
-              <span className="pt-1 text-base leading-snug text-[#f0f4fa]">{option.text}</span>
+              <span className="pt-1 text-base leading-snug text-[var(--heading)]">{option.text}</span>
             </button>
           </li>
         )
       })}
     </ul>
   )
-}
+})

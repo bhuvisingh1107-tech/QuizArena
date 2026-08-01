@@ -1,8 +1,10 @@
+import { Button } from '@/components/ui/button'
 import type { WsConnectionStatus } from '@/hooks/displayLiveReducer'
 import { cn } from '@/lib/utils'
 
 interface DisplayConnectionBadgeProps {
   status: WsConnectionStatus
+  onRetry?: () => void
   className?: string
 }
 
@@ -10,13 +12,17 @@ const LABELS: Record<WsConnectionStatus, string> = {
   connecting: 'Connecting',
   connected: 'Live',
   disconnected: 'Reconnecting',
-  error: 'Error',
+  error: 'Connection issue',
 }
 
 export function DisplayConnectionBadge({
   status,
+  onRetry,
   className,
 }: DisplayConnectionBadgeProps) {
+  const showRetry =
+    Boolean(onRetry) && (status === 'disconnected' || status === 'error')
+
   return (
     <span
       role="status"
@@ -43,6 +49,17 @@ export function DisplayConnectionBadge({
         )}
       />
       {LABELS[status]}
+      {showRetry ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-xs text-inherit hover:bg-transparent hover:underline"
+          onClick={onRetry}
+        >
+          Retry
+        </Button>
+      ) : null}
     </span>
   )
 }

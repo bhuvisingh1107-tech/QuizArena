@@ -6,7 +6,8 @@ function trimTrailingSlash(value: string): string {
 
 /**
  * REST API prefix. Defaults to same-origin `/api/v1` when unset (nginx or Vite proxy).
- * Set `VITE_API_BASE_URL=http://localhost:8000/api/v1` for direct backend access in local dev.
+ * Local direct: `VITE_API_BASE_URL=http://localhost:8000/api/v1`
+ * Vercel → Render: `VITE_API_BASE_URL=https://<render-host>/api/v1` (build-time)
  */
 export function getApiBaseUrl(): string {
   const env = import.meta.env.VITE_API_BASE_URL
@@ -18,7 +19,8 @@ export function getApiBaseUrl(): string {
 
 /**
  * WebSocket endpoint. Defaults to same-origin `/ws` when unset.
- * Set `VITE_WS_BASE_URL=ws://localhost:8000/ws` for direct backend access in local dev.
+ * Local direct: `VITE_WS_BASE_URL=ws://localhost:8000/ws`
+ * Vercel → Render: `VITE_WS_BASE_URL=wss://<render-host>/ws` (build-time, must be wss)
  */
 export function getWsBaseUrl(): string {
   const env = import.meta.env.VITE_WS_BASE_URL

@@ -40,6 +40,8 @@ export function QuizPage() {
     <ParticipantShell
       connectionStatus={live.connectionStatus}
       isOffline={live.isOffline}
+      lastError={live.lastError}
+      onRetryConnection={() => live.reconnect()}
       subtitle={live.room?.quizTitle || session?.quizTitle}
       footer={
         phase === 'answering' && question ? (
@@ -200,12 +202,6 @@ export function QuizPage() {
               Waiting for the next question…
             </p>
           </div>
-        ) : null}
-
-        {live.lastError ? (
-          <p className="text-center text-sm text-[var(--destructive)]" role="alert">
-            {live.lastError}
-          </p>
         ) : null}
       </div>
     </ParticipantShell>

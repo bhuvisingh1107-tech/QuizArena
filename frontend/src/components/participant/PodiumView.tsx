@@ -9,9 +9,14 @@ interface PodiumViewProps {
 const ORDER: Array<1 | 2 | 3> = [2, 1, 3]
 
 export function PodiumView({ podium, className }: PodiumViewProps) {
-  const byRank = new Map(podium?.entries.map((e) => [e.rank, e]) ?? [])
+  // Prefer podium order (slice top 3) so competition-rank ties still fill 3 slots.
+  const podiumSlots = (podium?.entries ?? []).slice(0, 3)
+  const byRank = new Map<number, (typeof podiumSlots)[number]>()
+  podiumSlots.forEach((entry, index) => {
+    byRank.set(index + 1, entry)
+  })
 
-  if (!podium?.entries.length) {
+  if (!podiumSlots.length) {
     return (
       <div
         className={cn(
@@ -26,7 +31,9 @@ export function PodiumView({ podium, className }: PodiumViewProps) {
 
   return (
     <section className={cn('space-y-4', className)} aria-label="Podium">
-      <h2 className="font-display text-center text-xl font-semibold text-[#f0f4fa]">Podium</h2>
+      <h2 className="font-display text-center text-xl font-semibold text-[var(--heading)]">
+        Podium
+      </h2>
       <div className="flex items-end justify-center gap-3 pt-2">
         {ORDER.map((rank) => {
           const entry = byRank.get(rank)
@@ -40,7 +47,7 @@ export function PodiumView({ podium, className }: PodiumViewProps) {
 
           return (
             <div key={rank} className="flex w-24 flex-col items-center gap-2 sm:w-28">
-              <p className="truncate text-center text-sm font-medium text-[#f0f4fa]">
+              <p className="truncate text-center text-sm font-medium text-[var(--heading)]">
                 {entry?.displayName ?? '—'}
               </p>
               <p className="text-xs text-[var(--muted-foreground)]">

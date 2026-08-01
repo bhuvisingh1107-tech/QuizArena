@@ -11,7 +11,7 @@ interface PodiumScreenProps {
 }
 
 const ORDER: Array<1 | 2 | 3> = [2, 1, 3]
-const MEDALS: Record<1 | 2 | 3, string> = { 1: '🥇', 2: '🥈', 3: '🥉' }
+const MEDALS: Record<1 | 2 | 3, string> = { 1: '1st', 2: '2nd', 3: '3rd' }
 
 function formatMs(ms: number): string {
   if (ms < 1000) return `${ms}ms`
@@ -66,7 +66,7 @@ export function PodiumScreen({
             className="mt-3 font-display text-2xl font-semibold text-[var(--accent)] lg:text-3xl"
             data-testid="quiz-winner"
           >
-            🏆 {winner.displayName} wins with {winner.score} pts!
+            {winner.displayName} wins with {winner.score} pts!
           </p>
         ) : (
           <p className="mt-2 text-base text-[var(--muted-foreground)] lg:text-lg">

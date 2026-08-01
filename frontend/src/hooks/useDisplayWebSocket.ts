@@ -48,9 +48,14 @@ export function useDisplayWebSocket({
     intentionalClose.current = false
     reconnectAttempt.current = 0
     clearReconnectTimer()
-    if (wsRef.current) {
-      wsRef.current.close()
+    dispatch({ type: 'CLEAR_ERROR' })
+    // Prevent onclose from scheduling a delayed connect while we reconnect immediately.
+    const existing = wsRef.current
+    if (existing) {
+      intentionalClose.current = true
+      existing.close()
       wsRef.current = null
+      intentionalClose.current = false
     }
     connectRef.current?.()
   }, [enabled, secretToken])

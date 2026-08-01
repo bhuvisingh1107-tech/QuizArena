@@ -1,8 +1,11 @@
 # Deployment
 
-Guide for running QuizArena with Docker Compose and nginx.
+QuizArena can be deployed two ways:
 
-## Prerequisites
+1. **Recommended — Neon + Render + Vercel** → see **[DEPLOY_RENDER_VERCEL.md](./DEPLOY_RENDER_VERCEL.md)**
+2. **Docker Compose + nginx** (this document)
+
+## Prerequisites (Compose)
 
 - Docker Engine 24+ and Docker Compose v2
 - A domain name (production) and TLS certificates (recommended)

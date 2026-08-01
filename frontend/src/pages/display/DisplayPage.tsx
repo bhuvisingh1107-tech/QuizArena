@@ -134,14 +134,22 @@ export function DisplayPage({ secretToken }: DisplayPageProps) {
       quizTitle={quizTitle}
       roomCode={roomCode}
       connectionStatus={live.connectionStatus}
+      onRetryConnection={() => live.reconnect()}
     >
       {live.lastError && !live.authFailed ? (
         <div
           role="status"
           aria-live="polite"
-          className="mb-4 rounded-lg border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-4 py-3 text-center text-sm text-[var(--color-warning)]"
+          className="mb-4 flex flex-wrap items-center justify-center gap-3 rounded-lg border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-4 py-3 text-center text-sm text-[var(--color-warning)]"
         >
-          {live.lastError}
+          <span>{live.lastError}</span>
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:opacity-90"
+            onClick={() => live.reconnect()}
+          >
+            Retry connection
+          </button>
         </div>
       ) : null}
       {paused ? (

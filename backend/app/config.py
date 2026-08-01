@@ -72,6 +72,17 @@ class Settings(BaseSettings):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: object) -> object:
+        """Accept Neon/Heroku ``postgres://`` URLs and normalize for SQLAlchemy."""
+        if not isinstance(value, str) or not value:
+            return value
+        url = value.strip()
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://") :]
+        return url
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         if self.app_env == "production":
@@ -96,7 +107,7 @@ class Settings(BaseSettings):
 
     @property
     def is_postgres(self) -> bool:
-        return self.database_url.startswith("postgresql")
+        return self.database_url.startswith(("postgresql://", "postgresql+psycopg2://"))
 
 
 @lru_cache

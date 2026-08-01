@@ -535,14 +535,20 @@ class QuizExecutionService:
     def _timer_ends_at_ts(room: LiveRoom, question: SessionQuestion) -> float | None:
         if question.opened_at is None or not question.time_limit_seconds:
             return None
+        opened_at = question.opened_at
+        if opened_at.tzinfo is None:
+            opened_at = opened_at.replace(tzinfo=UTC)
         pause_ms = int(room.pause_accumulated_ms or 0)
         if room.paused_at is not None:
+            paused_at = room.paused_at
+            if paused_at.tzinfo is None:
+                paused_at = paused_at.replace(tzinfo=UTC)
             pause_ms += max(
                 0,
-                int((datetime.now(UTC) - room.paused_at).total_seconds() * 1000),
+                int((datetime.now(UTC) - paused_at).total_seconds() * 1000),
             )
         return (
-            question.opened_at.timestamp()
+            opened_at.timestamp()
             + int(question.time_limit_seconds)
             + (pause_ms / 1000.0)
         )

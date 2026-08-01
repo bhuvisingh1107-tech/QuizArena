@@ -147,9 +147,13 @@ export function useParticipantWebSocket({
     intentionalClose.current = false
     reconnectAttempt.current = 0
     clearReconnectTimer()
-    if (wsRef.current) {
-      wsRef.current.close()
+    dispatch({ type: 'CLEAR_ERROR' })
+    const existing = wsRef.current
+    if (existing) {
+      intentionalClose.current = true
+      existing.close()
       wsRef.current = null
+      intentionalClose.current = false
     }
     connectRef.current?.()
   }, [enabled])
@@ -189,7 +193,7 @@ export function useParticipantWebSocket({
 
       const token = getSessionToken()
       if (!token) {
-        dispatch({ type: 'ERROR', message: 'Missing participant session token' })
+        handleAuthFailure('Your session expired. Please join again.')
         return
       }
 

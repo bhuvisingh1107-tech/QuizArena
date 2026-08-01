@@ -47,15 +47,20 @@ function QuestionMedia({
   }, [mediaFileId])
 
   if (!sessionToken || failed) {
+    const unavailable = !sessionToken || failed
     return (
       <div
         className="mt-4 flex min-h-36 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] bg-[var(--secondary)]/40 px-4 py-8 text-center"
         role="img"
-        aria-label="Media unavailable"
+        aria-label={unavailable ? 'Media unavailable' : 'Media loading'}
       >
         <ImageIcon className="h-8 w-8 text-[var(--muted-foreground)]" aria-hidden />
         <p className="text-sm text-[var(--muted-foreground)]">
-          {failed ? 'Could not load media.' : 'Media loading…'}
+          {failed
+            ? 'Could not load media.'
+            : !sessionToken
+              ? 'Media unavailable.'
+              : 'Media loading…'}
         </p>
       </div>
     )

@@ -49,13 +49,15 @@ export function LobbyPage() {
     <ParticipantShell
       connectionStatus={live.connectionStatus}
       isOffline={live.isOffline}
+      lastError={live.lastError}
+      onRetryConnection={() => live.reconnect()}
       subtitle={roomCode ? `Room ${roomCode}` : undefined}
     >
       <div className="flex flex-1 flex-col items-center justify-center text-center">
         <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
           Waiting lobby
         </p>
-        <h1 className="mt-3 font-display text-3xl font-bold text-[#f0f4fa] sm:text-4xl">
+        <h1 className="mt-3 font-display text-3xl font-bold text-[var(--heading)] sm:text-4xl">
           {quizTitle}
         </h1>
         <p className="mt-2 text-sm text-[var(--muted-foreground)]">
@@ -77,7 +79,7 @@ export function LobbyPage() {
             </div>
           </div>
 
-          <p className="font-display text-lg font-semibold text-[#f0f4fa]">
+          <p className="font-display text-lg font-semibold text-[var(--heading)]">
             Waiting for host to start…
           </p>
           <p className="mt-2 text-sm text-[var(--muted-foreground)]">
@@ -88,7 +90,7 @@ export function LobbyPage() {
             <button
               type="button"
               onClick={() => void onCopyCode()}
-              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[var(--secondary)]/70 px-4 py-2 font-display text-sm tracking-[0.25em] text-[#f0f4fa] uppercase transition-colors hover:bg-[var(--secondary)]"
+              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[var(--secondary)]/70 px-4 py-2 font-display text-sm tracking-[0.25em] text-[var(--heading)] uppercase transition-colors hover:bg-[var(--secondary)]"
             >
               {roomCode}
               <Copy className="h-3.5 w-3.5 text-[var(--muted-foreground)]" aria-hidden />

@@ -5,7 +5,6 @@ import {
   Pause,
   Play,
   Printer,
-  Radio,
   SkipForward,
   Square,
   Trophy,
@@ -236,7 +235,13 @@ export function RoomMonitorPage() {
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge state={state} />
             <Badge variant={connectionVariant[live.connectionStatus] ?? 'secondary'}>
-              WS: {live.connectionStatus}
+              {live.connectionStatus === 'connected'
+                ? 'Live'
+                : live.connectionStatus === 'connecting'
+                  ? 'Connecting…'
+                  : live.connectionStatus === 'error'
+                    ? 'Connection issue'
+                    : 'Reconnecting…'}
             </Badge>
             {isCompleted ? (
               <Button asChild variant="secondary" size="sm">
@@ -389,7 +394,7 @@ export function RoomMonitorPage() {
               disabled={!canRest(state, 'resume')}
               onClick={() => void runRest('Resumed', () => resumeSession.mutateAsync(room.id))}
             >
-              <Radio className="h-4 w-4" />
+              <Play className="h-4 w-4" />
               Resume
             </Button>
             <Button

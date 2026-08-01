@@ -142,8 +142,16 @@ class ResponseService:
         id_strings = [str(oid) for oid in normalized_ids]
         response_time_ms: int | None = None
         if question.opened_at is not None:
-            elapsed_ms = int((now - question.opened_at).total_seconds() * 1000)
+            opened_at = question.opened_at
+            if opened_at.tzinfo is None:
+                opened_at = opened_at.replace(tzinfo=UTC)
+            elapsed_ms = int((now - opened_at).total_seconds() * 1000)
             pause_ms = int(room.pause_accumulated_ms or 0)
+            if room.paused_at is not None:
+                paused_at = room.paused_at
+                if paused_at.tzinfo is None:
+                    paused_at = paused_at.replace(tzinfo=UTC)
+                pause_ms += max(0, int((now - paused_at).total_seconds() * 1000))
             response_time_ms = max(0, elapsed_ms - pause_ms)
 
         response = Response(

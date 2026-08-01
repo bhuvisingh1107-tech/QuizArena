@@ -96,7 +96,12 @@ export function QuestionScreen({
         />
       ) : null}
 
-      <ul className="mt-auto grid gap-3 sm:grid-cols-2 lg:gap-4" role="list">
+      <ul className="mt-auto grid gap-3 sm:grid-cols-2 lg:gap-4" role="list" aria-label="Answer choices">
+        {sorted.length === 0 ? (
+          <li className="col-span-full rounded-2xl border border-dashed border-[var(--border)] px-5 py-10 text-center text-[var(--muted-foreground)]">
+            Waiting for answer choices…
+          </li>
+        ) : null}
         {sorted.map((option, index) => {
           const letter = LETTERS[index] ?? String(index + 1)
           return (
@@ -109,7 +114,7 @@ export function QuestionScreen({
                 {letter}
               </span>
               <span
-                className="pt-2 font-sans leading-snug text-[#f0f4fa]"
+                className="pt-2 font-sans leading-snug text-[var(--heading)]"
                 style={{ fontSize: 'clamp(1.125rem, 2vw, 1.5rem)' }}
               >
                 {option.text}

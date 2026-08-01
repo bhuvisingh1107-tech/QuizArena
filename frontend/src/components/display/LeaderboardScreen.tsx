@@ -116,7 +116,7 @@ export function LeaderboardScreen({
                     </span>
                     {typeof entry.streak === 'number' && entry.streak > 0 ? (
                       <span className="text-sm text-[var(--accent)]">
-                        🔥 {entry.streak} streak
+                        {entry.streak}x streak
                       </span>
                     ) : null}
                   </div>

@@ -15,7 +15,7 @@ interface SectionBreakScreenProps {
   className?: string
 }
 
-const MEDALS = ['🥇', '🥈', '🥉'] as const
+const MEDALS = ['1st', '2nd', '3rd'] as const
 
 export function SectionBreakScreen({
   section,
@@ -37,7 +37,7 @@ export function SectionBreakScreen({
           Section completed
         </p>
         <h1
-          className="mt-3 font-display font-extrabold text-[#f0f4fa]"
+          className="mt-3 font-display font-extrabold text-[var(--heading)]"
           style={{ fontSize: 'clamp(2rem, 5vw, 4rem)' }}
         >
           {name}

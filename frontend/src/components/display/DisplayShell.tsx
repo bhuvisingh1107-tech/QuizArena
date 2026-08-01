@@ -11,6 +11,7 @@ interface DisplayShellProps {
   quizTitle?: string
   roomCode?: string
   connectionStatus?: WsConnectionStatus
+  onRetryConnection?: () => void
   footer?: ReactNode
   className?: string
 }
@@ -20,6 +21,7 @@ export function DisplayShell({
   quizTitle,
   roomCode,
   connectionStatus = 'disconnected',
+  onRetryConnection,
   footer,
   className,
 }: DisplayShellProps) {
@@ -93,7 +95,7 @@ export function DisplayShell({
             <button
               type="button"
               onClick={() => void toggleFullscreen()}
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--card)]/80 text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)]/50 hover:text-[#f0f4fa]"
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--card)]/80 text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)]/50 hover:text-[var(--heading)]"
               aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
               data-testid="fullscreen-toggle"
             >
@@ -103,7 +105,10 @@ export function DisplayShell({
                 <Maximize className="h-5 w-5" aria-hidden />
               )}
             </button>
-            <DisplayConnectionBadge status={connectionStatus} />
+            <DisplayConnectionBadge
+              status={connectionStatus}
+              onRetry={onRetryConnection}
+            />
           </div>
         </div>
       </header>

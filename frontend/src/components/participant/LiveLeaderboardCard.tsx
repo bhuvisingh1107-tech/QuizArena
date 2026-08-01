@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 import type { LeaderboardEntry } from '@/types/api'
 import { cn } from '@/lib/utils'
 
@@ -13,7 +15,7 @@ interface LiveLeaderboardCardProps {
   className?: string
 }
 
-export function LiveLeaderboardCard({
+export const LiveLeaderboardCard = memo(function LiveLeaderboardCard({
   yourRank,
   yourScore,
   leaderboard,
@@ -113,7 +115,7 @@ export function LiveLeaderboardCard({
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
                   {typeof entry.streak === 'number' && entry.streak > 0 ? (
-                    <span className="text-xs text-[var(--accent)]">🔥{entry.streak}</span>
+                    <span className="text-xs text-[var(--accent)]">{entry.streak}x streak</span>
                   ) : null}
                   <span className="font-medium text-[var(--accent)]">{entry.score}</span>
                 </span>
@@ -124,4 +126,4 @@ export function LiveLeaderboardCard({
       )}
     </section>
   )
-}
+})

@@ -45,26 +45,34 @@ docker compose up --build
 
 ## Production deployment
 
+**Recommended:** Neon (Postgres) + Render (API/WebSockets) + Vercel (SPA)
+
+→ Full guide: **[docs/DEPLOY_RENDER_VERCEL.md](docs/DEPLOY_RENDER_VERCEL.md)**
+
+Alternative (single-host Docker Compose + nginx):
+
 ```bash
 cp .env.example .env          # set POSTGRES_PASSWORD
 cp backend/.env.example backend/.env  # set APP_ENV=production, secrets
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-See [docs/Deployment.md](docs/Deployment.md) for TLS, scaling, and operational runbooks.
+See [docs/Deployment.md](docs/Deployment.md) for TLS, scaling, and Docker runbooks.
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
+| [Deploy: Render + Neon + Vercel](docs/DEPLOY_RENDER_VERCEL.md) | Recommended cloud deployment |
 | [Architecture](docs/Architecture.md) | System overview |
-| [Deployment](docs/Deployment.md) | Docker, nginx, production |
+| [Deployment](docs/Deployment.md) | Docker Compose / nginx |
 | [Developer Setup](docs/DeveloperSetup.md) | Local dev workflow |
 | [Environment Variables](docs/EnvironmentVariables.md) | Configuration reference |
 | [API](docs/API.md) | REST & health endpoints |
 | [API Spec](docs/API_SPEC.md) | Full API contract |
 | [Backups](docs/Backups.md) | Backup, restore, rollback |
 | [Contributing](docs/Contributing.md) | Contribution guidelines |
+| [Final Polish Audit](docs/FINAL_POLISH_AUDIT.md) | Production readiness |
 
 ## Health checks
 

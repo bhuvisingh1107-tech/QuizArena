@@ -8,6 +8,8 @@ interface ParticipantShellProps {
   children: ReactNode
   connectionStatus?: WsConnectionStatus
   isOffline?: boolean
+  lastError?: string | null
+  onRetryConnection?: () => void
   subtitle?: string
   footer?: ReactNode
   className?: string
@@ -17,6 +19,8 @@ export function ParticipantShell({
   children,
   connectionStatus = 'disconnected',
   isOffline = false,
+  lastError = null,
+  onRetryConnection,
   subtitle,
   footer,
   className,
@@ -31,7 +35,7 @@ export function ParticipantShell({
       <header className="relative z-10 border-b border-[var(--border)]/60 bg-[var(--background)]/80 px-4 py-4 backdrop-blur">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div>
-            <p className="font-display text-2xl font-extrabold tracking-tight text-[#f0f4fa]">
+            <p className="font-display text-2xl font-extrabold tracking-tight text-[var(--heading)]">
               Quiz<span className="text-[var(--primary)]">Arena</span>
             </p>
             {subtitle ? (
@@ -41,7 +45,12 @@ export function ParticipantShell({
         </div>
       </header>
 
-      <ConnectionBanner connectionStatus={connectionStatus} isOffline={isOffline} />
+      <ConnectionBanner
+        connectionStatus={connectionStatus}
+        isOffline={isOffline}
+        errorMessage={lastError}
+        onRetry={onRetryConnection}
+      />
 
       <main
         className={cn(

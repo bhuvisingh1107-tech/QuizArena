@@ -190,7 +190,10 @@ class LiveRoomService:
         room = self.get(room_id)
         room.state = room_fsm.transition(room.state, "resume")
         if room.paused_at is not None:
-            delta_ms = int((datetime.now(UTC) - room.paused_at).total_seconds() * 1000)
+            paused_at = room.paused_at
+            if paused_at.tzinfo is None:
+                paused_at = paused_at.replace(tzinfo=UTC)
+            delta_ms = int((datetime.now(UTC) - paused_at).total_seconds() * 1000)
             room.pause_accumulated_ms = int(room.pause_accumulated_ms or 0) + max(0, delta_ms)
             room.paused_at = None
         self._rooms.flush()

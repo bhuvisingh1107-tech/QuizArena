@@ -1,0 +1,8 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /Users/Bhuvi/Desktop/QuizArena/backend/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/Bhuvi/Desktop/QuizArena/backend
+plugins: anyio-4.14.2
+collecting ... collected 1 item
+
+tests/integration/test_answer_submission.py::test_successful_submission 

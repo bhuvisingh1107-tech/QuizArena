@@ -49,6 +49,8 @@ export function ResultsPage() {
     <ParticipantShell
       connectionStatus={live.connectionStatus}
       isOffline={live.isOffline}
+      lastError={live.lastError}
+      onRetryConnection={() => live.reconnect()}
       subtitle={meQuery.data?.room.quizTitle || session?.quizTitle || 'Results'}
     >
       <div className="space-y-6 pb-8">
@@ -56,7 +58,9 @@ export function ResultsPage() {
           <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
             Final results
           </p>
-          <h1 className="mt-2 font-display text-3xl font-bold text-[#f0f4fa]">Quiz complete!</h1>
+          <h1 className="mt-2 font-display text-3xl font-bold text-[var(--heading)]">
+            Quiz complete!
+          </h1>
         </div>
 
         {meQuery.isLoading ? <LoadingState label="Loading your results…" /> : null}
@@ -65,6 +69,11 @@ export function ResultsPage() {
           <EmptyState
             title="Could not load results"
             description="Your live standing is still shown below when available."
+            action={
+              <Button type="button" variant="outline" onClick={() => void meQuery.refetch()}>
+                Try again
+              </Button>
+            }
           />
         ) : null}
 

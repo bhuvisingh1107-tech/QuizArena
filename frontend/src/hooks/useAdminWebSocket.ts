@@ -286,11 +286,25 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
                 : state.leaderboard,
           }
 
-        case 'error':
+        case 'error': {
+          const code = String(data.code ?? '')
+          if (
+            code === 'AUTH_ERROR' ||
+            code === 'UNAUTHORIZED' ||
+            code === 'FORBIDDEN' ||
+            code === 'TOKEN_EXPIRED'
+          ) {
+            return {
+              ...state,
+              lastError: String(data.message ?? 'Authentication failed'),
+              connectionStatus: 'error',
+            }
+          }
           return {
             ...state,
             lastError: String(data.message ?? 'WebSocket error'),
           }
+        }
 
         case 'ping':
         case 'pong':
@@ -374,6 +388,22 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
             }),
           )
         }
+        if (message.type === 'error') {
+          const payload =
+            message.payload && typeof message.payload === 'object'
+              ? (message.payload as Record<string, unknown>)
+              : {}
+          const code = String(payload.code ?? '')
+          if (
+            code === 'AUTH_ERROR' ||
+            code === 'UNAUTHORIZED' ||
+            code === 'FORBIDDEN' ||
+            code === 'TOKEN_EXPIRED'
+          ) {
+            intentionalClose.current = true
+            clearReconnectTimer()
+          }
+        }
         dispatch({ type: 'EVENT', message })
       } catch {
         dispatch({ type: 'ERROR', message: 'Failed to parse WebSocket message' })
@@ -434,10 +464,13 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
     reconnectAttempt.current = 0
     clearReconnectTimer()
     dispatch({ type: 'CLEAR_ERROR' })
-    skipNextReconnect.current = true
     if (wsRef.current) {
+      // Closing an open socket must not schedule a second connect via onclose.
+      skipNextReconnect.current = true
       wsRef.current.close()
       wsRef.current = null
+    } else {
+      skipNextReconnect.current = false
     }
     connect()
   }, [clearReconnectTimer, connect])

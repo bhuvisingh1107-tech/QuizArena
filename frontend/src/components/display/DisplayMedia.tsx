@@ -33,15 +33,19 @@ export function DisplayMedia({
         )}
         data-testid="media-placeholder"
         role="img"
-        aria-label="Media unavailable"
+        aria-label={failed || !secretToken ? 'Media unavailable' : 'Media loading'}
       >
         <div className="text-center">
           <ImageIcon
             className="mx-auto mb-2 h-10 w-10 text-[var(--muted-foreground)]"
             aria-hidden
           />
-          <p className="font-display text-lg font-semibold text-[#f0f4fa]">
-            {failed ? 'Could not load media' : 'Media loading…'}
+          <p className="font-display text-lg font-semibold text-[var(--heading)]">
+            {failed
+              ? 'Could not load media'
+              : !secretToken
+                ? 'Media unavailable'
+                : 'Media loading…'}
           </p>
         </div>
       </div>
