@@ -72,10 +72,32 @@ export function QuestionsStep({
 
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Question | null>(null)
+  const [creating, setCreating] = useState(false)
 
-  const openCreate = () => {
-    setEditing(null)
-    setEditorOpen(true)
+  const openCreate = async () => {
+    if (!sectionId) return
+    setCreating(true)
+    try {
+      const saved = await apiPost<Question>(
+        `/quizzes/${quizId}/sections/${sectionId}/questions`,
+        {
+          questionType: 'Text',
+          promptText: 'New question',
+          basePoints: 1,
+          timeLimitSeconds: 30,
+          allowMultipleCorrect: false,
+          sortOrder: questions.length,
+        },
+      )
+      await questionsQuery.refetch()
+      setEditing(saved)
+      setEditorOpen(true)
+      toastSuccess('Question created — you can attach media now')
+    } catch (error) {
+      toastError(error)
+    } finally {
+      setCreating(false)
+    }
   }
 
   const openEdit = (question: Question) => {
@@ -165,9 +187,9 @@ export function QuestionsStep({
             </div>
           ) : null}
         </div>
-        <Button onClick={openCreate}>
+        <Button onClick={() => void openCreate()} disabled={creating}>
           <Plus className="h-4 w-4" />
-          Add Question
+          {creating ? 'Creating…' : 'Add Question'}
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -184,9 +206,9 @@ export function QuestionsStep({
             title="No questions yet"
             description="Add your first question to continue toward publish."
             action={
-              <Button onClick={openCreate}>
+              <Button onClick={() => void openCreate()} disabled={creating}>
                 <Plus className="h-4 w-4" />
-                Add Question
+                {creating ? 'Creating…' : 'Add Question'}
               </Button>
             }
           />
@@ -263,7 +285,8 @@ export function QuestionsStep({
           sectionId={section.id}
           question={editing}
           nextSortOrder={questions.length}
-          onSaved={() => {
+          onSaved={(saved) => {
+            setEditing(saved)
             void questionsQuery.refetch()
           }}
         />

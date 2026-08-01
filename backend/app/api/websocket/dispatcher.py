@@ -203,6 +203,29 @@ class EventDispatcher:
             room_payload,
         )
 
+        # Start Quiz → open first question automatically and schedule progression.
+        if method_name == "start":
+            try:
+                result = self._execution.start_first_question(connection.room_id)
+            except QuizArenaError as exc:
+                await self._manager.send_to_connection(
+                    connection,
+                    ServerEventType.ERROR,
+                    make_error(exc.code, exc.message, details=exc.details)["payload"],
+                )
+                return
+            from app.api.websocket.broadcast_helpers import (
+                broadcast_execution_events,
+                schedule_after_question_started,
+            )
+
+            await broadcast_execution_events(
+                connection.room_id,
+                result.events,
+                manager=self._manager,
+            )
+            schedule_after_question_started(connection.room_id, result.events)
+
     async def _dispatch_execution(self, connection: WSConnection, event_type: str) -> None:
         try:
             if event_type == ClientEventType.ADMIN_START_QUESTION:
@@ -242,32 +265,31 @@ class EventDispatcher:
             )
             return
 
-        for event in result.events:
-            audience = event.audience
-            payload = event.payload
-            event_name = event.type
-            target_participant = event.participant_id
+        from app.api.websocket.broadcast_helpers import (
+            broadcast_execution_events,
+            schedule_after_question_started,
+        )
 
-            if audience == "admin":
-                await self._manager.broadcast_to_admin(
-                    connection.room_id,
-                    event_name,
-                    payload,
-                )
-            elif audience == "participant" and target_participant is not None:
-                pool = self._manager.get_room_pool(connection.room_id)
-                if pool and target_participant in pool.participants:
-                    await self._manager.send_to_connection(
-                        pool.participants[target_participant],
-                        event_name,
-                        payload,
-                    )
-            else:
-                await self._manager.broadcast_to_room(
-                    connection.room_id,
-                    event_name,
-                    payload,
-                )
+        await broadcast_execution_events(
+            connection.room_id,
+            result.events,
+            manager=self._manager,
+        )
+        if event_type in {
+            ClientEventType.ADMIN_START_QUESTION,
+            ClientEventType.ADMIN_NEXT_QUESTION,
+            ClientEventType.ADMIN_ADVANCE,
+            ClientEventType.ADMIN_NEXT_SECTION,
+        }:
+            schedule_after_question_started(connection.room_id, result.events)
+        if event_type in {
+            ClientEventType.ADMIN_END_QUIZ,
+            ClientEventType.ADMIN_CLOSE_QUESTION,
+        }:
+            from app.services.timer_service import auto_progression
+
+            if event_type == ClientEventType.ADMIN_END_QUIZ:
+                auto_progression.cancel_room(connection.room_id)
 
     async def _dispatch_answer_submit(
         self,
@@ -352,6 +374,11 @@ class EventDispatcher:
                     event.type,
                     event.payload,
                 )
+
+        if result.all_eligible_answered:
+            from app.services.timer_service import auto_progression
+
+            auto_progression.notify_all_answered(connection.room_id)
 
 
 def build_room_snapshot(room) -> dict[str, Any]:

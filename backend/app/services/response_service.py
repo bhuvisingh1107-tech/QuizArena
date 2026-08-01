@@ -46,6 +46,7 @@ class SubmitResult:
     response: Response
     events: list[TargetedEvent] = field(default_factory=list)
     already_submitted: bool = False
+    all_eligible_answered: bool = False
 
 
 class ResponseService:
@@ -186,6 +187,8 @@ class ResponseService:
 
         submitted_count = self._responses.count_submitted_for_question(question.id)
         participant_count = self._participants.count_for_room(room_id)
+        eligible_count = self._count_eligible_participants(room_id)
+        all_answered = eligible_count > 0 and submitted_count >= eligible_count
 
         accept_payload = {
             "roomId": str(room_id),
@@ -203,6 +206,8 @@ class ResponseService:
             "questionIndex": execution.question_index,
             "submittedCount": submitted_count,
             "participantCount": participant_count,
+            "eligibleCount": eligible_count,
+            "allAnswered": all_answered,
         }
         admin_received_payload = {
             "roomId": str(room_id),
@@ -226,6 +231,19 @@ class ResponseService:
                     audience="room",
                 ),
             ],
+            all_eligible_answered=all_answered,
+        )
+
+    def _count_eligible_participants(self, room_id: UUID) -> int:
+        excluded = {
+            ParticipantState.BANNED,
+            ParticipantState.KICKED,
+            ParticipantState.SESSION_ENDED,
+        }
+        return sum(
+            1
+            for p in self._participants.list_for_room(room_id)
+            if p.state not in excluded
         )
 
     def get_submission_status(

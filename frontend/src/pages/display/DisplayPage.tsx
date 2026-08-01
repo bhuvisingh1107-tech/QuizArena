@@ -157,7 +157,7 @@ export function DisplayPage({ secretToken }: DisplayPageProps) {
           role="status"
           className="mb-4 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/15 px-4 py-3 text-center font-display text-lg font-semibold text-[var(--accent)] lg:text-2xl"
         >
-          Quiz paused
+          Quiz Paused
         </div>
       ) : null}
       {body}

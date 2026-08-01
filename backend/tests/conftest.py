@@ -29,6 +29,22 @@ def _reset_rate_limiters() -> None:
     connection_manager.reset()
 
 
+@pytest.fixture(autouse=True)
+def _auto_progression_isolation(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    """Keep live auto-timers from interfering with most tests; always cancel leftover tasks."""
+    monkeypatch.setattr(
+        "app.services.quiz_execution_service.DEFAULT_LIVE_QUESTION_SECONDS",
+        3600,
+    )
+    monkeypatch.setattr("app.services.timer_service.DEFAULT_QUESTION_SECONDS", 3600)
+    monkeypatch.setattr("app.services.timer_service.REVEAL_DWELL_SECONDS", 0.05)
+    yield
+    from app.services.timer_service import auto_progression
+
+    for room_id in list(auto_progression._tasks):
+        auto_progression.cancel_room(room_id)
+
+
 @pytest.fixture()
 def test_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Settings:
     monkeypatch.setenv("APP_ENV", "test")

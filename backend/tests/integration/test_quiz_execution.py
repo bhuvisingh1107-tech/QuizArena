@@ -227,20 +227,11 @@ def test_invalid_transitions(
     room = _active_room(client, admin_token, db_session, title="Exec Invalid")
     room_id = UUID(room["id"])
     svc = QuizExecutionService(db_session)
+    db_session.expire_all()
 
-    try:
-        svc.next_question(room_id)
-        raise AssertionError("expected ValidationError")
-    except ValidationError as exc:
-        assert exc.code == "QUESTION_NOT_STARTED"
-
-    svc.start_first_question(room_id)
-
-    try:
-        svc.start_first_question(room_id)
-        raise AssertionError("expected ValidationError")
-    except ValidationError as exc:
-        assert exc.code == "QUESTION_ALREADY_STARTED"
+    # Start Quiz opens the first question automatically.
+    again = svc.start_first_question(room_id)
+    assert any(e.type == "question:started" for e in again.events)
 
     try:
         svc.next_question(room_id)

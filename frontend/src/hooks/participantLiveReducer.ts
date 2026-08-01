@@ -505,12 +505,17 @@ export function participantLiveReducer(
             ? mapSelf(asRecord(data.participant), state.self)
             : state.self
           const qData = data.question ? asRecord(data.question) : null
+          const nestedQ = qData?.question ? asRecord(qData.question) : qData
+          const revealState =
+            (nestedQ?.state as string | undefined) ??
+            (qData?.state as string | undefined)
           const question = qData
             ? mapQuestion(
                 asRecord(data.question),
                 state.question,
                 {
-                  reveal: qData.state === 'Revealed' || qData.state === 'Scored',
+                  reveal:
+                    revealState === 'Revealed' || revealState === 'Scored',
                 },
               )
             : null

@@ -5,7 +5,6 @@ import {
   Pause,
   Play,
   Printer,
-  SkipForward,
   Square,
   Trophy,
 } from 'lucide-react'
@@ -71,14 +70,6 @@ function canRest(
   }
 }
 
-function canWs(
-  state: RoomState,
-  action: 'start' | 'close' | 'reveal' | 'next' | 'section' | 'end',
-): boolean {
-  if (action === 'end') return state === 'Active' || state === 'Paused' || state === 'SectionBreak'
-  return state === 'Active'
-}
-
 function formatTimer(
   timerEndsAt?: string | null,
   _tick = 0,
@@ -116,10 +107,8 @@ export function RoomMonitorPage() {
     closeRoom,
   } = useLiveRoomMutations()
 
-  const [skipConfirm, setSkipConfirm] = useState(false)
   const [endConfirm, setEndConfirm] = useState(false)
   const [closeConfirm, setCloseConfirm] = useState(false)
-  const [endQuizConfirm, setEndQuizConfirm] = useState(false)
   const [timerTick, setTimerTick] = useState(0)
 
   const timerEndsAt = live.currentQuestion?.timerEndsAt
@@ -197,12 +186,6 @@ export function RoomMonitorPage() {
     } catch (error) {
       toastError(error)
     }
-  }
-
-  const runWs = (type: string, label: string) => {
-    const ok = live.send(type, {})
-    if (ok) toastSuccess(label)
-    else toastError(new Error('WebSocket not connected'))
   }
 
   if (roomQuery.isLoading && !room) {
@@ -351,7 +334,9 @@ export function RoomMonitorPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Room lifecycle</CardTitle>
-            <CardDescription>REST controls — disabled by room state</CardDescription>
+            <CardDescription>
+              Start the quiz to begin automatic question progression. Pause freezes the timer.
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
             <Button
@@ -374,10 +359,12 @@ export function RoomMonitorPage() {
             <Button
               size="sm"
               disabled={!canRest(state, 'start')}
-              onClick={() => void runRest('Session started', () => startSession.mutateAsync(room.id))}
+              onClick={() =>
+                void runRest('Quiz started', () => startSession.mutateAsync(room.id))
+              }
             >
               <Play className="h-4 w-4" />
-              Start
+              Start Quiz
             </Button>
             <Button
               size="sm"
@@ -404,7 +391,7 @@ export function RoomMonitorPage() {
               onClick={() => setEndConfirm(true)}
             >
               <Square className="h-4 w-4" />
-              End
+              End Quiz
             </Button>
             <Button
               size="sm"
@@ -421,59 +408,12 @@ export function RoomMonitorPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Quiz execution</CardTitle>
-          <CardDescription>WebSocket admin controls</CardDescription>
+          <CardTitle className="text-base">Live progression</CardTitle>
+          <CardDescription>
+            Questions advance automatically after the timer expires or everyone answers: reveal →
+            explanation → next question → leaderboard when finished.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            disabled={!canWs(state, 'start')}
-            onClick={() => runWs('admin:start_question', 'Start question sent')}
-          >
-            Start question
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!canWs(state, 'close')}
-            onClick={() => runWs('admin:close_question', 'Close question sent')}
-          >
-            Close question
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!canWs(state, 'reveal')}
-            onClick={() => runWs('admin:reveal_answer', 'Reveal sent')}
-          >
-            Reveal answer
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={!canWs(state, 'next')}
-            onClick={() => setSkipConfirm(true)}
-          >
-            <SkipForward className="h-4 w-4" />
-            Next / Skip
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={!canWs(state, 'section')}
-            onClick={() => runWs('admin:next_section', 'Next section sent')}
-          >
-            Next section
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={!canWs(state, 'end')}
-            onClick={() => setEndQuizConfirm(true)}
-          >
-            End quiz
-          </Button>
-        </CardContent>
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -600,26 +540,14 @@ export function RoomMonitorPage() {
       </Card>
 
       <ConfirmDialog
-        open={skipConfirm}
-        onOpenChange={setSkipConfirm}
-        title="Next / Skip question?"
-        description="Advance to the next question now? This sends admin:next_question."
-        confirmLabel="Next / Skip"
-        onConfirm={() => {
-          runWs('admin:next_question', 'Next / Skip sent')
-          setSkipConfirm(false)
-        }}
-      />
-
-      <ConfirmDialog
         open={endConfirm}
         onOpenChange={setEndConfirm}
-        title="End session?"
-        description="End the live session for all participants. You can still view results afterward."
-        confirmLabel="End session"
+        title="End quiz?"
+        description="End the live quiz for all participants. You can still view results afterward."
+        confirmLabel="End Quiz"
         variant="destructive"
         onConfirm={async () => {
-          await runRest('Session ended', () => endSession.mutateAsync(room.id))
+          await runRest('Quiz ended', () => endSession.mutateAsync(room.id))
           setEndConfirm(false)
         }}
       />
@@ -634,19 +562,6 @@ export function RoomMonitorPage() {
         onConfirm={async () => {
           await runRest('Room closed', () => closeRoom.mutateAsync(room.id))
           setCloseConfirm(false)
-        }}
-      />
-
-      <ConfirmDialog
-        open={endQuizConfirm}
-        onOpenChange={setEndQuizConfirm}
-        title="End quiz?"
-        description="End the quiz for all participants now. This sends admin:end_quiz over WebSocket."
-        confirmLabel="End quiz"
-        variant="destructive"
-        onConfirm={() => {
-          runWs('admin:end_quiz', 'End quiz sent')
-          setEndQuizConfirm(false)
         }}
       />
     </div>

@@ -61,7 +61,7 @@ export function QuizPage() {
             role="status"
             className="rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/15 px-4 py-3 text-center text-sm font-medium text-[var(--accent)]"
           >
-            Quiz paused by the host
+            Quiz Paused
           </div>
         ) : null}
 

@@ -5,8 +5,9 @@ import { ChooseExistingMediaDialog } from '@/components/quiz-builder/ChooseExist
 import { Button } from '@/components/ui/button'
 import { useMedia, useMediaMutations } from '@/hooks/queries/useMedia'
 import { useQuestionMutations } from '@/hooks/queries/useQuestions'
+import { apiClient, unwrapData } from '@/lib/api-client'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
-import type { MediaCategory, MediaFile } from '@/types/api'
+import type { ApiEnvelope, MediaCategory, MediaFile } from '@/types/api'
 
 interface QuestionMediaSectionProps {
   quizId: string
@@ -33,17 +34,38 @@ export function QuestionMediaSection({
   const audioInputRef = useRef<HTMLInputElement>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const { uploadMedia, attachMedia } = useMediaMutations()
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const { attachMedia } = useMediaMutations()
   const { updateQuestion } = useQuestionMutations(quizId, sectionId)
   const attachedQuery = useMedia(mediaFileId ?? undefined, Boolean(mediaFileId))
 
   const canAttach = Boolean(questionId) && !disabledReason
 
+  const uploadFile = async (file: File, category: MediaCategory): Promise<MediaFile> => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('category', category)
+    form.append('quizId', quizId)
+    const response = await apiClient.post<ApiEnvelope<MediaFile>>('/media', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (event) => {
+        if (!event.total) return
+        setUploadProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)))
+      },
+    })
+    return unwrapData(response)
+  }
+
   const uploadAndAttach = async (file: File, category: MediaCategory) => {
     if (!questionId) return
     setBusy(true)
+    setUploadProgress(0)
+    setStatusMessage('Uploading…')
     try {
-      const media = await uploadMedia.mutateAsync({ file, category, quizId })
+      const media = await uploadFile(file, category)
+      setUploadProgress(100)
+      setStatusMessage('Attaching to question…')
       const result = await attachMedia.mutateAsync({
         mediaId: media.id,
         quizId,
@@ -51,17 +73,25 @@ export function QuestionMediaSection({
         questionId,
       })
       onAttached?.(result.mediaFileId)
+      setStatusMessage('Media attached')
       toastSuccess('Media attached')
+      await attachedQuery.refetch()
     } catch (error) {
+      setStatusMessage('Upload failed')
       toastError(error)
     } finally {
       setBusy(false)
+      setTimeout(() => {
+        setUploadProgress(null)
+        setStatusMessage(null)
+      }, 1500)
     }
   }
 
   const attachExisting = async (media: MediaFile) => {
     if (!questionId) return
     setBusy(true)
+    setStatusMessage('Attaching media…')
     try {
       const result = await attachMedia.mutateAsync({
         mediaId: media.id,
@@ -70,11 +100,15 @@ export function QuestionMediaSection({
         questionId,
       })
       onAttached?.(result.mediaFileId)
+      setStatusMessage('Media attached')
       toastSuccess('Media attached')
+      await attachedQuery.refetch()
     } catch (error) {
+      setStatusMessage('Attach failed')
       toastError(error)
     } finally {
       setBusy(false)
+      setTimeout(() => setStatusMessage(null), 1500)
     }
   }
 
@@ -111,6 +145,22 @@ export function QuestionMediaSection({
         <p className="text-xs text-[var(--muted-foreground)]">
           Save the question first to attach media.
         </p>
+      ) : null}
+
+      {uploadProgress != null ? (
+        <div className="space-y-1">
+          <div className="h-2 overflow-hidden rounded-full bg-[var(--secondary)]">
+            <div
+              className="h-full rounded-full bg-[var(--primary)] transition-all"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+          <p className="text-xs text-[var(--muted-foreground)]">
+            {statusMessage ?? 'Uploading…'} ({uploadProgress}%)
+          </p>
+        </div>
+      ) : statusMessage ? (
+        <p className="text-xs text-[var(--muted-foreground)]">{statusMessage}</p>
       ) : null}
 
       {mediaFileId && attachedQuery.data ? (
@@ -209,10 +259,16 @@ export function QuestionMediaSection({
           <AudioLines className="h-4 w-4" />
           Upload Audio
         </Button>
-        <Button type="button" variant="outline" size="sm" disabled title="Not available in v1">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled
+          title="Coming soon"
+        >
           <Video className="h-4 w-4" />
           Upload Video
-          <span className="text-[10px] text-[var(--muted-foreground)]">Not in v1</span>
+          <span className="text-[10px] text-[var(--muted-foreground)]">Coming soon</span>
         </Button>
         <Button
           type="button"

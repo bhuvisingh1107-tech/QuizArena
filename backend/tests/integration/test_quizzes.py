@@ -225,7 +225,63 @@ def test_quiz_not_found(client: TestClient, admin_token: str) -> None:
     assert response.status_code == 404
 
 
-def test_cannot_delete_in_use_quiz(
+def test_cannot_delete_quiz_with_active_room(
+    client: TestClient,
+    admin_token: str,
+    db_session: Session,
+) -> None:
+    """QUIZ_IN_USE only when a hosting room is active (Setup/Lobby/Active/…)."""
+    from app.models.enums import QuestionType
+
+    created = client.post(
+        "/api/v1/quizzes",
+        headers=_auth(admin_token),
+        json={"title": "Live Quiz"},
+    ).json()["data"]
+    quiz_id = created["id"]
+    section = client.post(
+        f"/api/v1/quizzes/{quiz_id}/sections",
+        headers=_auth(admin_token),
+        json={"name": "S1", "sortOrder": 0},
+    ).json()["data"]
+    q = client.post(
+        f"/api/v1/quizzes/{quiz_id}/sections/{section['id']}/questions",
+        headers=_auth(admin_token),
+        json={"questionType": QuestionType.TEXT.value, "promptText": "Q?"},
+    ).json()["data"]
+    client.post(
+        f"/api/v1/quizzes/{quiz_id}/sections/{section['id']}/questions/{q['id']}/options",
+        headers=_auth(admin_token),
+        json={"text": "A", "isCorrect": True, "sortOrder": 0},
+    )
+    client.post(
+        f"/api/v1/quizzes/{quiz_id}/sections/{section['id']}/questions/{q['id']}/options",
+        headers=_auth(admin_token),
+        json={"text": "B", "isCorrect": False, "sortOrder": 1},
+    )
+    client.post(f"/api/v1/quizzes/{quiz_id}/validate", headers=_auth(admin_token))
+    room = client.post(
+        "/api/v1/live-rooms",
+        headers=_auth(admin_token),
+        json={"quizId": quiz_id},
+    ).json()["data"]
+
+    blocked = client.delete(f"/api/v1/quizzes/{quiz_id}", headers=_auth(admin_token))
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "QUIZ_IN_USE"
+
+    # Complete + close the room → deletion allowed.
+    client.post(f"/api/v1/live-rooms/{room['id']}/open-lobby", headers=_auth(admin_token))
+    client.post(f"/api/v1/live-rooms/{room['id']}/start", headers=_auth(admin_token))
+    client.post(f"/api/v1/live-rooms/{room['id']}/end", headers=_auth(admin_token))
+    client.post(f"/api/v1/live-rooms/{room['id']}/close", headers=_auth(admin_token))
+
+    deleted = client.delete(f"/api/v1/quizzes/{quiz_id}", headers=_auth(admin_token))
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["data"]["status"] == "Deleted"
+
+
+def test_stale_in_use_without_active_room_is_deletable(
     client: TestClient,
     admin_token: str,
     db_session: Session,
@@ -233,7 +289,7 @@ def test_cannot_delete_in_use_quiz(
     created = client.post(
         "/api/v1/quizzes",
         headers=_auth(admin_token),
-        json={"title": "Live Quiz"},
+        json={"title": "Stale InUse"},
     ).json()["data"]
     _set_status(db_session, created["id"], QuizStatus.IN_USE)
 
@@ -241,8 +297,8 @@ def test_cannot_delete_in_use_quiz(
         f"/api/v1/quizzes/{created['id']}",
         headers=_auth(admin_token),
     )
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "QUIZ_IN_USE"
+    assert response.status_code == 200, response.text
+
 
 
 def test_cannot_edit_archived_quiz(

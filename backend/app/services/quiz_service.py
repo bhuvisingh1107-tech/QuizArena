@@ -1,5 +1,7 @@
 """Quiz CRUD business logic (API_SPEC.md §8, SYSTEM_ARCHITECTURE.md §8)."""
 
+from __future__ import annotations
+
 from uuid import UUID
 
 from sqlalchemy.orm import Session, selectinload
@@ -99,16 +101,27 @@ class QuizService:
         return quiz
 
     def delete(self, quiz_id: UUID, *, hard: bool = False) -> Quiz | None:
-        """Soft-delete (status=Deleted) or hard-delete. Blocked when InUse."""
+        """Soft-delete (status=Deleted) or hard-delete.
+
+        Blocked only when a room for this quiz is actively hosting
+        (Setup/Lobby/Active/Paused/SectionBreak). Completed/Closed rooms never block.
+        """
+        from app.repositories.live_room_repository import LiveRoomRepository
+
         quiz = self._quizzes.get_by_id(quiz_id, include_deleted=True)
         if quiz is None:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
 
-        if quiz.status == QuizStatus.IN_USE:
+        rooms = LiveRoomRepository(self._session)
+        if rooms.has_active_rooms_for_quiz(quiz.id):
             raise ConflictError(
                 "QUIZ_IN_USE",
-                "Cannot delete a quiz that is currently in use by a live room",
+                "Cannot delete a quiz that is currently in use by an active live room",
             )
+
+        # Stale InUse with only completed/closed rooms — treat as Ready for deletion.
+        if quiz.status == QuizStatus.IN_USE:
+            quiz.status = QuizStatus.READY
 
         if quiz.status == QuizStatus.DELETED and not hard:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
@@ -120,19 +133,10 @@ class QuizService:
             )
 
         if hard:
-            from sqlalchemy import select
-
-            from app.models.live_room import LiveRoom
-
-            has_rooms = self._session.scalar(
-                select(LiveRoom.id).where(LiveRoom.quiz_id == quiz.id).limit(1)
-            )
-            if has_rooms is not None:
-                raise ConflictError(
-                    "QUIZ_HAS_ROOMS",
-                    "Cannot permanently delete a quiz that still has live room history. "
-                    "Soft-delete instead, or delete closed rooms first.",
-                )
+            # Remove inactive room history so RESTRICT FK does not block permanent delete.
+            for room in rooms.list_rooms_for_quiz(quiz.id):
+                self._session.delete(room)
+            self._session.flush()
             self._quizzes.delete(quiz)
             self._session.commit()
             return None

@@ -49,6 +49,10 @@ class ExecutionState:
     is_accepting_answers: bool
 
 
+# Floor for live timers when a question has no explicit timeLimitSeconds.
+DEFAULT_LIVE_QUESTION_SECONDS = 30
+
+
 class QuizExecutionService:
     """Control quiz progression over the immutable session snapshot."""
 
@@ -88,6 +92,31 @@ class QuizExecutionService:
         if not questions:
             raise ValidationError("SNAPSHOT_EMPTY", "Session snapshot has no questions")
 
+        question = questions[0]
+        section = self._section_for(room, question)
+
+        # Idempotent: Start Quiz may already have opened Q0.
+        if (
+            room.current_question_index == 0
+            and question.state == SessionQuestionState.OPEN
+            and question.opened_at is not None
+        ):
+            return ExecutionResult(
+                room=room,
+                events=[
+                    BroadcastEvent(
+                        type="section:started",
+                        payload=self._section_payload(room, section),
+                    ),
+                    BroadcastEvent(
+                        type="question:started",
+                        payload=self._question_payload(
+                            room, question, section, include_correct=False
+                        ),
+                    ),
+                ],
+            )
+
         if any(
             q.state
             in {
@@ -106,10 +135,8 @@ class QuizExecutionService:
             )
 
         room.current_question_index = 0
-        question = questions[0]
         question.state = question_fsm.transition(question.state, "present")
         question.opened_at = datetime.now(UTC)
-        section = self._section_for(room, question)
         events = [
             BroadcastEvent(
                 type="section:started",
@@ -384,6 +411,7 @@ class QuizExecutionService:
     def _complete_quiz(self, room: LiveRoom) -> ExecutionResult:
         room.state = room_fsm.transition(room.state, "end")
         room.completed_at = datetime.now(UTC)
+        from app.models.enums import QuizStatus
         from app.services.display_stats_service import DisplayStatsService
         from app.services.leaderboard_service import LeaderboardService
 
@@ -403,7 +431,18 @@ class QuizExecutionService:
                 payload=board,
             ),
         ]
+        # Release quiz for editing/deletion once no other hosting rooms remain.
+        quiz = self._rooms.get_quiz_for_snapshot(room.quiz_id)
+        if quiz is not None and quiz.status == QuizStatus.IN_USE:
+            if not self._rooms.has_active_rooms_for_quiz(room.quiz_id, exclude_room_id=room.id):
+                quiz.status = QuizStatus.READY
         room = self._commit(room)
+        try:
+            from app.services.timer_service import auto_progression
+
+            auto_progression.cancel_room(room.id)
+        except Exception:
+            pass
         return ExecutionResult(room=room, events=events)
 
     def _require_room(self, room_id: UUID) -> LiveRoom:
@@ -502,7 +541,9 @@ class QuizExecutionService:
                 "promptText": question.prompt_text,
                 "mediaFileId": str(question.media_file_id) if question.media_file_id else None,
                 "basePoints": question.base_points,
-                "timeLimitSeconds": question.time_limit_seconds,
+                "timeLimitSeconds": int(
+                    question.time_limit_seconds or DEFAULT_LIVE_QUESTION_SECONDS
+                ),
                 "timerEndsAt": self._timer_ends_at_ts(room, question),
                 "timerPaused": room.state == RoomState.PAUSED,
                 "allowMultipleCorrect": question.allow_multiple_correct,
@@ -533,8 +574,11 @@ class QuizExecutionService:
 
     @staticmethod
     def _timer_ends_at_ts(room: LiveRoom, question: SessionQuestion) -> float | None:
-        if question.opened_at is None or not question.time_limit_seconds:
+        if question.opened_at is None:
             return None
+        limit = int(question.time_limit_seconds or DEFAULT_LIVE_QUESTION_SECONDS)
+        if limit <= 0:
+            limit = DEFAULT_LIVE_QUESTION_SECONDS
         opened_at = question.opened_at
         if opened_at.tzinfo is None:
             opened_at = opened_at.replace(tzinfo=UTC)
@@ -547,11 +591,7 @@ class QuizExecutionService:
                 0,
                 int((datetime.now(UTC) - paused_at).total_seconds() * 1000),
             )
-        return (
-            opened_at.timestamp()
-            + int(question.time_limit_seconds)
-            + (pause_ms / 1000.0)
-        )
+        return opened_at.timestamp() + limit + (pause_ms / 1000.0)
 
     @staticmethod
     def _option_payload(option: SessionOption, *, include_correct: bool) -> dict[str, Any]:

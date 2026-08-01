@@ -184,6 +184,12 @@ class LiveRoomService:
         from app.core.audit import audit
 
         audit("room.pause", room_id=str(room_id))
+        try:
+            from app.services.timer_service import auto_progression
+
+            auto_progression.cancel_room(room_id)
+        except Exception:
+            pass
         return self.get(room_id)
 
     def resume(self, room_id: UUID) -> LiveRoom:
@@ -201,15 +207,55 @@ class LiveRoomService:
         from app.core.audit import audit
 
         audit("room.resume", room_id=str(room_id))
-        return self.get(room_id)
+        room = self.get(room_id)
+        try:
+            from app.models.enums import SessionQuestionState
+            from app.services.quiz_execution_service import QuizExecutionService
+            from app.services.timer_service import auto_progression
+
+            execution = QuizExecutionService(self._session).get_execution_state(room_id)
+            if execution.question is None:
+                return room
+            if execution.question.state == SessionQuestionState.OPEN:
+                ends = QuizExecutionService._timer_ends_at_ts(room, execution.question)
+                auto_progression.schedule_question(
+                    room_id,
+                    ends_at_epoch=ends,
+                    question_id=execution.question.id,
+                )
+            else:
+                # Resume close→reveal→next if paused mid-pipeline.
+                auto_progression.resume_from_question_state(room_id)
+        except Exception:
+            pass
+        return room
+
+    def _release_quiz_if_idle(
+        self,
+        quiz_id: UUID,
+        *,
+        exclude_room_id: UUID | None = None,
+    ) -> None:
+        if self._rooms.has_active_rooms_for_quiz(quiz_id, exclude_room_id=exclude_room_id):
+            return
+        quiz = self._rooms.get_quiz_for_snapshot(quiz_id)
+        if quiz is not None and quiz.status == QuizStatus.IN_USE:
+            quiz.status = QuizStatus.READY
 
     def end(self, room_id: UUID) -> LiveRoom:
         """End session → Completed (API_SPEC end / architecture endSession)."""
         room = self.get(room_id)
         room.state = room_fsm.transition(room.state, "end")
         room.completed_at = datetime.now(UTC)
+        self._release_quiz_if_idle(room.quiz_id, exclude_room_id=room.id)
         self._rooms.flush()
         self._session.commit()
+        try:
+            from app.services.timer_service import auto_progression
+
+            auto_progression.cancel_room(room_id)
+        except Exception:
+            pass
         return self.get(room_id)
 
     def close(self, room_id: UUID) -> LiveRoom:
@@ -218,14 +264,18 @@ class LiveRoomService:
         room.codes_expired = True
         room.closed_at = datetime.now(UTC)
         room.lobby_sub_state = None
-        quiz = self._rooms.get_quiz_for_snapshot(room.quiz_id)
-        if quiz is not None and quiz.status == QuizStatus.IN_USE:
-            quiz.status = QuizStatus.READY
+        self._release_quiz_if_idle(room.quiz_id, exclude_room_id=room.id)
         self._rooms.flush()
         self._session.commit()
         from app.core.audit import audit
 
         audit("room.close", room_id=str(room_id), state="Closed")
+        try:
+            from app.services.timer_service import auto_progression
+
+            auto_progression.cancel_room(room_id)
+        except Exception:
+            pass
         return self.get(room_id)
 
     def delete(self, room_id: UUID) -> None:

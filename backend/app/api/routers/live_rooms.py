@@ -226,15 +226,34 @@ def toggle_lobby(
     "/{room_id}/start",
     response_model=DataResponse[LiveRoomResponseData],
     status_code=status.HTTP_200_OK,
-    summary="Start session (Lobby → Active)",
+    summary="Start session (Lobby → Active) and open the first question",
 )
-def start_session(
+async def start_session(
     room_id: UUID,
     _: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
+    db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
     room = service.start(room_id)
+    await _broadcast_lifecycle(room, ServerEventType.ROOM_SESSION_STARTED, db)
+
+    # Open first question immediately — host only needs Start Quiz.
+    from app.core.exceptions import QuizArenaError
+    from app.api.websocket.broadcast_helpers import (
+        broadcast_execution_events,
+        schedule_after_question_started,
+    )
+
+    try:
+        result = QuizExecutionService(db).start_first_question(room_id)
+        await broadcast_execution_events(room_id, result.events)
+        schedule_after_question_started(room_id, result.events)
+        room = result.room
+    except QuizArenaError:
+        # Room is Active; host can recover via admin:start_question if needed.
+        pass
+
     return _envelope(_room_response(room, service), request_id)
 
 
@@ -280,13 +299,18 @@ async def resume_session(
     status_code=status.HTTP_200_OK,
     summary="End session (Active/Paused → Completed)",
 )
-def end_session(
+async def end_session(
     room_id: UUID,
     _: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
+    db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
+    from app.services.timer_service import auto_progression
+
+    auto_progression.cancel_room(room_id)
     room = service.end(room_id)
+    await _broadcast_lifecycle(room, ServerEventType.ROOM_COMPLETED, db)
     return _envelope(_room_response(room, service), request_id)
 
 

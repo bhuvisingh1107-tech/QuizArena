@@ -234,6 +234,36 @@ describe('participantLiveReducer', () => {
     expect(next.yourRank).toBe(1)
     expect(next.showLeaderboardInterstitial).toBe(true)
   })
+
+  it('resync mid-reveal reads nested question.state for correctness', () => {
+    const next = participantLiveReducer(initialParticipantLiveState, {
+      type: 'EVENT',
+      message: {
+        type: 'resync',
+        timestamp: new Date().toISOString(),
+        payload: {
+          room: { id: 'r1', roomCode: 'ABC123', state: 'Active', quizTitle: 'Quiz' },
+          question: {
+            questionIndex: 0,
+            question: {
+              id: 'q1',
+              state: 'Revealed',
+              promptText: 'Capital?',
+              explanation: 'Paris is the capital',
+              options: [
+                { id: 'a', text: 'Paris', sortOrder: 0, isCorrect: true },
+                { id: 'b', text: 'Lyon', sortOrder: 1, isCorrect: false },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    expect(next.question?.state).toBe('Revealed')
+    expect(next.question?.explanation).toBe('Paris is the capital')
+    expect(next.options.find((o) => o.id === 'a')?.isCorrect).toBe(true)
+  })
 })
 
 describe('reconnect backoff helpers', () => {

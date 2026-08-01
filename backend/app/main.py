@@ -17,17 +17,21 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown hooks."""
+    from app.services.timer_service import auto_progression
+
     settings = get_settings()
     configure_logging(settings)
     logger.info(
         "Starting QuizArena API",
         extra={"app_env": settings.app_env, "debug": settings.debug},
     )
+    await auto_progression.start()
     if settings.app_env != "test":
         await heartbeat_monitor.start()
     try:
         yield
     finally:
+        await auto_progression.stop()
         if settings.app_env != "test":
             await heartbeat_monitor.stop()
         logger.info("Shutting down QuizArena API")

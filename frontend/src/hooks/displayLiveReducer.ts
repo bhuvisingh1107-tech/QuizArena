@@ -603,7 +603,10 @@ export function displayLiveReducer(
           let question: DisplayLiveQuestion | null = state.question
           if (data.question && typeof data.question === 'object') {
             const qData = asRecord(data.question)
-            const qState = qData.state as SessionQuestionState | undefined
+            const nested = qData.question ? asRecord(qData.question) : qData
+            const qState =
+              (nested.state as SessionQuestionState | undefined) ??
+              (qData.state as SessionQuestionState | undefined)
             const reveal = qState === 'Revealed' || qState === 'Scored'
             const mapped = mapQuestion(
               { ...data, question: data.question },

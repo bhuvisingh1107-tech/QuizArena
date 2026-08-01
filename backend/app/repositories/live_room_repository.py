@@ -108,6 +108,33 @@ class LiveRoomRepository:
         stmt = select(LiveRoom.id).where(LiveRoom.state.in_(hosting)).limit(1)
         return self._session.scalar(stmt) is not None
 
+    def has_active_rooms_for_quiz(
+        self,
+        quiz_id: UUID,
+        *,
+        exclude_room_id: UUID | None = None,
+    ) -> bool:
+        """True if this quiz has a room that is still running (not Completed/Closed)."""
+        hosting = [
+            RoomState.SETUP,
+            RoomState.LOBBY,
+            RoomState.ACTIVE,
+            RoomState.PAUSED,
+            RoomState.SECTION_BREAK,
+        ]
+        stmt = select(LiveRoom.id).where(
+            LiveRoom.quiz_id == quiz_id,
+            LiveRoom.state.in_(hosting),
+        )
+        if exclude_room_id is not None:
+            stmt = stmt.where(LiveRoom.id != exclude_room_id)
+        stmt = stmt.limit(1)
+        return self._session.scalar(stmt) is not None
+
+    def list_rooms_for_quiz(self, quiz_id: UUID) -> list[LiveRoom]:
+        stmt = select(LiveRoom).where(LiveRoom.quiz_id == quiz_id)
+        return list(self._session.scalars(stmt).all())
+
     def count_hosting_rooms(self) -> int:
         hosting = [
             RoomState.SETUP,
