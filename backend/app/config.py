@@ -69,7 +69,23 @@ class Settings(BaseSettings):
     @classmethod
     def parse_csv_list(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
+            items = [item.strip() for item in value.split(",") if item.strip()]
+        else:
+            items = list(value)
+        # Origins are exact-match; strip trailing slashes to avoid silent CORS failures.
+        normalized: list[str] = []
+        for item in items:
+            if item == "*":
+                normalized.append(item)
+            else:
+                normalized.append(item.rstrip("/"))
+        return normalized
+
+    @field_validator("public_app_url", mode="before")
+    @classmethod
+    def normalize_public_app_url(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().rstrip("/")
         return value
 
     @field_validator("database_url", mode="before")
@@ -99,6 +115,17 @@ class Settings(BaseSettings):
                 )
             if "*" in self.cors_origins:
                 raise ValueError("CORS_ORIGINS must not include '*' in production")
+            if not self.public_app_url or self.public_app_url.startswith(
+                ("http://localhost", "http://127.0.0.1")
+            ):
+                raise ValueError(
+                    "PUBLIC_APP_URL must be set to the production SPA origin "
+                    "when APP_ENV=production",
+                )
+            if self.trusted_hosts == ["*"] or not self.trusted_hosts:
+                raise ValueError(
+                    "TRUSTED_HOSTS must be set to the API hostname(s) when APP_ENV=production",
+                )
         return self
 
     @property

@@ -33,7 +33,36 @@ def test_production_accepts_postgres() -> None:
         debug=False,
         jwt_secret_key="a-strong-production-secret-key",
         database_url="postgresql://u:p@db.example/quizarena?sslmode=require",
-        cors_origins=["https://app.vercel.app"],
+        cors_origins=["https://app.vercel.app/"],
         trusted_hosts=["api.example.onrender.com"],
+        public_app_url="https://app.vercel.app/",
     )
     assert settings.is_postgres is True
+    assert settings.cors_origins == ["https://app.vercel.app"]
+    assert settings.public_app_url == "https://app.vercel.app"
+
+
+def test_production_requires_public_app_url() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env="production",
+            debug=False,
+            jwt_secret_key="a-strong-production-secret-key",
+            database_url="postgresql://u:p@db.example/quizarena?sslmode=require",
+            cors_origins=["https://app.vercel.app"],
+            trusted_hosts=["api.example.onrender.com"],
+            public_app_url="http://localhost:5173",
+        )
+
+
+def test_production_requires_trusted_hosts() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env="production",
+            debug=False,
+            jwt_secret_key="a-strong-production-secret-key",
+            database_url="postgresql://u:p@db.example/quizarena?sslmode=require",
+            cors_origins=["https://app.vercel.app"],
+            trusted_hosts=["*"],
+            public_app_url="https://app.vercel.app",
+        )

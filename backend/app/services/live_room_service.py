@@ -27,7 +27,7 @@ from app.services.state_machine import room_fsm
 _ROOM_CODE_ALPHABET = string.ascii_uppercase + string.digits
 _ROOM_CODE_LENGTH = 6
 _MAX_CODE_ATTEMPTS = 32
-_PUBLIC_APP_URL = "https://app.quizarena.com"
+_PUBLIC_APP_URL_FALLBACK = "http://localhost:5173"
 
 
 class LiveRoomService:
@@ -37,9 +37,12 @@ class LiveRoomService:
         self._session = session
         self._settings = settings
         self._rooms = LiveRoomRepository(session)
-        self._app_url = _PUBLIC_APP_URL
-        if settings is not None and hasattr(settings, "public_app_url"):
-            self._app_url = getattr(settings, "public_app_url") or _PUBLIC_APP_URL
+        if settings is not None and getattr(settings, "public_app_url", None):
+            self._app_url = str(settings.public_app_url)
+        else:
+            from app.config import get_settings
+
+            self._app_url = get_settings().public_app_url or _PUBLIC_APP_URL_FALLBACK
 
     # ── URLs ──────────────────────────────────────────────────────────────
 
