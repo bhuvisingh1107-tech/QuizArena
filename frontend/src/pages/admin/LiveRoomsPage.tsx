@@ -2,10 +2,11 @@ import { MoreHorizontal, Plus, Radio } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
-import { EmptyState } from '@/components/shared/EmptyState'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { DataTable } from '@/components/shared/DataTable'
 import { ErrorState } from '@/components/shared/ErrorState'
-import { LoadingState } from '@/components/shared/LoadingState'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { PaginationControls } from '@/components/shared/PaginationControls'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
 import {
@@ -30,19 +31,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { TableCell, TableHead, TableRow } from '@/components/ui/table'
 import { useLiveRoomMutations } from '@/hooks/queries/useLiveRoomMutations'
 import { useLiveRooms } from '@/hooks/queries/useLiveRooms'
 import { useQuizzes } from '@/hooks/queries/useQuizzes'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
-import type { RoomState } from '@/types/api'
+import type { LiveRoom, RoomState } from '@/types/api'
 
 const PAGE_SIZE = 20
 const STATE_OPTIONS: Array<RoomState | 'all'> = [
@@ -56,12 +50,38 @@ const STATE_OPTIONS: Array<RoomState | 'all'> = [
   'Closed',
 ]
 
+function canRest(
+  state: RoomState,
+  action: 'openLobby' | 'toggle' | 'start' | 'pause' | 'resume' | 'end' | 'close',
+): boolean {
+  switch (action) {
+    case 'openLobby':
+      return state === 'Setup'
+    case 'toggle':
+      return state === 'Lobby'
+    case 'start':
+      return state === 'Lobby'
+    case 'pause':
+      return state === 'Active'
+    case 'resume':
+      return state === 'Paused'
+    case 'end':
+      return state === 'Active' || state === 'Paused' || state === 'SectionBreak'
+    case 'close':
+      return state === 'Lobby' || state === 'Completed'
+    default:
+      return false
+  }
+}
+
 export function LiveRoomsPage() {
   const navigate = useNavigate()
   const [state, setState] = useState<RoomState | 'all'>('all')
   const [offset, setOffset] = useState(0)
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedQuizId, setSelectedQuizId] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<LiveRoom | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const roomsQuery = useLiveRooms({
     offset,
@@ -87,6 +107,7 @@ export function LiveRoomsPage() {
       const room = await createRoom.mutateAsync({ quizId: selectedQuizId })
       toastSuccess('Live room created')
       setCreateOpen(false)
+      setSelectedQuizId('')
       navigate(`/admin/live-rooms/${room.id}`)
     } catch (error) {
       toastError(error)
@@ -127,7 +148,6 @@ export function LiveRoomsPage() {
         </Select>
       </div>
 
-      {roomsQuery.isLoading ? <LoadingState label="Loading rooms…" /> : null}
       {roomsQuery.isError ? (
         <ErrorState
           message={
@@ -137,136 +157,118 @@ export function LiveRoomsPage() {
           }
           onRetry={() => void roomsQuery.refetch()}
         />
-      ) : null}
-
-      {!roomsQuery.isLoading && !roomsQuery.isError && items.length === 0 ? (
-        <EmptyState
-          title="No live rooms"
-          description="Create a room from a Ready quiz to start hosting."
-          action={
-            <Button onClick={() => setCreateOpen(true)}>
-              <Radio className="h-4 w-4" />
-              Create live room
-            </Button>
-          }
-        />
-      ) : null}
-
-      {!roomsQuery.isLoading && !roomsQuery.isError && items.length > 0 ? (
+      ) : (
         <>
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--card)]/60">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Quiz</TableHead>
-                  <TableHead>Code</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="w-12" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((room) => (
-                  <TableRow key={room.id}>
-                    <TableCell className="font-medium text-[#f0f4fa]">
-                      <Link
-                        to={`/admin/live-rooms/${room.id}`}
-                        className="hover:text-[var(--primary)]"
+          <DataTable
+            loading={roomsQuery.isLoading}
+            loadingLabel="Loading rooms…"
+            empty={!roomsQuery.isLoading && items.length === 0}
+            emptyTitle="No live rooms"
+            emptyDescription="Create a room from a Ready quiz to start hosting."
+            emptyAction={
+              <Button onClick={() => setCreateOpen(true)}>
+                <Radio className="h-4 w-4" />
+                Create live room
+              </Button>
+            }
+            columns={
+              <>
+                <TableHead>Quiz</TableHead>
+                <TableHead>Code</TableHead>
+                <TableHead>State</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="w-12" />
+              </>
+            }
+          >
+            {items.map((room) => (
+              <TableRow key={room.id}>
+                <TableCell className="font-medium text-[var(--heading)]">
+                  <Link
+                    to={`/admin/live-rooms/${room.id}`}
+                    className="hover:text-[var(--primary)]"
+                  >
+                    {room.quizTitleSnapshot}
+                  </Link>
+                </TableCell>
+                <TableCell className="font-mono text-[var(--primary)]">{room.roomCode}</TableCell>
+                <TableCell>
+                  <StatusBadge state={room.state} />
+                </TableCell>
+                <TableCell className="text-[var(--muted-foreground)]">
+                  {new Date(room.createdAt).toLocaleString()}
+                </TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Room actions">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => navigate(`/admin/live-rooms/${room.id}`)}
                       >
-                        {room.quizTitleSnapshot}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="font-mono text-[var(--primary)]">{room.roomCode}</TableCell>
-                    <TableCell>
-                      <StatusBadge state={room.state} />
-                    </TableCell>
-                    <TableCell className="text-[var(--muted-foreground)]">
-                      {new Date(room.createdAt).toLocaleString()}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" aria-label="Room actions">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        Open monitor
+                      </DropdownMenuItem>
+                      {(room.state === 'Completed' || room.state === 'Closed') && (
+                        <DropdownMenuItem
+                          onClick={() => navigate(`/admin/results/${room.id}`)}
+                        >
+                          View results
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        disabled={!canRest(room.state, 'openLobby')}
+                        onClick={() =>
+                          void openLobby
+                            .mutateAsync(room.id)
+                            .then(() => toastSuccess('Lobby opened'))
+                            .catch(toastError)
+                        }
+                      >
+                        Open lobby
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!canRest(room.state, 'start')}
+                        onClick={() =>
+                          void startSession
+                            .mutateAsync(room.id)
+                            .then(() => toastSuccess('Session started'))
+                            .catch(toastError)
+                        }
+                      >
+                        Start
+                      </DropdownMenuItem>
+                      {(room.state === 'Setup' || room.state === 'Closed') && (
+                        <>
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem
-                            onClick={() => navigate(`/admin/live-rooms/${room.id}`)}
+                            className="text-[var(--destructive)]"
+                            onClick={() => setDeleteTarget(room)}
                           >
-                            Open monitor
+                            Delete
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() =>
-                              void openLobby
-                                .mutateAsync(room.id)
-                                .then(() => toastSuccess('Lobby opened'))
-                                .catch(toastError)
-                            }
-                          >
-                            Open lobby
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() =>
-                              void startSession
-                                .mutateAsync(room.id)
-                                .then(() => toastSuccess('Session started'))
-                                .catch(toastError)
-                            }
-                          >
-                            Start
-                          </DropdownMenuItem>
-                          {(room.state === 'Setup' || room.state === 'Closed') && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-[var(--destructive)]"
-                                onClick={() => {
-                                  if (!window.confirm('Delete this room?')) return
-                                  void deleteRoom
-                                    .mutateAsync(room.id)
-                                    .then(() => toastSuccess('Room deleted'))
-                                    .catch(toastError)
-                                }}
-                              >
-                                Delete
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
 
-          <div className="mt-4 flex items-center justify-between text-sm text-[var(--muted-foreground)]">
-            <p>
-              Showing {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={offset === 0}
-                onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={offset + PAGE_SIZE >= total}
-                onClick={() => setOffset((o) => o + PAGE_SIZE)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          {!roomsQuery.isLoading && items.length > 0 ? (
+            <PaginationControls
+              offset={offset}
+              limit={PAGE_SIZE}
+              total={total}
+              onOffsetChange={setOffset}
+              isFetching={roomsQuery.isFetching}
+            />
+          ) : null}
         </>
-      ) : null}
+      )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
@@ -295,12 +297,44 @@ export function LiveRoomsPage() {
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => void create()} disabled={!selectedQuizId}>
-              Create
+            <Button
+              onClick={() => void create()}
+              disabled={!selectedQuizId || createRoom.isPending}
+            >
+              {createRoom.isPending ? 'Creating…' : 'Create'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null)
+        }}
+        title="Delete live room?"
+        description={
+          deleteTarget
+            ? `Delete room ${deleteTarget.roomCode} (${deleteTarget.quizTitleSnapshot})?`
+            : undefined
+        }
+        confirmLabel="Delete"
+        variant="destructive"
+        loading={deleting}
+        onConfirm={async () => {
+          if (!deleteTarget) return
+          setDeleting(true)
+          try {
+            await deleteRoom.mutateAsync(deleteTarget.id)
+            toastSuccess('Room deleted')
+            setDeleteTarget(null)
+          } catch (error) {
+            toastError(error)
+          } finally {
+            setDeleting(false)
+          }
+        }}
+      />
     </div>
   )
 }

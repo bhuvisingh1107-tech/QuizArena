@@ -1,9 +1,10 @@
 """Session question snapshot (DATABASE_SCHEMA.md §7.3)."""
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
@@ -67,6 +68,10 @@ class SessionQuestion(Base, CreatedAtMixin):
         nullable=False,
         default=SessionQuestionState.PENDING,
         server_default=SessionQuestionState.PENDING.value,
+    )
+    opened_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     live_room: Mapped["LiveRoom"] = relationship("LiveRoom", back_populates="session_questions")

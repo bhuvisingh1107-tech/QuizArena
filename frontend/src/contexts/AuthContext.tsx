@@ -83,6 +83,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Mid-session JWT expiry: clear auth so REST and WS stop acting as logged-in.
+  useEffect(() => {
+    if (!admin) return
+    const expiresAt = getExpiresAt()
+    if (!expiresAt) return
+    const ms = new Date(expiresAt).getTime() - Date.now()
+    if (ms <= 0) {
+      clearToken()
+      setAdmin(null)
+      return
+    }
+    const id = window.setTimeout(() => {
+      clearToken()
+      setAdmin(null)
+    }, ms)
+    return () => window.clearTimeout(id)
+  }, [admin])
+
   const login = useCallback(async (credentials: LoginRequest) => {
     const result = await apiPost<LoginResponse>('/admin/login', credentials)
     setToken(result.accessToken)

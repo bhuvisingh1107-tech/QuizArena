@@ -123,6 +123,117 @@ describe('participantLiveReducer', () => {
     })
     expect(next).toBe(state)
   })
+
+  it('handles score:personal and participant:count', () => {
+    const withSelf = {
+      ...initialParticipantLiveState,
+      self: {
+        id: 'p1',
+        displayName: 'Alex',
+        totalScore: 10,
+        streak: 1,
+      },
+      cumulativeTimeBonus: 5,
+      cumulativeStreakBonus: 2,
+    }
+
+    const scored = participantLiveReducer(withSelf, {
+      type: 'EVENT',
+      message: {
+        type: 'score:personal',
+        timestamp: new Date().toISOString(),
+        payload: {
+          questionId: 'q1',
+          questionIndex: 0,
+          isCorrect: true,
+          isUnanswered: false,
+          basePoints: 10,
+          timeBonus: 3,
+          streakBonus: 2,
+          pointsEarned: 15,
+          totalScore: 25,
+          streak: 2,
+        },
+      },
+    })
+
+    expect(scored.lastFeedback?.pointsEarned).toBe(15)
+    expect(scored.yourScore).toBe(25)
+    expect(scored.cumulativeTimeBonus).toBe(8)
+    expect(scored.cumulativeStreakBonus).toBe(4)
+
+    const counted = participantLiveReducer(initialParticipantLiveState, {
+      type: 'EVENT',
+      message: {
+        type: 'participant:count',
+        timestamp: new Date().toISOString(),
+        payload: { participantCount: 12 },
+      },
+    })
+    expect(counted.participantCount).toBe(12)
+  })
+
+  it('tracks previous ranks on leaderboard:updated', () => {
+    const prior = {
+      ...initialParticipantLiveState,
+      self: {
+        id: 'p1',
+        displayName: 'Alex',
+        totalScore: 20,
+        streak: 1,
+      },
+      leaderboard: [
+        {
+          rank: 2,
+          participantId: 'p1',
+          displayName: 'Alex',
+          score: 20,
+          streak: 1,
+        },
+      ],
+      question: {
+        id: 'q1',
+        index: 0,
+        state: 'Scored' as const,
+        options: [],
+      },
+      lastFeedback: {
+        questionId: 'q1',
+        questionIndex: 0,
+        isCorrect: true,
+        isUnanswered: false,
+        basePoints: 10,
+        timeBonus: 0,
+        streakBonus: 0,
+        pointsEarned: 10,
+        totalScore: 20,
+        streak: 1,
+      },
+    }
+
+    const next = participantLiveReducer(prior, {
+      type: 'EVENT',
+      message: {
+        type: 'leaderboard:updated',
+        timestamp: new Date().toISOString(),
+        payload: {
+          entries: [
+            {
+              rank: 1,
+              participantId: 'p1',
+              displayName: 'Alex',
+              score: 30,
+              streak: 2,
+            },
+          ],
+        },
+      },
+    })
+
+    expect(next.previousLeaderboardRanks.p1).toBe(2)
+    expect(next.yourRank).toBe(1)
+    expect(next.showLeaderboardInterstitial).toBe(true)
+  })
 })
 
 describe('reconnect backoff helpers', () => {

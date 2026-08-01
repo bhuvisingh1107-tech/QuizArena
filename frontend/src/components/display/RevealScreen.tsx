@@ -1,29 +1,43 @@
-import type { DisplayLiveQuestion } from '@/hooks/displayLiveReducer'
-import type { LeaderboardEntry } from '@/types/api'
+import { DisplayMedia } from '@/components/display/DisplayMedia'
+import type {
+  DisplayLiveQuestion,
+  DisplayOptionDistribution,
+} from '@/hooks/displayLiveReducer'
 import { cn } from '@/lib/utils'
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 interface RevealScreenProps {
   question: DisplayLiveQuestion
-  leaderboard?: LeaderboardEntry[]
+  secretToken: string
+  optionDistribution?: DisplayOptionDistribution[]
+  explanation?: string | null
+  accuracyPercent?: number | null
+  answeredCount?: number | null
   className?: string
 }
 
 export function RevealScreen({
   question,
-  leaderboard = [],
+  secretToken,
+  optionDistribution = [],
+  explanation,
+  accuracyPercent,
+  answeredCount,
   className,
 }: RevealScreenProps) {
   const sorted = [...question.options].sort((a, b) => a.sortOrder - b.sortOrder)
   const qNumber = question.index + 1
   const total =
     typeof question.totalQuestions === 'number' ? question.totalQuestions : null
-  const top = leaderboard.slice(0, 5)
+
+  const distributionByOption = new Map(
+    optionDistribution.map((row) => [row.optionId, row]),
+  )
 
   return (
     <section
-      className={cn('flex flex-1 flex-col gap-6 lg:gap-8', className)}
+      className={cn('flex flex-1 flex-col gap-5 lg:gap-7', className)}
       aria-label="Answer reveal"
     >
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -38,22 +52,30 @@ export function RevealScreen({
             </p>
           ) : null}
         </div>
-        <p className="rounded-md border border-[var(--color-success)]/40 bg-[var(--color-success)]/15 px-4 py-2 text-sm font-medium text-[var(--color-success)]">
-          Correct answers highlighted
-        </p>
+        {accuracyPercent != null ? (
+          <p
+            className="rounded-md border border-[var(--color-success)]/40 bg-[var(--color-success)]/15 px-4 py-2 text-sm font-medium text-[var(--color-success)] lg:text-base"
+            data-testid="accuracy-badge"
+          >
+            {accuracyPercent}% correct
+            {answeredCount != null ? ` · ${answeredCount} answered` : ''}
+          </p>
+        ) : null}
       </div>
 
-      <h1 className="max-w-6xl font-display text-3xl font-extrabold leading-tight text-[#f0f4fa] sm:text-4xl lg:text-5xl">
+      <h1
+        className="max-w-6xl font-display font-extrabold leading-tight text-[#f0f4fa]"
+        style={{ fontSize: 'clamp(1.75rem, 4vw, 3.25rem)' }}
+      >
         {question.promptText || '…'}
       </h1>
 
       {question.mediaFileId ? (
-        <div
-          className="flex min-h-24 items-center justify-center rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)]/50 px-6 py-8"
-          data-testid="media-placeholder"
-        >
-          <p className="text-sm text-[var(--muted-foreground)]">Media prompt available on host display</p>
-        </div>
+        <DisplayMedia
+          mediaFileId={question.mediaFileId}
+          questionType={question.questionType}
+          secretToken={secretToken}
+        />
       ) : null}
 
       <ul className="grid gap-3 sm:grid-cols-2 lg:gap-4" role="list">
@@ -61,74 +83,95 @@ export function RevealScreen({
           const letter = LETTERS[index] ?? String(index + 1)
           const isCorrect = option.isCorrect === true
           const isIncorrect = option.isCorrect === false
+          const stats = distributionByOption.get(option.id)
+          const percent = stats?.percent ?? 0
+
           return (
             <li
               key={option.id}
               data-testid={`reveal-option-${letter}`}
               data-correct={isCorrect ? 'true' : isIncorrect ? 'false' : undefined}
               className={cn(
-                'flex min-h-20 items-start gap-4 rounded-2xl border px-5 py-5 transition-colors lg:min-h-24 lg:px-6 lg:py-6',
+                'flex flex-col gap-3 rounded-2xl border px-5 py-5 lg:px-6 lg:py-6',
                 isCorrect &&
                   'border-[var(--color-cyan-mint)]/70 bg-[var(--color-cyan-mint)]/20 shadow-[0_0_24px_rgba(45,212,191,0.12)]',
                 isIncorrect &&
-                  'border-[var(--destructive)]/35 bg-[var(--destructive)]/10 opacity-70',
+                  'border-[var(--destructive)]/35 bg-[var(--destructive)]/10 opacity-80',
                 !isCorrect &&
                   !isIncorrect &&
                   'border-[var(--border)] bg-[var(--card)]/80',
               )}
             >
-              <span
-                className={cn(
-                  'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl font-display text-xl font-bold lg:h-14 lg:w-14 lg:text-2xl',
-                  isCorrect &&
-                    'bg-[var(--color-cyan-mint)] text-[var(--color-ink)]',
-                  isIncorrect && 'bg-[var(--destructive)]/30 text-[var(--destructive)]',
-                  !isCorrect &&
-                    !isIncorrect &&
-                    'bg-[var(--secondary)] text-[var(--muted-foreground)]',
-                )}
-              >
-                {letter}
-              </span>
-              <span className="flex flex-1 flex-col gap-1 pt-2">
-                <span className="font-sans text-xl leading-snug text-[#f0f4fa] lg:text-2xl">
-                  {option.text}
+              <div className="flex items-start gap-4">
+                <span
+                  className={cn(
+                    'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl font-display text-xl font-bold lg:h-14 lg:w-14 lg:text-2xl',
+                    isCorrect &&
+                      'bg-[var(--color-cyan-mint)] text-[var(--color-ink)]',
+                    isIncorrect && 'bg-[var(--destructive)]/30 text-[var(--destructive)]',
+                    !isCorrect &&
+                      !isIncorrect &&
+                      'bg-[var(--secondary)] text-[var(--muted-foreground)]',
+                  )}
+                >
+                  {letter}
                 </span>
-                {isCorrect ? (
+                <span className="flex flex-1 flex-col gap-1 pt-2">
                   <span
-                    className="text-sm font-medium uppercase tracking-wide text-[var(--color-cyan-mint)]"
-                    data-testid="correct-marker"
+                    className="font-sans leading-snug text-[#f0f4fa]"
+                    style={{ fontSize: 'clamp(1.125rem, 2vw, 1.5rem)' }}
                   >
-                    Correct
+                    {option.text}
+                  </span>
+                  {isCorrect ? (
+                    <span
+                      className="text-sm font-medium uppercase tracking-wide text-[var(--color-cyan-mint)]"
+                      data-testid="correct-marker"
+                    >
+                      Correct
+                    </span>
+                  ) : null}
+                </span>
+                {stats ? (
+                  <span className="shrink-0 font-display text-xl font-bold tabular-nums text-[var(--accent)] lg:text-2xl">
+                    {percent}%
                   </span>
                 ) : null}
-              </span>
+              </div>
+
+              {stats ? (
+                <div
+                  className="h-3 overflow-hidden rounded-full bg-[var(--secondary)]"
+                  data-testid={`reveal-bar-${letter}`}
+                >
+                  <div
+                    className={cn(
+                      'reveal-bar-fill h-full rounded-full transition-all duration-700 ease-out',
+                      isCorrect ? 'bg-[var(--color-cyan-mint)]' : 'bg-[var(--primary)]/70',
+                    )}
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              ) : null}
             </li>
           )
         })}
       </ul>
 
-      {top.length > 0 ? (
-        <aside className="mt-auto rounded-2xl border border-[var(--border)] bg-[var(--card)]/60 px-5 py-4">
-          <p className="mb-3 text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
-            Live standings
+      {explanation ? (
+        <aside
+          className="mt-auto rounded-2xl border border-[var(--border)] bg-[var(--card)]/60 px-6 py-5 lg:px-8 lg:py-6"
+          data-testid="reveal-explanation"
+        >
+          <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
+            Explanation
           </p>
-          <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-            {top.map((entry) => (
-              <li
-                key={entry.participantId}
-                className="flex items-center justify-between gap-2 rounded-lg bg-[var(--secondary)]/50 px-3 py-2"
-              >
-                <span className="truncate font-sans text-sm text-[#f0f4fa]">
-                  <span className="mr-2 font-display font-bold text-[var(--primary)]">
-                    #{entry.rank}
-                  </span>
-                  {entry.displayName}
-                </span>
-                <span className="shrink-0 font-medium text-[var(--accent)]">{entry.score}</span>
-              </li>
-            ))}
-          </ol>
+          <p
+            className="font-sans leading-relaxed text-[#f0f4fa]"
+            style={{ fontSize: 'clamp(1rem, 2vw, 1.25rem)' }}
+          >
+            {explanation}
+          </p>
         </aside>
       ) : null}
     </section>

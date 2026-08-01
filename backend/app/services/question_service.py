@@ -52,6 +52,7 @@ class QuestionService:
             section_id=section_id,
             question_type=payload.question_type,
             prompt_text=payload.prompt_text,
+            explanation=payload.explanation,
             base_points=payload.base_points,
             time_limit_seconds=payload.time_limit_seconds,
             allow_multiple_correct=payload.allow_multiple_correct,
@@ -92,6 +93,8 @@ class QuestionService:
             question.question_type = payload.question_type
         if payload.prompt_text is not None:
             question.prompt_text = payload.prompt_text
+        if payload.explanation is not None:
+            question.explanation = payload.explanation
         if payload.base_points is not None:
             question.base_points = payload.base_points
         if payload.time_limit_seconds is not None:
@@ -105,6 +108,8 @@ class QuestionService:
                 exclude_question_id=question.id,
             )
             question.sort_order = payload.sort_order
+        if payload.clear_media:
+            question.media_file_id = None
 
         self._demote_ready_if_needed(quiz)
         self._questions.flush()

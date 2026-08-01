@@ -12,6 +12,8 @@ from app.api.deps import (
 from app.core.rate_limit import login_rate_limiter
 from app.schemas.auth import (
     AdminResponseData,
+    ChangePasswordRequest,
+    ChangePasswordResponseData,
     LoginRequest,
     LoginResponseData,
     LogoutResponseData,
@@ -100,6 +102,34 @@ def get_current_admin_profile(
     """
     payload = DataResponse[AdminResponseData](
         data=AdminResponseData.model_validate(admin),
+        meta=Meta(request_id=request_id),
+    )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
+    )
+
+
+@router.post(
+    "/change-password",
+    response_model=DataResponse[ChangePasswordResponseData],
+    status_code=status.HTTP_200_OK,
+    summary="Change administrator password",
+)
+def change_password(
+    body: ChangePasswordRequest,
+    admin: CurrentAdmin,
+    auth_service: AuthServiceDep,
+    request_id: RequestId,
+) -> JSONResponse:
+    """Verify current password and set a new FR-005-compliant password."""
+    auth_service.change_password(
+        admin,
+        current_password=body.current_password,
+        new_password=body.new_password,
+    )
+    payload = DataResponse[ChangePasswordResponseData](
+        data=ChangePasswordResponseData(),
         meta=Meta(request_id=request_id),
     )
     return JSONResponse(

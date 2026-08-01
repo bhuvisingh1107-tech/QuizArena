@@ -72,10 +72,23 @@ class ParticipantService:
             payload.display_name,
         )
         if name_owner is not None:
-            raise ConflictError(
-                "DUPLICATE_DISPLAY_NAME",
-                "Display name is already taken in this room",
-            )
+            # Allow reclaiming a name after leave / session end (same display name, new device).
+            if name_owner.state in {
+                ParticipantState.SESSION_ENDED,
+            } or (
+                name_owner.connection_status == ConnectionStatus.DISCONNECTED
+                and name_owner.state == ParticipantState.DISCONNECTED
+                and name_owner.total_score == 0
+                and name_owner.total_correct == 0
+            ):
+                # Soft-clear prior abandoned seat so the unique name can be reused.
+                name_owner.display_name = f"{name_owner.display_name} (left-{str(name_owner.id)[:8]})"
+                self._session.flush()
+            else:
+                raise ConflictError(
+                    "DUPLICATE_DISPLAY_NAME",
+                    "Display name is already taken in this room",
+                )
 
         if self._participants.count_for_room(room.id) >= _MAX_PARTICIPANTS_PER_ROOM:
             raise ValidationError(
@@ -84,16 +97,36 @@ class ParticipantService:
             )
 
         state = participant_fsm.state_after_join(room.state)
-        participant = self._participants.create(
-            live_room_id=room.id,
-            display_name=payload.display_name,
-            email=payload.email,
-            session_token=self._generate_session_token(),
-            state=state,
-            connection_status=ConnectionStatus.CONNECTED,
-        )
-        self._session.commit()
+        try:
+            participant = self._participants.create(
+                live_room_id=room.id,
+                display_name=payload.display_name.strip(),
+                email=payload.email,
+                session_token=self._generate_session_token(),
+                state=state,
+                connection_status=ConnectionStatus.CONNECTED,
+            )
+            self._session.commit()
+        except Exception as exc:
+            self._session.rollback()
+            from sqlalchemy.exc import IntegrityError
+
+            if isinstance(exc, IntegrityError):
+                raise ConflictError(
+                    "DUPLICATE_DISPLAY_NAME",
+                    "Display name is already taken in this room",
+                ) from exc
+            raise
         self._session.refresh(participant)
+        from app.core.audit import audit
+
+        audit(
+            "participant.join",
+            room_id=str(room.id),
+            participant_id=str(participant.id),
+            display_name=participant.display_name,
+            restored=False,
+        )
         return participant, room, False
 
     def get_by_token(self, session_token: str) -> Participant:

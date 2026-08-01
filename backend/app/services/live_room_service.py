@@ -91,7 +91,16 @@ class LiveRoomService:
                 ) from exc
             raise
 
-        return self.get(room.id)
+        from app.core.audit import audit
+
+        created = self.get(room.id)
+        audit(
+            "room.create",
+            room_id=str(created.id),
+            room_code=created.room_code,
+            quiz_id=str(created.quiz_id),
+        )
+        return created
 
     def list(
         self,
@@ -157,7 +166,7 @@ class LiveRoomService:
         room.state = room_fsm.transition(room.state, "start")
         room.started_at = datetime.now(UTC)
         room.current_question_index = 0
-        # Mark first session question Pending (quiz execution itself is deferred).
+        # Snapshot questions stay Pending until the host starts quiz execution.
         questions = sorted(room.session_questions, key=lambda q: q.sort_order)
         if questions:
             questions[0].state = SessionQuestionState.PENDING
@@ -168,15 +177,27 @@ class LiveRoomService:
     def pause(self, room_id: UUID) -> LiveRoom:
         room = self.get(room_id)
         room.state = room_fsm.transition(room.state, "pause")
+        if room.paused_at is None:
+            room.paused_at = datetime.now(UTC)
         self._rooms.flush()
         self._session.commit()
+        from app.core.audit import audit
+
+        audit("room.pause", room_id=str(room_id))
         return self.get(room_id)
 
     def resume(self, room_id: UUID) -> LiveRoom:
         room = self.get(room_id)
         room.state = room_fsm.transition(room.state, "resume")
+        if room.paused_at is not None:
+            delta_ms = int((datetime.now(UTC) - room.paused_at).total_seconds() * 1000)
+            room.pause_accumulated_ms = int(room.pause_accumulated_ms or 0) + max(0, delta_ms)
+            room.paused_at = None
         self._rooms.flush()
         self._session.commit()
+        from app.core.audit import audit
+
+        audit("room.resume", room_id=str(room_id))
         return self.get(room_id)
 
     def end(self, room_id: UUID) -> LiveRoom:
@@ -199,6 +220,9 @@ class LiveRoomService:
             quiz.status = QuizStatus.READY
         self._rooms.flush()
         self._session.commit()
+        from app.core.audit import audit
+
+        audit("room.close", room_id=str(room_id), state="Closed")
         return self.get(room_id)
 
     def delete(self, room_id: UUID) -> None:

@@ -7,10 +7,12 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import AuthenticationError, ValidationError
+from app.core.password_policy import validate_password_policy
 from app.core.security import (
     TokenValidationError,
     create_access_token,
+    hash_password,
     validate_access_token,
     verify_password,
 )
@@ -120,3 +122,25 @@ class AuthService:
         if admin is None:
             raise AuthenticationError("AUTH_ERROR", "Invalid authentication token")
         return admin
+
+    def change_password(
+        self,
+        admin: Admin,
+        *,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        """Verify current password, enforce FR-005 policy, and update hash."""
+        if not verify_password(current_password, admin.password_hash):
+            raise AuthenticationError(
+                "INVALID_CREDENTIALS",
+                "Current password is incorrect",
+            )
+        validate_password_policy(new_password)
+        if verify_password(new_password, admin.password_hash):
+            raise ValidationError(
+                "PASSWORD_UNCHANGED",
+                "New password must be different from the current password",
+            )
+        self._admins.update_password_hash(admin, hash_password(new_password))
+        self._session.commit()

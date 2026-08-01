@@ -23,7 +23,7 @@ export function EmptyState({ title, description, icon, action, className }: Empt
         {icon ?? <Inbox className="h-5 w-5" />}
       </div>
       <div className="space-y-1">
-        <h3 className="font-display text-lg font-semibold text-[#f0f4fa]">{title}</h3>
+        <h3 className="font-display text-lg font-semibold text-[var(--heading)]">{title}</h3>
         {description ? (
           <p className="max-w-sm text-sm text-[var(--muted-foreground)]">{description}</p>
         ) : null}

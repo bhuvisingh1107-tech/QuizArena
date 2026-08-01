@@ -1,6 +1,7 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 
 import { LoadingState } from '@/components/shared/LoadingState'
+import { ParticipantLiveProvider } from '@/contexts/ParticipantLiveContext'
 import { ParticipantSessionProvider } from '@/contexts/ParticipantSessionContext'
 import { useParticipantSession } from '@/hooks/queries/useParticipantSession'
 import { JoinPage } from '@/pages/participant/JoinPage'
@@ -25,7 +26,11 @@ function ParticipantProtected() {
     return <Navigate to="/join" replace state={{ from: location.pathname }} />
   }
 
-  return <Outlet />
+  return (
+    <ParticipantLiveProvider>
+      <Outlet />
+    </ParticipantLiveProvider>
+  )
 }
 
 export function ParticipantRoutes() {

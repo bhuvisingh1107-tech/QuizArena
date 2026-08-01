@@ -1,36 +1,28 @@
-import { ClipboardPlus, ImagePlus, Radio, Users } from 'lucide-react'
+import { Archive, ClipboardPlus, FileEdit, Radio, Trophy, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-import { EmptyState } from '@/components/shared/EmptyState'
+import { DataTable } from '@/components/shared/DataTable'
 import { ErrorState } from '@/components/shared/ErrorState'
-import { LoadingState } from '@/components/shared/LoadingState'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { StatCard } from '@/components/shared/StatCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Skeleton } from '@/components/ui/skeleton'
+import { TableCell, TableHead, TableRow } from '@/components/ui/table'
+import { useDashboardSummary } from '@/hooks/queries/useDashboardSummary'
 import { useLiveRooms } from '@/hooks/queries/useLiveRooms'
 import { useQuizzes } from '@/hooks/queries/useQuizzes'
 
 const ACTIVE_STATES = new Set(['Setup', 'Lobby', 'Active', 'Paused', 'SectionBreak'])
 
 export function DashboardPage() {
+  const summary = useDashboardSummary()
   const quizzes = useQuizzes({ limit: 5, offset: 0 })
-  const allRooms = useLiveRooms({ limit: 100, offset: 0 })
+  const rooms = useLiveRooms({ limit: 50, offset: 0 })
 
-  const rooms = allRooms.data?.items ?? []
-  const activeCount = rooms.filter((r) => ACTIVE_STATES.has(r.state)).length
-  const completedCount = rooms.filter((r) => r.state === 'Completed' || r.state === 'Closed').length
-
-  const isLoading = quizzes.isLoading || allRooms.isLoading
-  const isError = quizzes.isError || allRooms.isError
+  const activeRooms = (rooms.data?.items ?? []).filter((r) => ACTIVE_STATES.has(r.state))
+  const isLoading = summary.isLoading
+  const isError = summary.isError
 
   return (
     <div>
@@ -42,125 +34,198 @@ export function DashboardPage() {
             <Button asChild>
               <Link to="/admin/quizzes/new">
                 <ClipboardPlus className="h-4 w-4" />
-                Create quiz
+                Create Quiz
               </Link>
             </Button>
             <Button asChild variant="secondary">
               <Link to="/admin/live-rooms">
                 <Radio className="h-4 w-4" />
-                Create live room
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link to="/admin/media">
-                <ImagePlus className="h-4 w-4" />
-                Open media
+                Create Live Room
               </Link>
             </Button>
           </div>
         }
       />
 
-      {isLoading ? <LoadingState label="Loading dashboard…" /> : null}
       {isError ? (
         <ErrorState
-          message="Failed to load dashboard metrics"
+          message={
+            summary.error instanceof Error
+              ? summary.error.message
+              : 'Failed to load dashboard summary'
+          }
           onRetry={() => {
+            void summary.refetch()
             void quizzes.refetch()
-            void allRooms.refetch()
+            void rooms.refetch()
           }}
         />
       ) : null}
 
-      {!isLoading && !isError ? (
+      {!isError ? (
         <>
           <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Total quizzes</CardDescription>
-                <CardTitle className="text-3xl">{quizzes.data?.total ?? 0}</CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Active rooms</CardDescription>
-                <CardTitle className="text-3xl text-[var(--primary)]">{activeCount}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-[var(--muted-foreground)]">
-                Setup, Lobby, Active, Paused, SectionBreak
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Completed rooms</CardDescription>
-                <CardTitle className="text-3xl">{completedCount}</CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-1.5">
-                  <Users className="h-3.5 w-3.5" />
-                  Participants today
-                </CardDescription>
-                <CardTitle className="text-3xl text-[var(--muted-foreground)]">—</CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-[var(--muted-foreground)]">
-                Live only — no REST aggregate endpoint; visible while monitoring a room.
-              </CardContent>
-            </Card>
+            <StatCard
+              label="Total quizzes"
+              value={summary.data?.quizzesTotal ?? 0}
+              loading={isLoading}
+            />
+            <StatCard
+              label="Draft"
+              value={summary.data?.quizzesDraft ?? 0}
+              icon={<FileEdit className="h-3.5 w-3.5" />}
+              loading={isLoading}
+            />
+            <StatCard
+              label="Ready"
+              value={summary.data?.quizzesReady ?? 0}
+              loading={isLoading}
+              valueClassName="text-[var(--primary)]"
+            />
+            <StatCard
+              label="Live / In use"
+              value={summary.data?.quizzesInUse ?? 0}
+              loading={isLoading}
+            />
+            <StatCard
+              label="Active rooms"
+              value={summary.data?.roomsActive ?? 0}
+              icon={<Radio className="h-3.5 w-3.5" />}
+              loading={isLoading}
+              valueClassName="text-[var(--primary)]"
+            />
+            <StatCard
+              label="Completed rooms"
+              value={summary.data?.roomsCompleted ?? 0}
+              icon={<Trophy className="h-3.5 w-3.5" />}
+              loading={isLoading}
+            />
+            <StatCard
+              label="Archived quizzes"
+              value={summary.data?.quizzesArchived ?? 0}
+              icon={<Archive className="h-3.5 w-3.5" />}
+              loading={isLoading}
+            />
+            <StatCard
+              label="Participants today"
+              value={summary.data?.participantsToday ?? 0}
+              icon={<Users className="h-3.5 w-3.5" />}
+              loading={isLoading}
+            />
           </div>
 
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-display text-xl font-semibold text-[#f0f4fa]">Recent quizzes</h2>
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/admin/quizzes">View all</Link>
-              </Button>
-            </div>
-
-            {!quizzes.data?.items.length ? (
-              <EmptyState
-                title="No quizzes yet"
-                description="Create your first quiz to get started."
-                action={
-                  <Button asChild>
-                    <Link to="/admin/quizzes/new">Create quiz</Link>
-                  </Button>
-                }
-              />
-            ) : (
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--card)]/60">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
+          <div className="grid gap-8 xl:grid-cols-2">
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="font-display text-xl font-semibold">Recent quizzes</h2>
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/admin/quizzes">View all</Link>
+                </Button>
+              </div>
+              {quizzes.isLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : quizzes.isError ? (
+                <ErrorState
+                  message="Failed to load quizzes"
+                  onRetry={() => void quizzes.refetch()}
+                />
+              ) : (
+                <DataTable
+                  empty={!quizzes.data?.items.length}
+                  emptyTitle="No quizzes yet"
+                  emptyDescription="Create your first quiz to get started."
+                  emptyAction={
+                    <Button asChild>
+                      <Link to="/admin/quizzes/new">Create quiz</Link>
+                    </Button>
+                  }
+                  columns={
+                    <>
                       <TableHead>Title</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Updated</TableHead>
+                    </>
+                  }
+                >
+                  {quizzes.data?.items.map((quiz) => (
+                    <TableRow key={quiz.id}>
+                      <TableCell>
+                        <Link
+                          to={`/admin/quizzes/${quiz.id}`}
+                          className="font-medium text-[var(--heading)] hover:text-[var(--primary)]"
+                        >
+                          {quiz.title}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={quiz.status} />
+                      </TableCell>
+                      <TableCell className="text-[var(--muted-foreground)]">
+                        {new Date(quiz.updatedAt).toLocaleString()}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {quizzes.data.items.map((quiz) => (
-                      <TableRow key={quiz.id}>
-                        <TableCell>
-                          <Link
-                            to={`/admin/quizzes/${quiz.id}`}
-                            className="font-medium text-[#f0f4fa] hover:text-[var(--primary)]"
-                          >
-                            {quiz.title}
-                          </Link>
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={quiz.status} />
-                        </TableCell>
-                        <TableCell className="text-[var(--muted-foreground)]">
-                          {new Date(quiz.updatedAt).toLocaleString()}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                  ))}
+                </DataTable>
+              )}
+            </div>
+
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="font-display text-xl font-semibold">Active rooms</h2>
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/admin/live-rooms">View all</Link>
+                </Button>
               </div>
-            )}
+              {rooms.isLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : rooms.isError ? (
+                <ErrorState message="Failed to load rooms" onRetry={() => void rooms.refetch()} />
+              ) : (
+                <DataTable
+                  empty={activeRooms.length === 0}
+                  emptyTitle="No active rooms"
+                  emptyDescription="Create a live room from a Ready quiz."
+                  emptyAction={
+                    <Button asChild>
+                      <Link to="/admin/live-rooms">Create live room</Link>
+                    </Button>
+                  }
+                  columns={
+                    <>
+                      <TableHead>Quiz</TableHead>
+                      <TableHead>Code</TableHead>
+                      <TableHead>State</TableHead>
+                    </>
+                  }
+                >
+                  {activeRooms.slice(0, 5).map((room) => (
+                    <TableRow key={room.id}>
+                      <TableCell>
+                        <Link
+                          to={`/admin/live-rooms/${room.id}`}
+                          className="font-medium text-[var(--heading)] hover:text-[var(--primary)]"
+                        >
+                          {room.quizTitleSnapshot}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="font-mono text-[var(--primary)]">
+                        {room.roomCode}
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge state={room.state} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </DataTable>
+              )}
+            </div>
           </div>
         </>
       ) : null}

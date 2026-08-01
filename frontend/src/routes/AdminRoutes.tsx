@@ -1,19 +1,21 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 
 import { AdminLayout } from '@/layouts/AdminLayout'
-import { CreateQuizPage } from '@/pages/admin/CreateQuizPage'
 import { DashboardPage } from '@/pages/admin/DashboardPage'
-import { EditQuizPage } from '@/pages/admin/EditQuizPage'
 import { LiveRoomsPage } from '@/pages/admin/LiveRoomsPage'
 import { LoginPage } from '@/pages/admin/LoginPage'
-import { MediaPage } from '@/pages/admin/MediaPage'
-import { QuestionEditorPage } from '@/pages/admin/QuestionEditorPage'
+import { QuizBuilderPage } from '@/pages/admin/QuizBuilderPage'
 import { QuizzesPage } from '@/pages/admin/QuizzesPage'
 import { ResultsPage } from '@/pages/admin/ResultsPage'
 import { RoomMonitorPage } from '@/pages/admin/RoomMonitorPage'
 import { RoomResultsPage } from '@/pages/admin/RoomResultsPage'
 import { SettingsPage } from '@/pages/admin/SettingsPage'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
+
+function RedirectToBuilderQuestions() {
+  const { quizId = '' } = useParams()
+  return <Navigate to={`/admin/quizzes/${quizId}?step=2`} replace />
+}
 
 export function AdminRoutes() {
   return (
@@ -25,15 +27,15 @@ export function AdminRoutes() {
           <Route path="dashboard" element={<DashboardPage />} />
 
           <Route path="quizzes" element={<QuizzesPage />} />
-          <Route path="quizzes/new" element={<CreateQuizPage />} />
-          <Route path="quizzes/:quizId" element={<EditQuizPage />} />
-          <Route path="quizzes/:quizId/questions" element={<QuestionEditorPage />} />
+          <Route path="quizzes/new" element={<QuizBuilderPage />} />
+          <Route path="quizzes/:quizId" element={<QuizBuilderPage />} />
+          <Route path="quizzes/:quizId/questions" element={<RedirectToBuilderQuestions />} />
           <Route
             path="quizzes/:quizId/sections/:sectionId/questions/:questionId"
-            element={<QuestionEditorPage />}
+            element={<RedirectToBuilderQuestions />}
           />
 
-          <Route path="media" element={<MediaPage />} />
+          <Route path="media" element={<Navigate to="/admin/quizzes" replace />} />
 
           <Route path="live-rooms" element={<LiveRoomsPage />} />
           <Route path="live-rooms/:roomId" element={<RoomMonitorPage />} />

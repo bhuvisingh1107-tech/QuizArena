@@ -158,3 +158,52 @@ def delete_quiz(
         status=None if hard else (quiz.status if quiz else None),
     )
     return _envelope(data, request_id)
+
+
+@router.post(
+    "/{quiz_id}/validate",
+    response_model=DataResponse[QuizResponseData],
+    status_code=status.HTTP_200_OK,
+    summary="Validate quiz and set Ready",
+)
+def validate_quiz(
+    quiz_id: UUID,
+    _: CurrentAdmin,
+    service: QuizServiceDep,
+    request_id: RequestId,
+) -> JSONResponse:
+    """Run Ready checklist; on success status becomes Ready (publish)."""
+    quiz = service.validate(quiz_id)
+    return _envelope(_quiz_response(quiz), request_id)
+
+
+@router.post(
+    "/{quiz_id}/archive",
+    response_model=DataResponse[QuizResponseData],
+    status_code=status.HTTP_200_OK,
+    summary="Archive Ready quiz",
+)
+def archive_quiz(
+    quiz_id: UUID,
+    _: CurrentAdmin,
+    service: QuizServiceDep,
+    request_id: RequestId,
+) -> JSONResponse:
+    quiz = service.archive(quiz_id)
+    return _envelope(_quiz_response(quiz), request_id)
+
+
+@router.post(
+    "/{quiz_id}/restore",
+    response_model=DataResponse[QuizResponseData],
+    status_code=status.HTTP_200_OK,
+    summary="Restore Archived quiz",
+)
+def restore_quiz(
+    quiz_id: UUID,
+    _: CurrentAdmin,
+    service: QuizServiceDep,
+    request_id: RequestId,
+) -> JSONResponse:
+    quiz = service.restore(quiz_id)
+    return _envelope(_quiz_response(quiz), request_id)

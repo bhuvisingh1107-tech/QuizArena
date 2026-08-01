@@ -6,6 +6,7 @@ import axios, {
 } from 'axios'
 
 import { clearToken, getToken } from '@/lib/auth-token'
+import { getApiBaseUrl } from '@/lib/env'
 import type { ApiEnvelope, ApiErrorBody, ApiMeta } from '@/types/api'
 
 export class ApiError extends Error {
@@ -32,9 +33,7 @@ export class ApiError extends Error {
   }
 }
 
-const baseURL =
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ||
-  'http://localhost:8000/api/v1'
+const baseURL = getApiBaseUrl()
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL,

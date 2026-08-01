@@ -7,21 +7,61 @@ import {
   participantLiveReducer,
   type WsConnectionStatus,
 } from '@/hooks/participantLiveReducer'
+import { getWsBaseUrl } from '@/lib/env'
 import { getSessionToken } from '@/lib/participant-session'
 import type { WsMessage } from '@/types/api'
 
+const AUTH_FAILURE_CODES = new Set([
+  'AUTH_ERROR',
+  'ROOM_CLOSED',
+  'FORBIDDEN',
+  'UNAUTHORIZED',
+  'INVALID_PARTICIPANT_TOKEN',
+])
+
 export interface UseParticipantWebSocketOptions {
   enabled?: boolean
+  onAuthFailed?: () => void
 }
 
 export function useParticipantWebSocket({
   enabled = true,
+  onAuthFailed,
 }: UseParticipantWebSocketOptions = {}) {
   const [state, dispatch] = useReducer(participantLiveReducer, initialParticipantLiveState)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectAttempt = useRef(0)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const intentionalClose = useRef(false)
+  const authFailedRef = useRef(false)
+  const submittingRef = useRef(false)
+  const connectRef = useRef<(() => void) | null>(null)
+  const onAuthFailedRef = useRef(onAuthFailed)
+  const authFailedHandledRef = useRef(false)
+
+  useEffect(() => {
+    onAuthFailedRef.current = onAuthFailed
+  }, [onAuthFailed])
+
+  useEffect(() => {
+    submittingRef.current =
+      state.submissionStatus === 'submitting' ||
+      state.submissionStatus === 'submitted' ||
+      state.submissionStatus === 'already_submitted'
+  }, [state.submissionStatus])
+
+  useEffect(() => {
+    authFailedRef.current = state.authFailed
+    if (state.authFailed && !authFailedHandledRef.current) {
+      authFailedHandledRef.current = true
+      intentionalClose.current = true
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current)
+        reconnectTimer.current = null
+      }
+      onAuthFailedRef.current?.()
+    }
+  }, [state.authFailed])
 
   const clearReconnectTimer = () => {
     if (reconnectTimer.current) {
@@ -29,6 +69,20 @@ export function useParticipantWebSocket({
       reconnectTimer.current = null
     }
   }
+
+  const handleAuthFailure = useCallback((message?: string) => {
+    if (authFailedRef.current) return
+    authFailedRef.current = true
+    authFailedHandledRef.current = true
+    intentionalClose.current = true
+    clearReconnectTimer()
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+    dispatch({ type: 'AUTH_FAILED', message: message ?? 'Session expired' })
+    onAuthFailedRef.current?.()
+  }, [])
 
   const send = useCallback((type: string, payload: Record<string, unknown> = {}) => {
     const ws = wsRef.current
@@ -47,17 +101,16 @@ export function useParticipantWebSocket({
 
   const sendAnswer = useCallback(
     (optionIds: string[]) => {
-      if (
-        state.submissionStatus === 'submitting' ||
-        state.submissionStatus === 'submitted' ||
-        state.submissionStatus === 'already_submitted'
-      ) {
+      if (submittingRef.current) {
         return false
       }
       if (!optionIds.length) return false
+
+      submittingRef.current = true
       dispatch({ type: 'SUBMIT_START', optionIds })
       const ok = send('answer:submit', { optionIds })
       if (!ok) {
+        submittingRef.current = false
         dispatch({
           type: 'EVENT',
           message: {
@@ -72,7 +125,7 @@ export function useParticipantWebSocket({
       }
       return ok
     },
-    [send, state.submissionStatus],
+    [send],
   )
 
   const selectOptions = useCallback((optionIds: string[]) => {
@@ -89,8 +142,24 @@ export function useParticipantWebSocket({
     dispatch({ type: 'STATUS', status: 'disconnected' satisfies WsConnectionStatus })
   }, [])
 
+  const reconnect = useCallback(() => {
+    if (!enabled || authFailedRef.current) return
+    intentionalClose.current = false
+    reconnectAttempt.current = 0
+    clearReconnectTimer()
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+    connectRef.current?.()
+  }, [enabled])
+
   useEffect(() => {
-    const onOnline = () => dispatch({ type: 'SET_OFFLINE', offline: false })
+    const onOnline = () => {
+      dispatch({ type: 'SET_OFFLINE', offline: false })
+      if (!enabled || authFailedRef.current) return
+      reconnect()
+    }
     const onOffline = () => dispatch({ type: 'SET_OFFLINE', offline: true })
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
@@ -99,20 +168,24 @@ export function useParticipantWebSocket({
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
     }
-  }, [])
+  }, [enabled, reconnect])
 
   useEffect(() => {
     if (!enabled) {
       disconnect()
       dispatch({ type: 'RESET' })
+      authFailedRef.current = false
+      authFailedHandledRef.current = false
       return
     }
 
     intentionalClose.current = false
+    authFailedRef.current = false
+    authFailedHandledRef.current = false
     let cancelled = false
 
     const connect = () => {
-      if (cancelled || intentionalClose.current) return
+      if (cancelled || intentionalClose.current || authFailedRef.current) return
 
       const token = getSessionToken()
       if (!token) {
@@ -120,8 +193,7 @@ export function useParticipantWebSocket({
         return
       }
 
-      const base =
-        import.meta.env.VITE_WS_BASE_URL?.replace(/\/$/, '') || 'ws://localhost:8000/ws'
+      const base = getWsBaseUrl()
       const url = `${base}?role=participant&token=${encodeURIComponent(token)}`
 
       dispatch({ type: 'STATUS', status: 'connecting' })
@@ -145,6 +217,19 @@ export function useParticipantWebSocket({
               }),
             )
           }
+
+          if (message.type === 'error') {
+            const payload =
+              message.payload && typeof message.payload === 'object'
+                ? (message.payload as Record<string, unknown>)
+                : {}
+            const code = String(payload.code ?? '')
+            if (AUTH_FAILURE_CODES.has(code)) {
+              handleAuthFailure(String(payload.message ?? 'Authentication failed'))
+              return
+            }
+          }
+
           dispatch({ type: 'EVENT', message })
         } catch {
           dispatch({ type: 'ERROR', message: 'Failed to parse WebSocket message' })
@@ -157,8 +242,10 @@ export function useParticipantWebSocket({
 
       ws.onclose = () => {
         wsRef.current = null
-        if (cancelled || intentionalClose.current) {
-          dispatch({ type: 'STATUS', status: 'disconnected' })
+        if (cancelled || intentionalClose.current || authFailedRef.current) {
+          if (!authFailedRef.current) {
+            dispatch({ type: 'STATUS', status: 'disconnected' })
+          }
           return
         }
         dispatch({ type: 'STATUS', status: 'disconnected' })
@@ -170,18 +257,20 @@ export function useParticipantWebSocket({
       }
     }
 
+    connectRef.current = connect
     connect()
 
     return () => {
       cancelled = true
       intentionalClose.current = true
+      connectRef.current = null
       clearReconnectTimer()
       if (wsRef.current) {
         wsRef.current.close()
         wsRef.current = null
       }
     }
-  }, [enabled, disconnect])
+  }, [enabled, disconnect, handleAuthFailure])
 
   const suggestedRoute = getParticipantRouteForRoomState(state.room?.state)
 
@@ -191,6 +280,7 @@ export function useParticipantWebSocket({
     sendAnswer,
     selectOptions,
     disconnect,
+    reconnect,
     clearError: () => dispatch({ type: 'CLEAR_ERROR' }),
     suggestedRoute,
   }

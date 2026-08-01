@@ -1,7 +1,4 @@
-"""Quiz execution engine — session snapshot traversal (manual progression).
-
-Does not implement scoring, timers, answer collection, or leaderboards.
-"""
+"""Quiz execution engine — session snapshot traversal, reveal, and completion."""
 
 from __future__ import annotations
 
@@ -32,7 +29,8 @@ class BroadcastEvent:
 
     type: str
     payload: dict[str, Any] = field(default_factory=dict)
-    audience: Literal["room", "admin"] = "room"
+    audience: Literal["room", "admin", "participant"] = "room"
+    participant_id: UUID | None = None
 
 
 @dataclass
@@ -110,6 +108,7 @@ class QuizExecutionService:
         room.current_question_index = 0
         question = questions[0]
         question.state = question_fsm.transition(question.state, "present")
+        question.opened_at = datetime.now(UTC)
         section = self._section_for(room, question)
         events = [
             BroadcastEvent(
@@ -159,11 +158,13 @@ class QuizExecutionService:
                 ),
             ]
             for item in summary.events:
+                pid = item.get("participantId")
                 events.append(
                     BroadcastEvent(
                         type=item["type"],
                         payload=item["payload"],
                         audience=item.get("audience", "admin"),
+                        participant_id=UUID(str(pid)) if pid else None,
                     )
                 )
             return ExecutionResult(room=room, events=events)
@@ -184,11 +185,13 @@ class QuizExecutionService:
                 ),
             ]
             for item in summary.events:
+                pid = item.get("participantId")
                 events.append(
                     BroadcastEvent(
                         type=item["type"],
                         payload=item["payload"],
                         audience=item.get("audience", "admin"),
+                        participant_id=UUID(str(pid)) if pid else None,
                     )
                 )
             return ExecutionResult(room=room, events=events)
@@ -205,11 +208,13 @@ class QuizExecutionService:
         summary = ScoringService(self._session).score_question(room_id)
         room = self._rooms.get_by_id(room_id) or room
         for item in summary.events:
+            pid = item.get("participantId")
             events.append(
                 BroadcastEvent(
                     type=item["type"],
                     payload=item["payload"],
                     audience=item.get("audience", "admin"),
+                    participant_id=UUID(str(pid)) if pid else None,
                 )
             )
         return ExecutionResult(room=room, events=events)
@@ -231,6 +236,12 @@ class QuizExecutionService:
 
         if next_section.id != current_section.id:
             room.state = room_fsm.transition(room.state, "section_break")
+            from app.services.display_stats_service import DisplayStatsService
+
+            extras = DisplayStatsService(self._session).section_break_extras(
+                room_id,
+                current_section.id,
+            )
             room = self._commit(room)
             return ExecutionResult(
                 room=room,
@@ -240,7 +251,7 @@ class QuizExecutionService:
                         payload={
                             **self._section_payload(room, current_section),
                             "completedQuestionIndex": room.current_question_index,
-                            "leaderboard": None,
+                            **extras,
                         },
                     ),
                     BroadcastEvent(
@@ -252,6 +263,7 @@ class QuizExecutionService:
 
         room.current_question_index = next_index
         nxt.state = question_fsm.transition(nxt.state, "present")
+        nxt.opened_at = datetime.now(UTC)
         events = [
             BroadcastEvent(
                 type="question:started",
@@ -278,6 +290,7 @@ class QuizExecutionService:
         room.state = room_fsm.transition(room.state, "continue_section")
         room.current_question_index = next_index
         nxt.state = question_fsm.transition(nxt.state, "present")
+        nxt.opened_at = datetime.now(UTC)
         events = [
             BroadcastEvent(
                 type="section:continued",
@@ -371,11 +384,23 @@ class QuizExecutionService:
     def _complete_quiz(self, room: LiveRoom) -> ExecutionResult:
         room.state = room_fsm.transition(room.state, "end")
         room.completed_at = datetime.now(UTC)
+        from app.services.display_stats_service import DisplayStatsService
+        from app.services.leaderboard_service import LeaderboardService
+
+        board = LeaderboardService(self._session).snapshot(room.id)
+        highlights = DisplayStatsService(self._session).session_highlights(room.id)
         events = [
-            BroadcastEvent(type="quiz:completed", payload=self._completion_payload(room)),
+            BroadcastEvent(
+                type="quiz:completed",
+                payload=self._completion_payload(room, board, highlights),
+            ),
             BroadcastEvent(
                 type="room:completed",
                 payload=self._room_state_payload(room),
+            ),
+            BroadcastEvent(
+                type="leaderboard:updated",
+                payload=board,
             ),
         ]
         room = self._commit(room)
@@ -446,10 +471,25 @@ class QuizExecutionService:
         *,
         include_correct: bool,
     ) -> dict[str, Any]:
-        return {
+        explanation = None
+        if include_correct and question.source_question_id is not None:
+            from app.models.question import Question
+
+            source = self._session.get(Question, question.source_question_id)
+            if source is not None:
+                explanation = source.explanation
+
+        reveal_behavior = (
+            room.config.answer_reveal_behavior.value
+            if room.config is not None
+            else AnswerRevealBehavior.AFTER_EACH.value
+        )
+
+        payload: dict[str, Any] = {
             "roomId": str(room.id),
             "questionIndex": room.current_question_index,
             "totalQuestions": len(room.session_questions),
+            "answerRevealBehavior": reveal_behavior,
             "section": {
                 "id": str(section.id),
                 "name": section.name,
@@ -463,15 +503,49 @@ class QuizExecutionService:
                 "mediaFileId": str(question.media_file_id) if question.media_file_id else None,
                 "basePoints": question.base_points,
                 "timeLimitSeconds": question.time_limit_seconds,
+                "timerEndsAt": self._timer_ends_at_ts(room, question),
+                "timerPaused": room.state == RoomState.PAUSED,
                 "allowMultipleCorrect": question.allow_multiple_correct,
                 "sortOrder": question.sort_order,
                 "state": question.state.value,
+                "explanation": explanation if include_correct else None,
                 "options": [
                     self._option_payload(opt, include_correct=include_correct)
                     for opt in sorted(question.options, key=lambda o: o.sort_order)
                 ],
             },
         }
+        # Convert timerEndsAt to ISO string for clients
+        ends_ts = payload["question"]["timerEndsAt"]
+        if isinstance(ends_ts, (int, float)):
+            payload["question"]["timerEndsAt"] = (
+                datetime.fromtimestamp(ends_ts, tz=UTC).isoformat().replace("+00:00", "Z")
+            )
+            payload["timerEndsAt"] = payload["question"]["timerEndsAt"]
+
+        if include_correct:
+            from app.services.display_stats_service import DisplayStatsService
+
+            extras = DisplayStatsService(self._session).reveal_payload_extras(question)
+            payload.update(extras)
+            payload["question"]["explanation"] = extras.get("explanation") or explanation
+        return payload
+
+    @staticmethod
+    def _timer_ends_at_ts(room: LiveRoom, question: SessionQuestion) -> float | None:
+        if question.opened_at is None or not question.time_limit_seconds:
+            return None
+        pause_ms = int(room.pause_accumulated_ms or 0)
+        if room.paused_at is not None:
+            pause_ms += max(
+                0,
+                int((datetime.now(UTC) - room.paused_at).total_seconds() * 1000),
+            )
+        return (
+            question.opened_at.timestamp()
+            + int(question.time_limit_seconds)
+            + (pause_ms / 1000.0)
+        )
 
     @staticmethod
     def _option_payload(option: SessionOption, *, include_correct: bool) -> dict[str, Any]:
@@ -509,12 +583,26 @@ class QuizExecutionService:
         }
 
     @staticmethod
-    def _completion_payload(room: LiveRoom) -> dict[str, Any]:
+    def _completion_payload(
+        room: LiveRoom,
+        board: dict[str, Any] | None = None,
+        highlights: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        board = board or {}
+        highlights = highlights or {}
         return {
             "roomId": str(room.id),
             "state": room.state.value,
             "currentQuestionIndex": room.current_question_index,
             "completedAt": room.completed_at.isoformat() if room.completed_at else None,
             "totalQuestions": len(room.session_questions),
-            "podium": None,
+            "podium": board.get("podium") or highlights.get("podium"),
+            "leaderboard": board.get("entries") or highlights.get("leaderboard"),
+            "participantCount": board.get("participantCount")
+            or highlights.get("participantCount"),
+            "averageScore": highlights.get("averageScore"),
+            "winner": highlights.get("winner"),
+            "hardestQuestion": highlights.get("hardestQuestion"),
+            "mostMissedQuestion": highlights.get("mostMissedQuestion"),
+            "fastestAnswer": highlights.get("fastestAnswer"),
         }

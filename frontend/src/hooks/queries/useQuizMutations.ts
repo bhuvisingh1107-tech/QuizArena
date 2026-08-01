@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api-client'
+import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api-client'
 import { queryKeys } from '@/hooks/queries/keys'
 import type {
   AnswerOption,
@@ -49,57 +49,21 @@ export function useQuizMutations() {
   })
 
   const publishQuiz = useMutation({
-    mutationFn: async (quizId: string) => {
-      try {
-        return await apiPost<Quiz>(`/quizzes/${quizId}/validate`)
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          throw new ApiError(
-            'Publish/validate is not available on this API yet (POST /quizzes/{id}/validate returned 404).',
-            { code: 'ENDPOINT_NOT_FOUND', status: 404, details: error.details },
-          )
-        }
-        throw error
-      }
-    },
+    mutationFn: (quizId: string) => apiPost<Quiz>(`/quizzes/${quizId}/validate`),
     onSuccess: async (quiz) => {
       await invalidateQuizzes(quiz.id)
     },
   })
 
   const archiveQuiz = useMutation({
-    mutationFn: async (quizId: string) => {
-      try {
-        return await apiPost<Quiz>(`/quizzes/${quizId}/archive`)
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          throw new ApiError(
-            'Archive is not available on this API yet (POST /quizzes/{id}/archive returned 404).',
-            { code: 'ENDPOINT_NOT_FOUND', status: 404, details: error.details },
-          )
-        }
-        throw error
-      }
-    },
+    mutationFn: (quizId: string) => apiPost<Quiz>(`/quizzes/${quizId}/archive`),
     onSuccess: async (quiz) => {
       await invalidateQuizzes(quiz.id)
     },
   })
 
   const restoreQuiz = useMutation({
-    mutationFn: async (quizId: string) => {
-      try {
-        return await apiPost<Quiz>(`/quizzes/${quizId}/restore`)
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          throw new ApiError(
-            'Restore is not available on this API yet (POST /quizzes/{id}/restore returned 404).',
-            { code: 'ENDPOINT_NOT_FOUND', status: 404, details: error.details },
-          )
-        }
-        throw error
-      }
-    },
+    mutationFn: (quizId: string) => apiPost<Quiz>(`/quizzes/${quizId}/restore`),
     onSuccess: async (quiz) => {
       await invalidateQuizzes(quiz.id)
     },
@@ -134,6 +98,7 @@ export function useQuizMutations() {
             {
               questionType: question.questionType,
               promptText: question.promptText ?? '',
+              explanation: question.explanation ?? null,
               basePoints: question.basePoints,
               timeLimitSeconds: question.timeLimitSeconds ?? null,
               allowMultipleCorrect: question.allowMultipleCorrect,
@@ -153,6 +118,17 @@ export function useQuizMutations() {
                 text: option.text,
                 isCorrect: option.isCorrect,
                 sortOrder: option.sortOrder,
+              },
+            )
+          }
+
+          if (question.mediaFileId) {
+            await apiPost<{ mediaId: string; questionId: string; mediaFileId: string }>(
+              `/media/${question.mediaFileId}/attach`,
+              {
+                quizId: created.id,
+                sectionId: newSection.id,
+                questionId: newQuestion.id,
               },
             )
           }

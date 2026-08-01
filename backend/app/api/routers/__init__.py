@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from app.api.routers import (
     answer_options,
     auth,
-    export,
+    dashboard,
     health,
     join,
     live_rooms,
@@ -14,13 +14,11 @@ from app.api.routers import (
     questions,
     quizzes,
     sections,
-    session_history,
-    settings,
 )
 
 api_router = APIRouter()
 
-# Public
+# Public probes
 api_router.include_router(health.router)
 
 # Auth (API_SPEC.md §7)
@@ -40,11 +38,7 @@ api_router.include_router(live_rooms.router, prefix="/live-rooms", tags=["Live R
 api_router.include_router(join.router, prefix="/join", tags=["Join"])
 api_router.include_router(participants.router, prefix="/participants", tags=["Participants"])
 
-# History and export (API_SPEC.md §13)
-api_router.include_router(session_history.router, prefix="/session-history", tags=["Session History"])
-api_router.include_router(export.router, prefix="/export", tags=["Export"])
-
-# Platform settings (API_SPEC.md §14)
-api_router.include_router(settings.router, prefix="/settings", tags=["Settings"])
+# Admin dashboard
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
 
 __all__ = ["api_router"]

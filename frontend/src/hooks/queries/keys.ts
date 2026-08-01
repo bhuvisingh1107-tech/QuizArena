@@ -18,11 +18,19 @@ export const queryKeys = {
       ['options', quizId, sectionId, questionId] as const,
   },
   media: {
-    detail: (id: string) => ['media', id] as const,
+    all: ['media'] as const,
+    list: (quizId: string, params?: Record<string, unknown>) =>
+      ['media', 'list', quizId, params] as const,
+    detail: (id: string) => ['media', 'detail', id] as const,
   },
   liveRooms: {
     all: ['live-rooms'] as const,
     list: (params?: Record<string, unknown>) => ['live-rooms', 'list', params] as const,
     detail: (id: string) => ['live-rooms', 'detail', id] as const,
+    participants: (id: string) => ['live-rooms', 'participants', id] as const,
+    results: (id: string) => ['live-rooms', 'results', id] as const,
+  },
+  dashboard: {
+    summary: ['dashboard', 'summary'] as const,
   },
 }

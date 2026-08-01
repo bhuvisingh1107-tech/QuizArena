@@ -1,23 +1,37 @@
-import type { LeaderboardEntry, Podium } from '@/types/api'
+import type { DisplaySessionHighlights } from '@/hooks/displayLiveReducer'
+import type { LeaderboardEntry, Podium, PodiumEntry } from '@/types/api'
 import { cn } from '@/lib/utils'
 
 interface PodiumScreenProps {
   podium: Podium | null
   leaderboard?: LeaderboardEntry[]
   quizTitle?: string
+  sessionHighlights?: DisplaySessionHighlights | null
   className?: string
 }
 
 const ORDER: Array<1 | 2 | 3> = [2, 1, 3]
+const MEDALS: Record<1 | 2 | 3, string> = { 1: '🥇', 2: '🥈', 3: '🥉' }
+
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
 
 export function PodiumScreen({
   podium,
   leaderboard = [],
   quizTitle,
+  sessionHighlights,
   className,
 }: PodiumScreenProps) {
-  const byRank = new Map(podium?.entries.map((e) => [e.rank, e]) ?? [])
-  const hasPodium = Boolean(podium?.entries.length)
+  const byRank = new Map<number, PodiumEntry>()
+  // Prefer podium order (slice top 3) so competition-rank ties still fill 3 slots.
+  const podiumSlots = (podium?.entries ?? []).slice(0, 3)
+  podiumSlots.forEach((entry, index) => {
+    byRank.set(index + 1, { ...entry, rank: (index + 1) as 1 | 2 | 3 })
+  })
+  const hasPodium = podiumSlots.length > 0
   const finalList =
     leaderboard.length > 0
       ? leaderboard
@@ -28,25 +42,52 @@ export function PodiumScreen({
           score: e.score,
         })) ?? [])
 
+  const winner = sessionHighlights?.winner
+
   return (
     <section
-      className={cn('flex flex-1 flex-col gap-8', className)}
+      className={cn('relative flex flex-1 flex-col gap-8 overflow-hidden', className)}
       aria-label="Final podium"
     >
-      <div className="text-center">
+      <div className="display-confetti pointer-events-none absolute inset-0" aria-hidden />
+
+      <div className="relative text-center">
         <p className="text-sm uppercase tracking-[0.3em] text-[var(--accent)] lg:text-base">
           Quiz completed
         </p>
-        <h1 className="mt-3 font-display text-4xl font-extrabold text-[#f0f4fa] lg:text-6xl">
-          {quizTitle ? `${quizTitle}` : 'Final results'}
+        <h1
+          className="mt-3 font-display font-extrabold text-[#f0f4fa]"
+          style={{ fontSize: 'clamp(2rem, 5vw, 4rem)' }}
+        >
+          {quizTitle ?? 'Final results'}
         </h1>
-        <p className="mt-2 text-base text-[var(--muted-foreground)] lg:text-lg">
-          Congratulations to all players!
-        </p>
+        {winner ? (
+          <p
+            className="mt-3 font-display text-2xl font-semibold text-[var(--accent)] lg:text-3xl"
+            data-testid="quiz-winner"
+          >
+            🏆 {winner.displayName} wins with {winner.score} pts!
+          </p>
+        ) : (
+          <p className="mt-2 text-base text-[var(--muted-foreground)] lg:text-lg">
+            Congratulations to all players!
+          </p>
+        )}
+        {sessionHighlights?.averageScore != null ? (
+          <p className="mt-2 text-lg text-[var(--muted-foreground)]">
+            Average score:{' '}
+            <span className="font-display font-bold text-[var(--primary)]">
+              {sessionHighlights.averageScore}
+            </span>
+          </p>
+        ) : null}
       </div>
 
       {hasPodium ? (
-        <div className="flex items-end justify-center gap-4 pt-4 lg:gap-8" data-testid="podium-top3">
+        <div
+          className="relative flex items-end justify-center gap-4 pt-4 lg:gap-8"
+          data-testid="podium-top3"
+        >
           {ORDER.map((rank) => {
             const entry = byRank.get(rank)
             const height =
@@ -67,6 +108,7 @@ export function PodiumScreen({
                   rank === 1 && 'relative z-10 scale-105',
                 )}
               >
+                <span className="text-4xl lg:text-5xl">{MEDALS[rank]}</span>
                 <p className="truncate text-center font-display text-lg font-semibold text-[#f0f4fa] lg:text-2xl">
                   {entry?.displayName ?? '—'}
                 </p>
@@ -92,13 +134,67 @@ export function PodiumScreen({
         </p>
       )}
 
+      {sessionHighlights?.fastestAnswer ? (
+        <div
+          className="mx-auto w-full max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--card)]/60 px-6 py-4 text-center"
+          data-testid="fastest-answer"
+        >
+          <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
+            Fastest answer
+          </p>
+          <p className="mt-1 font-display text-xl text-[#f0f4fa]">
+            {sessionHighlights.fastestAnswer.displayName} —{' '}
+            {formatMs(sessionHighlights.fastestAnswer.responseTimeMs)}
+          </p>
+        </div>
+      ) : null}
+
+      {(sessionHighlights?.hardestQuestion || sessionHighlights?.mostMissedQuestion) && (
+        <div className="mx-auto grid w-full max-w-3xl gap-4 sm:grid-cols-2">
+          {sessionHighlights.hardestQuestion ? (
+            <div
+              className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/60 px-5 py-4"
+              data-testid="hardest-question"
+            >
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
+                Hardest question
+              </p>
+              <p className="mt-2 line-clamp-2 text-[#f0f4fa]">
+                {sessionHighlights.hardestQuestion.promptText ?? 'Question'}
+              </p>
+              <p className="mt-1 text-sm text-[var(--destructive)]">
+                {sessionHighlights.hardestQuestion.accuracyPercent}% accuracy
+              </p>
+            </div>
+          ) : null}
+          {sessionHighlights.mostMissedQuestion ? (
+            <div
+              className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/60 px-5 py-4"
+              data-testid="most-missed-question"
+            >
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
+                Most missed
+              </p>
+              <p className="mt-2 line-clamp-2 text-[#f0f4fa]">
+                {sessionHighlights.mostMissedQuestion.promptText ?? 'Question'}
+              </p>
+              <p className="mt-1 text-sm text-[var(--destructive)]">
+                {sessionHighlights.mostMissedQuestion.missPercent ??
+                  100 - sessionHighlights.mostMissedQuestion.accuracyPercent}
+                % miss rate
+              </p>
+            </div>
+          ) : null}
+        </div>
+      )}
+
       {finalList.length > 0 ? (
-        <div className="mx-auto w-full max-w-3xl">
+        <div className="relative mx-auto w-full max-w-3xl">
           <p className="mb-3 text-center text-xs uppercase tracking-[0.25em] text-[var(--muted-foreground)]">
-            Final rankings
+            Top 10 final rankings
           </p>
           <ol className="space-y-2">
-            {finalList.slice(0, 12).map((entry) => (
+            {finalList.slice(0, 10).map((entry) => (
               <li
                 key={entry.participantId}
                 className="flex items-center justify-between rounded-xl border border-[var(--border)]/80 bg-[var(--card)]/60 px-4 py-3"
@@ -115,6 +211,32 @@ export function PodiumScreen({
           </ol>
         </div>
       ) : null}
+
+      <style>{`
+        @keyframes confetti-fall {
+          0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+        }
+        .display-confetti::before,
+        .display-confetti::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image:
+            radial-gradient(circle, var(--accent) 2px, transparent 2px),
+            radial-gradient(circle, var(--primary) 2px, transparent 2px),
+            radial-gradient(circle, var(--color-cyan-mint) 2px, transparent 2px);
+          background-size: 80px 80px, 120px 120px, 100px 100px;
+          background-position: 0 0, 40px 40px, 20px 60px;
+          animation: confetti-fall 6s linear infinite;
+          opacity: 0.35;
+        }
+        .display-confetti::after {
+          animation-duration: 8s;
+          animation-delay: 1s;
+          opacity: 0.25;
+        }
+      `}</style>
     </section>
   )
 }

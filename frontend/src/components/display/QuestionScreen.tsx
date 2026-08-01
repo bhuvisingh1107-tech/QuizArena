@@ -1,3 +1,6 @@
+import { AnswerProgressRing } from '@/components/display/AnswerProgressRing'
+import { DisplayMedia } from '@/components/display/DisplayMedia'
+import { DisplayTimer } from '@/components/display/DisplayTimer'
 import type { DisplayLiveQuestion } from '@/hooks/displayLiveReducer'
 import { cn } from '@/lib/utils'
 
@@ -5,23 +8,41 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 interface QuestionScreenProps {
   question: DisplayLiveQuestion
+  secretToken: string
+  submittedCount?: number
+  participantCount?: number
+  questionOpenedAt?: number | null
+  paused?: boolean
   className?: string
 }
 
-export function QuestionScreen({ question, className }: QuestionScreenProps) {
+export function QuestionScreen({
+  question,
+  secretToken,
+  submittedCount = 0,
+  participantCount = 0,
+  questionOpenedAt,
+  paused = false,
+  className,
+}: QuestionScreenProps) {
   const sorted = [...question.options].sort((a, b) => a.sortOrder - b.sortOrder)
   const qNumber = question.index + 1
   const total =
     typeof question.totalQuestions === 'number' ? question.totalQuestions : null
+  const progressPercent =
+    total != null && total > 0 ? Math.min(100, (qNumber / total) * 100) : null
 
   return (
     <section
-      className={cn('flex flex-1 flex-col gap-6 lg:gap-8', className)}
+      className={cn('flex flex-1 flex-col gap-5 lg:gap-7', className)}
       aria-label="Current question"
     >
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm uppercase tracking-[0.25em] text-[var(--primary)] lg:text-base">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <p
+            className="text-sm uppercase tracking-[0.25em] text-[var(--primary)] lg:text-base"
+            data-testid="question-number"
+          >
             Question {qNumber}
             {total != null ? ` of ${total}` : ''}
           </p>
@@ -30,30 +51,49 @@ export function QuestionScreen({ question, className }: QuestionScreenProps) {
               {question.sectionName}
             </p>
           ) : null}
+          {progressPercent != null ? (
+            <div
+              className="mt-3 h-1.5 max-w-md overflow-hidden rounded-full bg-[var(--secondary)]"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progressPercent}
+              data-testid="question-progress-bar"
+            >
+              <div
+                className="h-full rounded-full bg-[var(--primary)] transition-all duration-500"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          ) : null}
         </div>
-        {question.state === 'Closed' ? (
-          <p className="rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/15 px-4 py-2 text-sm font-medium text-[var(--accent)]">
-            Answers locked
-          </p>
-        ) : null}
+
+        <div className="flex shrink-0 items-start gap-6">
+          {participantCount > 0 ? (
+            <AnswerProgressRing submitted={submittedCount} total={participantCount} />
+          ) : null}
+          <DisplayTimer
+            timeLimitSeconds={question.timeLimitSeconds}
+            questionOpenedAt={questionOpenedAt}
+            timerEndsAt={question.timerEndsAt}
+            paused={paused}
+          />
+        </div>
       </div>
 
-      <h1 className="max-w-6xl font-display text-3xl font-extrabold leading-tight text-[#f0f4fa] sm:text-4xl lg:text-6xl">
+      <h1
+        className="max-w-6xl font-display font-extrabold leading-tight text-[#f0f4fa]"
+        style={{ fontSize: 'clamp(1.75rem, 4vw, 3.75rem)' }}
+      >
         {question.promptText || '…'}
       </h1>
 
       {question.mediaFileId ? (
-        <div
-          className="flex min-h-32 items-center justify-center rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)]/50 px-6 py-10"
-          data-testid="media-placeholder"
-        >
-          <div className="text-center">
-            <p className="font-display text-xl font-semibold text-[#f0f4fa]">Media prompt</p>
-            <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-              Visual content is managed by the host — watch the stage display
-            </p>
-          </div>
-        </div>
+        <DisplayMedia
+          mediaFileId={question.mediaFileId}
+          questionType={question.questionType}
+          secretToken={secretToken}
+        />
       ) : null}
 
       <ul className="mt-auto grid gap-3 sm:grid-cols-2 lg:gap-4" role="list">
@@ -63,12 +103,15 @@ export function QuestionScreen({ question, className }: QuestionScreenProps) {
             <li
               key={option.id}
               data-testid={`option-tile-${letter}`}
-              className="flex min-h-20 items-start gap-4 rounded-2xl border border-[var(--border)] bg-[var(--card)]/80 px-5 py-5 lg:min-h-24 lg:px-6 lg:py-6"
+              className="flex min-h-20 items-start gap-4 rounded-2xl border border-[var(--border)] bg-[var(--card)]/80 px-5 py-5 transition-colors lg:min-h-24 lg:px-6 lg:py-6"
             >
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)]/20 font-display text-xl font-bold text-[var(--primary)] lg:h-14 lg:w-14 lg:text-2xl">
                 {letter}
               </span>
-              <span className="pt-2 font-sans text-xl leading-snug text-[#f0f4fa] lg:text-2xl">
+              <span
+                className="pt-2 font-sans leading-snug text-[#f0f4fa]"
+                style={{ fontSize: 'clamp(1.125rem, 2vw, 1.5rem)' }}
+              >
                 {option.text}
               </span>
             </li>

@@ -8,23 +8,22 @@ import { ResultsSummary } from '@/components/participant/ResultsSummary'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingState } from '@/components/shared/LoadingState'
 import { Button } from '@/components/ui/button'
+import { useParticipantLive } from '@/contexts/ParticipantLiveContext'
 import {
   useParticipantLeaveMutation,
   useParticipantMeQuery,
   useParticipantSession,
 } from '@/hooks/queries/useParticipantSession'
-import { useParticipantWebSocket } from '@/hooks/useParticipantWebSocket'
 
 export function ResultsPage() {
   const navigate = useNavigate()
   const { session } = useParticipantSession()
   const meQuery = useParticipantMeQuery(Boolean(session?.sessionToken))
   const leaveMutation = useParticipantLeaveMutation()
-  const live = useParticipantWebSocket({ enabled: Boolean(session?.sessionToken) })
+  const live = useParticipantLive()
 
   useEffect(() => {
     if (!live.suggestedRoute || live.suggestedRoute === '/results') return
-    // Only navigate away from results if room somehow returns to lobby/active mid-view
     if (live.suggestedRoute === '/lobby' || live.suggestedRoute === '/quiz') {
       navigate(live.suggestedRoute, { replace: true })
     }
@@ -37,6 +36,9 @@ export function ResultsPage() {
   const correct = profile?.totalCorrect ?? 0
   const incorrect = profile?.totalIncorrect ?? 0
   const unanswered = profile?.unansweredCount ?? 0
+  const timeBonus = live.cumulativeTimeBonus
+  const streakBonus = live.cumulativeStreakBonus
+  const selfId = live.self?.id ?? session?.participantId ?? null
 
   const onLeave = async () => {
     await leaveMutation.mutateAsync()
@@ -50,11 +52,11 @@ export function ResultsPage() {
       subtitle={meQuery.data?.room.quizTitle || session?.quizTitle || 'Results'}
     >
       <div className="space-y-6 pb-8">
-        <div className="text-center">
+        <div className="participant-celebrate text-center">
           <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
             Final results
           </p>
-          <h1 className="mt-2 font-display text-3xl font-bold text-[#f0f4fa]">Quiz complete</h1>
+          <h1 className="mt-2 font-display text-3xl font-bold text-[#f0f4fa]">Quiz complete!</h1>
         </div>
 
         {meQuery.isLoading ? <LoadingState label="Loading your results…" /> : null}
@@ -74,6 +76,8 @@ export function ResultsPage() {
             correct={correct}
             incorrect={incorrect}
             unanswered={unanswered}
+            timeBonus={timeBonus}
+            streakBonus={streakBonus}
           />
         ) : null}
 
@@ -83,13 +87,10 @@ export function ResultsPage() {
           yourRank={rank ?? null}
           yourScore={score}
           leaderboard={live.leaderboard}
+          previousRanks={live.previousLeaderboardRanks}
+          selfParticipantId={selfId}
           topN={10}
-        />
-
-        <EmptyState
-          title="Section scores unavailable"
-          description="Detailed section breakdowns are not provided on the participant results view."
-          className="py-8"
+          title="Final standing"
         />
 
         <Button
@@ -99,7 +100,7 @@ export function ResultsPage() {
           onClick={() => void onLeave()}
           disabled={leaveMutation.isPending}
         >
-          Leave and join another quiz
+          Return home
         </Button>
       </div>
     </ParticipantShell>

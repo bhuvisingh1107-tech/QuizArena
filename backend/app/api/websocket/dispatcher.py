@@ -96,6 +96,8 @@ class EventDispatcher:
             return
 
         if connection.role == ClientRole.ADMIN:
+            if not await self._ensure_admin_token_valid(connection):
+                return
             if event_type in EXECUTION_CLIENT_EVENTS:
                 await self._dispatch_execution(connection, event_type)
                 return
@@ -115,6 +117,29 @@ class EventDispatcher:
                 )["payload"],
             )
             return
+
+    async def _ensure_admin_token_valid(self, connection: WSConnection) -> bool:
+        """Reject admin control events after JWT expiry (connect-time auth alone is not enough)."""
+        if not connection.auth_token:
+            return True
+        from app.config import get_settings
+        from app.core.security import TokenValidationError, validate_access_token
+
+        try:
+            validate_access_token(connection.auth_token, get_settings())
+            return True
+        except TokenValidationError as exc:
+            await self._manager.send_to_connection(
+                connection,
+                ServerEventType.ERROR,
+                make_error(exc.code, exc.message)["payload"],
+            )
+            await self._manager.close_connection(
+                connection,
+                code=4003,
+                reason=exc.code,
+            )
+            return False
 
     async def _dispatch_admin(self, connection: WSConnection, event_type: str) -> None:
         action_map = {
@@ -147,12 +172,26 @@ class EventDispatcher:
             )
             return
 
-        room_payload = {
+        room_payload: dict[str, Any] = {
             "roomId": str(room.id),
             "state": room.state.value,
             "lobbySubState": room.lobby_sub_state.value if room.lobby_sub_state else None,
             "codesExpired": room.codes_expired,
         }
+        if method_name in {"pause", "resume"}:
+            execution = self._execution.get_execution_state(connection.room_id)
+            if execution.question is not None:
+                ends = QuizExecutionService._timer_ends_at_ts(room, execution.question)
+                if ends is not None:
+                    from datetime import UTC, datetime
+
+                    ends_at = (
+                        datetime.fromtimestamp(ends, tz=UTC)
+                        .isoformat()
+                        .replace("+00:00", "Z")
+                    )
+                    room_payload["timerEndsAt"] = ends_at
+                    room_payload["timerPaused"] = room.state == RoomState.PAUSED
         await self._manager.broadcast_to_room(
             connection.room_id,
             broadcast_type,
@@ -204,18 +243,30 @@ class EventDispatcher:
             return
 
         for event in result.events:
-            audience = getattr(event, "audience", "room")
+            audience = event.audience
+            payload = event.payload
+            event_name = event.type
+            target_participant = event.participant_id
+
             if audience == "admin":
                 await self._manager.broadcast_to_admin(
                     connection.room_id,
-                    event.type,
-                    event.payload,
+                    event_name,
+                    payload,
                 )
+            elif audience == "participant" and target_participant is not None:
+                pool = self._manager.get_room_pool(connection.room_id)
+                if pool and target_participant in pool.participants:
+                    await self._manager.send_to_connection(
+                        pool.participants[target_participant],
+                        event_name,
+                        payload,
+                    )
             else:
                 await self._manager.broadcast_to_room(
                     connection.room_id,
-                    event.type,
-                    event.payload,
+                    event_name,
+                    payload,
                 )
 
     async def _dispatch_answer_submit(
@@ -295,6 +346,12 @@ class EventDispatcher:
                     event.type,
                     event.payload,
                 )
+            elif event.audience == "room":
+                await self._manager.broadcast_to_room(
+                    connection.room_id,
+                    event.type,
+                    event.payload,
+                )
 
 
 def build_room_snapshot(room) -> dict[str, Any]:
@@ -306,7 +363,25 @@ def build_room_snapshot(room) -> dict[str, Any]:
         "quizTitle": room.quiz_title_snapshot,
         "codesExpired": room.codes_expired,
         "currentQuestionIndex": room.current_question_index,
+        "hostName": "Host",
     }
+
+
+def count_active_participants(session: Session, room_id: UUID) -> int:
+    from app.models.enums import ParticipantState
+    from app.repositories.participant_repository import ParticipantRepository
+
+    participants = ParticipantRepository(session).list_for_room(room_id)
+    return sum(
+        1
+        for p in participants
+        if p.state
+        not in {
+            ParticipantState.BANNED,
+            ParticipantState.KICKED,
+            ParticipantState.SESSION_ENDED,
+        }
+    )
 
 
 def build_participant_snapshot(
@@ -335,8 +410,9 @@ async def notify_participant_presence(
     room_id: UUID,
     event_type: str,
     participant,
+    session: Session | None = None,
 ) -> None:
-    """Admin-only presence events (emails included for admin monitoring)."""
+    """Admin presence events plus room-wide participant count for lobby UIs."""
     payload = {
         "participantId": str(participant.id),
         "displayName": participant.display_name,
@@ -346,3 +422,14 @@ async def notify_participant_presence(
         "totalScore": participant.total_score,
     }
     await manager.broadcast_to_admin(room_id, event_type, payload)
+
+    if session is not None:
+        count = count_active_participants(session, room_id)
+        await manager.broadcast_to_room(
+            room_id,
+            "participant:count",
+            {
+                "roomId": str(room_id),
+                "participantCount": count,
+            },
+        )

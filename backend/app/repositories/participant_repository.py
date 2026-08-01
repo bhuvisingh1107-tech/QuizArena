@@ -63,7 +63,7 @@ class ParticipantRepository:
     ) -> Participant | None:
         stmt = select(Participant).where(
             Participant.live_room_id == live_room_id,
-            Participant.display_name == display_name,
+            func.lower(Participant.display_name) == display_name.strip().lower(),
         )
         return self._session.scalar(stmt)
 

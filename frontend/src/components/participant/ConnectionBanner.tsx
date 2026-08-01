@@ -20,7 +20,7 @@ export function ConnectionBanner({
         className="relative z-20 flex items-center justify-center gap-2 bg-[var(--destructive)]/90 px-4 py-2 text-sm text-white"
       >
         <WifiOff className="h-4 w-4" aria-hidden />
-        You are offline. Answers will sync when you reconnect.
+        You are offline. Reconnect to submit answers.
       </div>
     )
   }

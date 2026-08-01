@@ -2,9 +2,8 @@ export { loginSchema, type LoginFormValues } from './login'
 export {
   roomCodeSchema,
   joinRoomCodeSchema,
-  joinIdentitySchema,
   type JoinRoomCodeFormValues,
-  type JoinIdentityFormValues,
+  type JoinFormValues,
 } from './join'
 export {
   quizConfigSchema,

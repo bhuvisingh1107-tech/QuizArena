@@ -34,11 +34,11 @@ from app.services.quiz_execution_service import QuizExecutionService
 
 @dataclass
 class TargetedEvent:
-    """WebSocket event with an explicit audience (never cross-broadcast answers)."""
+    """WebSocket event with an explicit audience (never leak selected answers)."""
 
     type: str
     payload: dict[str, Any] = field(default_factory=dict)
-    audience: Literal["participant", "admin"] = "participant"
+    audience: Literal["participant", "admin", "room"] = "participant"
 
 
 @dataclass
@@ -140,6 +140,12 @@ class ResponseService:
 
         now = datetime.now(UTC)
         id_strings = [str(oid) for oid in normalized_ids]
+        response_time_ms: int | None = None
+        if question.opened_at is not None:
+            elapsed_ms = int((now - question.opened_at).total_seconds() * 1000)
+            pause_ms = int(room.pause_accumulated_ms or 0)
+            response_time_ms = max(0, elapsed_ms - pause_ms)
+
         response = Response(
             participant_id=participant.id,
             session_question_id=question.id,
@@ -151,12 +157,23 @@ class ResponseService:
             streak_bonus_earned=0,
             total_points_earned=0,
             submitted_at=now,
-            response_time_ms=None,  # timers deferred
+            response_time_ms=response_time_ms,
             status="submitted",
         )
-        self._responses.create(response)
-        participant.state = ParticipantState.ANSWERED
-        self._session.commit()
+        try:
+            self._responses.create(response)
+            participant.state = ParticipantState.ANSWERED
+            self._session.commit()
+        except Exception as exc:
+            self._session.rollback()
+            from sqlalchemy.exc import IntegrityError
+
+            if isinstance(exc, IntegrityError):
+                raise ValidationError(
+                    "ALREADY_SUBMITTED",
+                    "An answer has already been submitted for this question",
+                ) from exc
+            raise
         self._session.refresh(response)
 
         submitted_count = self._responses.count_submitted_for_question(question.id)
@@ -198,7 +215,7 @@ class ResponseService:
                 TargetedEvent(
                     type="answer:submission_count",
                     payload=admin_count_payload,
-                    audience="admin",
+                    audience="room",
                 ),
             ],
         )

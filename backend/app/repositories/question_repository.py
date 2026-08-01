@@ -25,11 +25,13 @@ class QuestionRepository:
         time_limit_seconds: int | None,
         allow_multiple_correct: bool,
         sort_order: int,
+        explanation: str | None = None,
     ) -> Question:
         question = Question(
             section_id=section_id,
             question_type=question_type,
             prompt_text=prompt_text,
+            explanation=explanation,
             base_points=base_points,
             time_limit_seconds=time_limit_seconds,
             allow_multiple_correct=allow_multiple_correct,

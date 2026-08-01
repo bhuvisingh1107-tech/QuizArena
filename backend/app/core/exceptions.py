@@ -1,4 +1,4 @@
-"""Domain exception classes (implementation deferred)."""
+"""Domain exception classes for QuizArena API and service layers."""
 
 from typing import Any
 

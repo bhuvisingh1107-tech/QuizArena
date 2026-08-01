@@ -5,7 +5,6 @@ import {
   Radio,
   Settings,
   Trophy,
-  Image as ImageIcon,
   Menu,
   X,
 } from 'lucide-react'
@@ -22,7 +21,6 @@ const navItems = [
   { to: '/admin/quizzes', label: 'Quizzes', icon: ClipboardList },
   { to: '/admin/live-rooms', label: 'Live Rooms', icon: Radio },
   { to: '/admin/results', label: 'Results', icon: Trophy },
-  { to: '/admin/media', label: 'Media', icon: ImageIcon },
   { to: '/admin/settings', label: 'Settings', icon: Settings },
 ]
 
@@ -61,9 +59,9 @@ export function AdminLayout() {
 
   return (
     <div className="flex min-h-svh">
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--color-ink-elevated)]/90 backdrop-blur md:flex">
+      <aside className="no-print hidden w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--color-ink-elevated)]/90 backdrop-blur md:flex">
         <div className="px-5 py-6">
-          <p className="font-display text-2xl font-extrabold tracking-tight text-[#f0f4fa]">
+          <p className="font-display text-2xl font-extrabold tracking-tight text-[var(--heading)]">
             Quiz<span className="text-[var(--primary)]">Arena</span>
           </p>
           <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
@@ -97,7 +95,12 @@ export function AdminLayout() {
               <p className="font-display text-xl font-extrabold">
                 Quiz<span className="text-[var(--primary)]">Arena</span>
               </p>
-              <Button variant="ghost" size="icon" onClick={() => setMobileOpen(false)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close menu"
+                onClick={() => setMobileOpen(false)}
+              >
                 <X className="h-5 w-5" />
               </Button>
             </div>
@@ -114,8 +117,13 @@ export function AdminLayout() {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--color-ink-elevated)]/70 px-4 py-3 backdrop-blur md:hidden">
-          <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)}>
+        <header className="no-print flex items-center gap-3 border-b border-[var(--border)] bg-[var(--color-ink-elevated)]/70 px-4 py-3 backdrop-blur md:hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Open menu"
+            onClick={() => setMobileOpen(true)}
+          >
             <Menu className="h-5 w-5" />
           </Button>
           <p className="font-display text-lg font-bold">

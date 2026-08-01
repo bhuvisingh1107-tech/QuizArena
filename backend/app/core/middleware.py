@@ -1,6 +1,9 @@
-"""HTTP middleware: CORS, request ID, and error handling."""
+"""HTTP middleware: CORS, security headers, request ID, body limits, access logs."""
+
+from __future__ import annotations
 
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -8,14 +11,16 @@ from typing import Any
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError as PydanticValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.config import Settings
 from app.core.exceptions import QuizArenaError
 
 logger = logging.getLogger(__name__)
+access_logger = logging.getLogger("quizarena.access")
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -26,10 +31,40 @@ def setup_cors(app: FastAPI, settings: Settings) -> None:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept", REQUEST_ID_HEADER],
         expose_headers=[REQUEST_ID_HEADER],
+        max_age=600,
     )
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Attach baseline security headers to every response."""
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=()",
+        )
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+        )
+        # HSTS is typically terminated at the reverse proxy; set only when HTTPS is clear.
+        if request.url.scheme == "https":
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
+        return response
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -45,6 +80,61 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
         response.headers[REQUEST_ID_HEADER] = request_id
+        return response
+
+
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject oversized request bodies early (media uploads share this ceiling)."""
+
+    def __init__(self, app, max_body_bytes: int) -> None:
+        super().__init__(app)
+        self._max_body_bytes = max_body_bytes
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                length = int(content_length)
+            except ValueError:
+                length = 0
+            if length > self._max_body_bytes:
+                return PlainTextResponse("Request entity too large", status_code=413)
+        return await call_next(request)
+
+
+class AccessLogMiddleware(BaseHTTPMiddleware):
+    """Structured access log for non-health traffic."""
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        start = time.perf_counter()
+        response = await call_next(request)
+        path = request.url.path
+        if path.endswith("/health") or path.endswith("/ready") or path.endswith("/live"):
+            return response
+        duration_ms = round((time.perf_counter() - start) * 1000, 2)
+        client = request.client.host if request.client else None
+        access_logger.info(
+            "%s %s -> %s",
+            request.method,
+            path,
+            response.status_code,
+            extra={
+                "request_id": getattr(request.state, "request_id", None),
+                "method": request.method,
+                "path": path,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+                "client_ip": client,
+            },
+        )
         return response
 
 
@@ -133,6 +223,12 @@ def register_exception_handlers(app: FastAPI) -> None:
 
 def setup_middleware(app: FastAPI, settings: Settings) -> None:
     """Register all HTTP middleware and exception handlers."""
+    # Starlette applies middleware in reverse add order for request path.
     setup_cors(app, settings)
+    if settings.trusted_hosts and settings.trusted_hosts != ["*"]:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=settings.max_request_body_bytes)
+    app.add_middleware(AccessLogMiddleware)
     app.add_middleware(RequestIdMiddleware)
     register_exception_handlers(app)

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useParticipantSessionContext } from '@/contexts/ParticipantSessionContext'
-import { participantGet, participantPost } from '@/lib/participant-api'
+import { participantGet } from '@/lib/participant-api'
 import type { JoinResponse, LeaveResponse } from '@/types/api'
 
 export const participantQueryKeys = {
@@ -19,19 +19,6 @@ export function useParticipantMeQuery(enabled = true) {
     queryKey: participantQueryKeys.me,
     queryFn: () => participantGet<JoinResponse>('/participants/me'),
     enabled: enabled && hasSession,
-  })
-}
-
-export function useParticipantReconnectMutation() {
-  const { persistJoin } = useParticipantSessionContext()
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: () => participantPost<JoinResponse>('/participants/reconnect'),
-    onSuccess: (data) => {
-      persistJoin(data)
-      void queryClient.invalidateQueries({ queryKey: participantQueryKeys.me })
-    },
   })
 }
 

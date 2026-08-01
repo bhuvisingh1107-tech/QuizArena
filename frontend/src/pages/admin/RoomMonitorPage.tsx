@@ -1,18 +1,24 @@
 import {
   Copy,
+  DoorClosed,
+  DoorOpen,
   Pause,
   Play,
+  Printer,
   Radio,
   SkipForward,
   Square,
-  DoorOpen,
-  DoorClosed,
+  Trophy,
 } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { LoadingState } from '@/components/shared/LoadingState'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { StatCard } from '@/components/shared/StatCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -27,9 +33,12 @@ import {
 } from '@/components/ui/table'
 import { useLiveRoom } from '@/hooks/queries/useLiveRoom'
 import { useLiveRoomMutations } from '@/hooks/queries/useLiveRoomMutations'
+import { useRoomParticipants } from '@/hooks/queries/useRoomParticipants'
+import { useRoomResults } from '@/hooks/queries/useRoomResults'
 import { useAdminWebSocket } from '@/hooks/useAdminWebSocket'
 import { cn } from '@/lib/utils'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
+import type { LiveParticipant, RoomState } from '@/types/api'
 
 const connectionVariant: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'secondary'> =
   {
@@ -39,10 +48,65 @@ const connectionVariant: Record<string, 'default' | 'success' | 'warning' | 'dan
     error: 'danger',
   }
 
+function canRest(
+  state: RoomState,
+  action: 'openLobby' | 'toggle' | 'start' | 'pause' | 'resume' | 'end' | 'close',
+): boolean {
+  switch (action) {
+    case 'openLobby':
+      return state === 'Setup'
+    case 'toggle':
+      return state === 'Lobby'
+    case 'start':
+      return state === 'Lobby'
+    case 'pause':
+      return state === 'Active'
+    case 'resume':
+      return state === 'Paused'
+    case 'end':
+      return state === 'Active' || state === 'Paused' || state === 'SectionBreak'
+    case 'close':
+      return state === 'Lobby' || state === 'Completed'
+    default:
+      return false
+  }
+}
+
+function canWs(
+  state: RoomState,
+  action: 'start' | 'close' | 'reveal' | 'next' | 'section' | 'end',
+): boolean {
+  if (action === 'end') return state === 'Active' || state === 'Paused' || state === 'SectionBreak'
+  return state === 'Active'
+}
+
+function formatTimer(
+  timerEndsAt?: string | null,
+  _tick = 0,
+  paused = false,
+): string {
+  void _tick
+  if (!timerEndsAt) return 'Manual timing'
+  const end = new Date(timerEndsAt).getTime()
+  const remaining = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+  const m = Math.floor(remaining / 60)
+  const s = remaining % 60
+  const label = `${m}:${String(s).padStart(2, '0')} remaining`
+  return paused ? `${label} (paused)` : label
+}
+
 export function RoomMonitorPage() {
   const { roomId = '' } = useParams()
   const roomQuery = useLiveRoom(roomId)
+  const participantsQuery = useRoomParticipants(roomId)
   const live = useAdminWebSocket({ roomId, enabled: Boolean(roomId) })
+  const resultsQuery = useRoomResults(
+    roomId,
+    Boolean(roomId) &&
+      (live.room?.state === 'Completed' ||
+        roomQuery.data?.state === 'Completed' ||
+        roomQuery.data?.state === 'Closed'),
+  )
   const {
     openLobby,
     toggleLobby,
@@ -53,8 +117,68 @@ export function RoomMonitorPage() {
     closeRoom,
   } = useLiveRoomMutations()
 
+  const [skipConfirm, setSkipConfirm] = useState(false)
+  const [endConfirm, setEndConfirm] = useState(false)
+  const [closeConfirm, setCloseConfirm] = useState(false)
+  const [endQuizConfirm, setEndQuizConfirm] = useState(false)
+  const [timerTick, setTimerTick] = useState(0)
+
+  const timerEndsAt = live.currentQuestion?.timerEndsAt
+  const roomPaused = (live.room?.state ?? roomQuery.data?.state) === 'Paused'
+
+  useEffect(() => {
+    if (!timerEndsAt || roomPaused) return
+    const id = setInterval(() => setTimerTick((t) => t + 1), 500)
+    return () => clearInterval(id)
+  }, [timerEndsAt, roomPaused])
+
   const room = live.room ?? roomQuery.data ?? null
-  const participants = Object.values(live.participants)
+
+  const participants = useMemo(() => {
+    const map = new Map<string, LiveParticipant>()
+
+    for (const p of participantsQuery.data?.items ?? []) {
+      map.set(p.id, {
+        id: p.id,
+        displayName: p.displayName,
+        email: p.email,
+        state: p.state,
+        score: p.totalScore,
+        connected: p.connectionStatus === 'connected',
+      })
+    }
+
+    for (const p of Object.values(live.participants)) {
+      const existing = map.get(p.id)
+      map.set(p.id, {
+        ...existing,
+        ...p,
+        email: p.email ?? existing?.email ?? null,
+        score: p.score ?? existing?.score ?? 0,
+        connected: p.connected ?? existing?.connected,
+      })
+    }
+
+    return [...map.values()].sort((a, b) => a.displayName.localeCompare(b.displayName))
+  }, [participantsQuery.data?.items, live.participants])
+
+  const leaderboard =
+    live.leaderboard.length > 0
+      ? live.leaderboard
+      : (resultsQuery.data?.leaderboard ?? []).map((e) => ({
+          rank: e.rank,
+          participantId: e.participantId,
+          displayName: e.displayName,
+          score: e.score,
+          streak: e.streak,
+        }))
+
+  const questionIndex =
+    room?.currentQuestionIndex ?? live.currentQuestion?.index ?? null
+  const questionTotal = room?.questionCount ?? null
+  const sectionLabel =
+    (live.currentQuestion as { sectionName?: string } | null)?.sectionName ??
+    null
 
   const copy = async (label: string, value: string) => {
     try {
@@ -70,6 +194,7 @@ export function RoomMonitorPage() {
       await action()
       toastSuccess(label)
       void roomQuery.refetch()
+      void participantsQuery.refetch()
     } catch (error) {
       toastError(error)
     }
@@ -78,6 +203,7 @@ export function RoomMonitorPage() {
   const runWs = (type: string, label: string) => {
     const ok = live.send(type, {})
     if (ok) toastSuccess(label)
+    else toastError(new Error('WebSocket not connected'))
   }
 
   if (roomQuery.isLoading && !room) {
@@ -97,17 +223,29 @@ export function RoomMonitorPage() {
     return <ErrorState message="Room not found" />
   }
 
+  const state = room.state
+  const qrTarget = room.qrTarget || room.joinUrl
+  const isCompleted = state === 'Completed' || state === 'Closed'
+
   return (
     <div className="space-y-6">
       <PageHeader
         title={room.quizTitleSnapshot}
-        description={`Room code ${room.roomCode}`}
+        description="Host dashboard — control lobby, questions, and participants."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge state={room.state} />
+            <StatusBadge state={state} />
             <Badge variant={connectionVariant[live.connectionStatus] ?? 'secondary'}>
               WS: {live.connectionStatus}
             </Badge>
+            {isCompleted ? (
+              <Button asChild variant="secondary" size="sm">
+                <Link to={`/admin/results/${room.id}`}>
+                  <Trophy className="h-4 w-4" />
+                  Results
+                </Link>
+              </Button>
+            ) : null}
             <Button asChild variant="outline" size="sm">
               <Link to="/admin/live-rooms">All rooms</Link>
             </Button>
@@ -119,60 +257,84 @@ export function RoomMonitorPage() {
         <ErrorState
           title="Live connection issue"
           message={live.lastError}
-          onRetry={() => live.clearError()}
+          onRetry={() => {
+            live.clearError()
+            live.reconnect()
+          }}
         />
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Participants</CardDescription>
-            <CardTitle className="text-3xl">{participants.length}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-[var(--muted-foreground)]">
-            From live WebSocket presence
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Submissions</CardDescription>
-            <CardTitle className="text-3xl">{live.submissionCount}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-[var(--muted-foreground)]">
-            Current question
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Question index</CardDescription>
-            <CardTitle className="text-3xl">
-              {room.currentQuestionIndex ?? live.currentQuestion?.index ?? '—'}
-            </CardTitle>
-          </CardHeader>
-        </Card>
+      <Card>
+        <CardContent className="flex flex-col items-center gap-4 py-8 sm:flex-row sm:justify-between">
+          <div className="text-center sm:text-left">
+            <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
+              Room code
+            </p>
+            <p className="font-display text-5xl font-extrabold tracking-[0.2em] text-[var(--primary)] sm:text-6xl">
+              {room.roomCode}
+            </p>
+            {room.lobbySubState ? (
+              <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+                Lobby: {room.lobbySubState}
+              </p>
+            ) : null}
+          </div>
+          <div className="rounded-xl bg-white p-3">
+            <QRCodeSVG value={qrTarget} size={140} level="M" />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Participants" value={participants.length} />
+        <StatCard label="Submissions" value={live.submissionCount} description="Current question" />
+        <StatCard
+          label="Progress"
+          value={
+            questionIndex != null && questionTotal
+              ? `${questionIndex + 1}/${questionTotal}`
+              : questionIndex != null
+                ? String(questionIndex + 1)
+                : '—'
+          }
+          description={sectionLabel ? `Section: ${sectionLabel}` : undefined}
+        />
+        <StatCard
+          label="Timer"
+          value={formatTimer(timerEndsAt, timerTick, roomPaused)}
+          valueClassName="text-xl"
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Links</CardTitle>
+            <CardTitle className="text-base">Join & display links</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm">
-              <span className="truncate text-[var(--muted-foreground)]">{room.joinUrl}</span>
+              <div className="min-w-0">
+                <p className="text-xs text-[var(--muted-foreground)]">Join</p>
+                <p className="truncate">{room.joinUrl}</p>
+              </div>
               <Button
                 size="icon"
                 variant="ghost"
+                aria-label="Copy join link"
                 onClick={() => void copy('Join URL', room.joinUrl)}
               >
                 <Copy className="h-4 w-4" />
               </Button>
             </div>
             <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm">
-              <span className="truncate text-[var(--muted-foreground)]">{room.displayUrl}</span>
+              <div className="min-w-0">
+                <p className="text-xs text-[var(--muted-foreground)]">Display</p>
+                <p className="truncate">{room.displayUrl}</p>
+              </div>
               <Button
                 size="icon"
                 variant="ghost"
+                aria-label="Copy display link"
                 onClick={() => void copy('Display URL', room.displayUrl)}
               >
                 <Copy className="h-4 w-4" />
@@ -184,12 +346,13 @@ export function RoomMonitorPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Room lifecycle</CardTitle>
-            <CardDescription>REST controls</CardDescription>
+            <CardDescription>REST controls — disabled by room state</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
             <Button
               size="sm"
               variant="secondary"
+              disabled={!canRest(state, 'openLobby')}
               onClick={() => void runRest('Lobby opened', () => openLobby.mutateAsync(room.id))}
             >
               <DoorOpen className="h-4 w-4" />
@@ -198,12 +361,14 @@ export function RoomMonitorPage() {
             <Button
               size="sm"
               variant="outline"
+              disabled={!canRest(state, 'toggle')}
               onClick={() => void runRest('Lobby toggled', () => toggleLobby.mutateAsync(room.id))}
             >
               Toggle lobby
             </Button>
             <Button
               size="sm"
+              disabled={!canRest(state, 'start')}
               onClick={() => void runRest('Session started', () => startSession.mutateAsync(room.id))}
             >
               <Play className="h-4 w-4" />
@@ -212,6 +377,7 @@ export function RoomMonitorPage() {
             <Button
               size="sm"
               variant="outline"
+              disabled={!canRest(state, 'pause')}
               onClick={() => void runRest('Paused', () => pauseSession.mutateAsync(room.id))}
             >
               <Pause className="h-4 w-4" />
@@ -220,6 +386,7 @@ export function RoomMonitorPage() {
             <Button
               size="sm"
               variant="outline"
+              disabled={!canRest(state, 'resume')}
               onClick={() => void runRest('Resumed', () => resumeSession.mutateAsync(room.id))}
             >
               <Radio className="h-4 w-4" />
@@ -228,7 +395,8 @@ export function RoomMonitorPage() {
             <Button
               size="sm"
               variant="destructive"
-              onClick={() => void runRest('Session ended', () => endSession.mutateAsync(room.id))}
+              disabled={!canRest(state, 'end')}
+              onClick={() => setEndConfirm(true)}
             >
               <Square className="h-4 w-4" />
               End
@@ -236,7 +404,8 @@ export function RoomMonitorPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => void runRest('Room closed', () => closeRoom.mutateAsync(room.id))}
+              disabled={!canRest(state, 'close')}
+              onClick={() => setCloseConfirm(true)}
             >
               <DoorClosed className="h-4 w-4" />
               Close
@@ -251,12 +420,17 @@ export function RoomMonitorPage() {
           <CardDescription>WebSocket admin controls</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => runWs('admin:start_question', 'Start question sent')}>
+          <Button
+            size="sm"
+            disabled={!canWs(state, 'start')}
+            onClick={() => runWs('admin:start_question', 'Start question sent')}
+          >
             Start question
           </Button>
           <Button
             size="sm"
             variant="outline"
+            disabled={!canWs(state, 'close')}
             onClick={() => runWs('admin:close_question', 'Close question sent')}
           >
             Close question
@@ -264,6 +438,7 @@ export function RoomMonitorPage() {
           <Button
             size="sm"
             variant="outline"
+            disabled={!canWs(state, 'reveal')}
             onClick={() => runWs('admin:reveal_answer', 'Reveal sent')}
           >
             Reveal answer
@@ -271,14 +446,16 @@ export function RoomMonitorPage() {
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => runWs('admin:next_question', 'Next question sent')}
+            disabled={!canWs(state, 'next')}
+            onClick={() => setSkipConfirm(true)}
           >
             <SkipForward className="h-4 w-4" />
-            Next question
+            Next / Skip
           </Button>
           <Button
             size="sm"
             variant="secondary"
+            disabled={!canWs(state, 'section')}
             onClick={() => runWs('admin:next_section', 'Next section sent')}
           >
             Next section
@@ -286,7 +463,8 @@ export function RoomMonitorPage() {
           <Button
             size="sm"
             variant="destructive"
-            onClick={() => runWs('admin:end_quiz', 'End quiz sent')}
+            disabled={!canWs(state, 'end')}
+            onClick={() => setEndQuizConfirm(true)}
           >
             End quiz
           </Button>
@@ -301,11 +479,14 @@ export function RoomMonitorPage() {
           <CardContent>
             {live.currentQuestion ? (
               <div className="space-y-2 text-sm">
-                <p className="font-medium text-[#f0f4fa]">
+                <p className="font-medium text-[var(--heading)]">
                   {live.currentQuestion.promptText ?? `Question #${live.currentQuestion.index}`}
                 </p>
                 <p className="text-[var(--muted-foreground)]">
-                  State: {live.currentQuestion.state ?? '—'} · Submissions: {live.submissionCount}
+                  State: {live.currentQuestion.state ?? '—'}
+                  {sectionLabel ? ` · Section: ${sectionLabel}` : ''}
+                  {' · '}
+                  Submissions: {live.submissionCount}
                 </p>
               </div>
             ) : (
@@ -315,11 +496,19 @@ export function RoomMonitorPage() {
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Leaderboard</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">Leaderboard preview</CardTitle>
+            {isCompleted ? (
+              <Button asChild size="sm" variant="ghost">
+                <Link to={`/admin/results/${room.id}`}>
+                  <Printer className="h-4 w-4" />
+                  Full results
+                </Link>
+              </Button>
+            ) : null}
           </CardHeader>
           <CardContent>
-            {live.leaderboard.length === 0 ? (
+            {leaderboard.length === 0 ? (
               <p className="text-sm text-[var(--muted-foreground)]">Waiting for scores…</p>
             ) : (
               <Table>
@@ -331,7 +520,7 @@ export function RoomMonitorPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {live.leaderboard.map((entry) => (
+                  {leaderboard.slice(0, 10).map((entry) => (
                     <TableRow key={entry.participantId}>
                       <TableCell>{entry.rank}</TableCell>
                       <TableCell>{entry.displayName}</TableCell>
@@ -348,11 +537,20 @@ export function RoomMonitorPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Participants</CardTitle>
+          <CardDescription>
+            Seeded from REST, updated via WebSocket presence
+            {participantsQuery.isFetching ? ' · refreshing…' : ''}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {participants.length === 0 ? (
+          {participantsQuery.isError && participants.length === 0 ? (
+            <ErrorState
+              message="Failed to load participants"
+              onRetry={() => void participantsQuery.refetch()}
+            />
+          ) : participants.length === 0 ? (
             <p className="text-sm text-[var(--muted-foreground)]">
-              No participants yet. Open the lobby and share the join URL.
+              No participants yet. Open the lobby and share the join QR or URL.
             </p>
           ) : (
             <Table>
@@ -368,7 +566,9 @@ export function RoomMonitorPage() {
               <TableBody>
                 {participants.map((p) => (
                   <TableRow key={p.id}>
-                    <TableCell className="font-medium text-[#f0f4fa]">{p.displayName}</TableCell>
+                    <TableCell className="font-medium text-[var(--heading)]">
+                      {p.displayName}
+                    </TableCell>
                     <TableCell className="text-[var(--muted-foreground)]">
                       {p.email ?? '—'}
                     </TableCell>
@@ -393,6 +593,57 @@ export function RoomMonitorPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={skipConfirm}
+        onOpenChange={setSkipConfirm}
+        title="Next / Skip question?"
+        description="Advance to the next question now? This sends admin:next_question."
+        confirmLabel="Next / Skip"
+        onConfirm={() => {
+          runWs('admin:next_question', 'Next / Skip sent')
+          setSkipConfirm(false)
+        }}
+      />
+
+      <ConfirmDialog
+        open={endConfirm}
+        onOpenChange={setEndConfirm}
+        title="End session?"
+        description="End the live session for all participants. You can still view results afterward."
+        confirmLabel="End session"
+        variant="destructive"
+        onConfirm={async () => {
+          await runRest('Session ended', () => endSession.mutateAsync(room.id))
+          setEndConfirm(false)
+        }}
+      />
+
+      <ConfirmDialog
+        open={closeConfirm}
+        onOpenChange={setCloseConfirm}
+        title="Close room?"
+        description="Close this room permanently. Participants will no longer be able to join."
+        confirmLabel="Close room"
+        variant="destructive"
+        onConfirm={async () => {
+          await runRest('Room closed', () => closeRoom.mutateAsync(room.id))
+          setCloseConfirm(false)
+        }}
+      />
+
+      <ConfirmDialog
+        open={endQuizConfirm}
+        onOpenChange={setEndQuizConfirm}
+        title="End quiz?"
+        description="End the quiz for all participants now. This sends admin:end_quiz over WebSocket."
+        confirmLabel="End quiz"
+        variant="destructive"
+        onConfirm={() => {
+          runWs('admin:end_quiz', 'End quiz sent')
+          setEndQuizConfirm(false)
+        }}
+      />
     </div>
   )
 }

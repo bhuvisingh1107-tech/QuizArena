@@ -5,6 +5,7 @@ import type {
   ParticipantLiveOption,
   ParticipantLiveQuestion,
   ParticipantSelfSnapshot,
+  PersonalScoreFeedback,
   Podium,
   RoomState,
   SessionQuestionState,
@@ -22,6 +23,7 @@ export interface ParticipantLiveState {
     state: RoomState
     lobbySubState?: LobbySubState | null
     quizTitle: string
+    hostName?: string
     codesExpired?: boolean
     currentQuestionIndex?: number | null
   } | null
@@ -32,19 +34,27 @@ export interface ParticipantLiveState {
   submissionError: string | null
   selectedOptionIds: string[]
   leaderboard: LeaderboardEntry[]
+  previousLeaderboardRanks: Record<string, number>
   yourRank: number | null
   yourScore: number
   podium: Podium | null
   participantCount: number | null
   submittedCount: number | null
   resultsReady: boolean
+  lastFeedback: PersonalScoreFeedback | null
+  cumulativeTimeBonus: number
+  cumulativeStreakBonus: number
+  showLeaderboardInterstitial: boolean
   lastError: string | null
   isOffline: boolean
+  questionOpenedAt: string | null
+  authFailed: boolean
 }
 
 export type ParticipantLiveAction =
   | { type: 'STATUS'; status: WsConnectionStatus }
   | { type: 'ERROR'; message: string }
+  | { type: 'AUTH_FAILED'; message: string }
   | { type: 'CLEAR_ERROR' }
   | { type: 'RESET' }
   | { type: 'SET_OFFLINE'; offline: boolean }
@@ -62,14 +72,21 @@ export const initialParticipantLiveState: ParticipantLiveState = {
   submissionError: null,
   selectedOptionIds: [],
   leaderboard: [],
+  previousLeaderboardRanks: {},
   yourRank: null,
   yourScore: 0,
   podium: null,
   participantCount: null,
   submittedCount: null,
   resultsReady: false,
+  lastFeedback: null,
+  cumulativeTimeBonus: 0,
+  cumulativeStreakBonus: 0,
+  showLeaderboardInterstitial: false,
   lastError: null,
   isOffline: typeof navigator !== 'undefined' ? !navigator.onLine : false,
+  questionOpenedAt: null,
+  authFailed: false,
 }
 
 export function asRecord(value: unknown): Record<string, unknown> {
@@ -109,6 +126,53 @@ export function computeAccuracyPercent(
   return Math.round((Math.max(0, correct) / answered) * 100)
 }
 
+export type QuizPhase =
+  | 'waiting'
+  | 'answering'
+  | 'closed'
+  | 'scoring'
+  | 'feedback'
+  | 'leaderboard'
+
+function canInferCorrectnessFromOptions(options: ParticipantLiveOption[]): boolean {
+  return options.some((option) => option.isCorrect === true)
+}
+
+export function deriveQuizPhase(state: ParticipantLiveState): QuizPhase {
+  if (state.showLeaderboardInterstitial && state.leaderboard.length > 0) {
+    return 'leaderboard'
+  }
+  if (!state.question) return 'waiting'
+  const qState = state.question.state
+  const options = state.options.length ? state.options : state.question.options
+  const hasPersonalFeedback = state.lastFeedback?.questionId === state.question.id
+
+  if (qState === 'Revealed' || qState === 'Scored') {
+    if (hasPersonalFeedback) return 'feedback'
+    if (canInferCorrectnessFromOptions(options)) return 'feedback'
+    return 'scoring'
+  }
+  if (qState === 'Closed' || qState === 'BuzzerLocked') {
+    return 'closed'
+  }
+  return 'answering'
+}
+
+function deriveTimerEndsAt(
+  timerEndsAt: string | null | undefined,
+  timeLimitSeconds: number | null | undefined,
+  openedAt: string | null | undefined,
+): string | null {
+  if (timerEndsAt) return timerEndsAt
+  if (timeLimitSeconds && openedAt) {
+    const start = new Date(openedAt).getTime()
+    if (!Number.isNaN(start)) {
+      return new Date(start + timeLimitSeconds * 1000).toISOString()
+    }
+  }
+  return null
+}
+
 function stripEmailsFromLeaderboard(entries: LeaderboardEntry[]): LeaderboardEntry[] {
   return entries.map(({ rank, participantId, displayName, score, streak }) => ({
     rank,
@@ -117,6 +181,32 @@ function stripEmailsFromLeaderboard(entries: LeaderboardEntry[]): LeaderboardEnt
     score,
     streak,
   }))
+}
+
+export function ranksFromLeaderboard(
+  entries: LeaderboardEntry[],
+): Record<string, number> {
+  const map: Record<string, number> = {}
+  for (const entry of entries) {
+    map[entry.participantId] = entry.rank
+  }
+  return map
+}
+
+function parsePersonalFeedback(data: Record<string, unknown>): PersonalScoreFeedback {
+  return {
+    questionId: String(data.questionId ?? ''),
+    questionIndex:
+      typeof data.questionIndex === 'number' ? data.questionIndex : 0,
+    isCorrect: Boolean(data.isCorrect),
+    isUnanswered: Boolean(data.isUnanswered),
+    basePoints: typeof data.basePoints === 'number' ? data.basePoints : 0,
+    timeBonus: typeof data.timeBonus === 'number' ? data.timeBonus : 0,
+    streakBonus: typeof data.streakBonus === 'number' ? data.streakBonus : 0,
+    pointsEarned: typeof data.pointsEarned === 'number' ? data.pointsEarned : 0,
+    totalScore: typeof data.totalScore === 'number' ? data.totalScore : 0,
+    streak: typeof data.streak === 'number' ? data.streak : 0,
+  }
 }
 
 function mapOptions(
@@ -209,6 +299,10 @@ function mapQuestion(
         : existing?.allowMultipleCorrect,
     mediaFileId:
       (nested.mediaFileId as string | null | undefined) ?? existing?.mediaFileId ?? null,
+    explanation:
+      (nested.explanation as string | null | undefined) ??
+      existing?.explanation ??
+      null,
     sectionId: String(section.id ?? nested.sectionId ?? existing?.sectionId ?? '') || null,
     sectionName:
       (section.name as string | undefined) ?? existing?.sectionName ?? null,
@@ -281,6 +375,7 @@ function mapRoom(
     quizTitle: String(
       patch.quizTitle ?? patch.quizTitleSnapshot ?? existing?.quizTitle ?? '',
     ),
+    hostName: String(patch.hostName ?? existing?.hostName ?? 'Host'),
     codesExpired:
       typeof patch.codesExpired === 'boolean'
         ? patch.codesExpired
@@ -344,6 +439,13 @@ export function participantLiveReducer(
       return { ...state, connectionStatus: action.status }
     case 'ERROR':
       return { ...state, lastError: action.message, connectionStatus: 'error' }
+    case 'AUTH_FAILED':
+      return {
+        ...state,
+        authFailed: true,
+        lastError: action.message,
+        connectionStatus: 'error',
+      }
     case 'CLEAR_ERROR':
       return { ...state, lastError: null }
     case 'RESET':
@@ -402,19 +504,63 @@ export function participantLiveReducer(
           const self = data.participant
             ? mapSelf(asRecord(data.participant), state.self)
             : state.self
-          const question = data.question
-            ? mapQuestion(asRecord(data.question), state.question, { reveal: false })
+          const qData = data.question ? asRecord(data.question) : null
+          const question = qData
+            ? mapQuestion(
+                asRecord(data.question),
+                state.question,
+                {
+                  reveal: qData.state === 'Revealed' || qData.state === 'Scored',
+                },
+              )
             : null
-          const submissionPatch = applySubmissionStatus(
-            state,
+          const openedAt =
+            (data.questionOpenedAt as string | undefined) ??
+            (qData?.questionOpenedAt as string | undefined) ??
+            state.questionOpenedAt
+          const resolvedOpenedAt =
+            question &&
+            (question.state === 'Open' ||
+              question.state === 'BuzzerOpen' ||
+              question.state === 'BuzzerLocked')
+              ? openedAt
+              : null
+          if (question) {
+            question.timerEndsAt = deriveTimerEndsAt(
+              (qData?.timerEndsAt as string | undefined) ?? question.timerEndsAt,
+              question.timeLimitSeconds,
+              resolvedOpenedAt,
+            )
+          }
+          const rawSubmission =
             (data.submission as SubmissionStatus) ??
-              (asRecord(data.participant).submission as SubmissionStatus) ??
-              null,
-          )
+            (asRecord(data.participant).submission as SubmissionStatus) ??
+            null
+          let submissionPatch = applySubmissionStatus(state, rawSubmission)
+          if (state.submissionStatus === 'submitting' && !rawSubmission) {
+            submissionPatch = {
+              submissionStatus: 'idle',
+              submissionError: null,
+            }
+          } else if (
+            state.submissionStatus === 'submitting' &&
+            rawSubmission &&
+            !asRecord(rawSubmission).hasSubmitted
+          ) {
+            submissionPatch = {
+              submissionStatus: 'idle',
+              submissionError: null,
+              selectedOptionIds: state.selectedOptionIds,
+            }
+          }
           const leaderboard = parseLeaderboard(data) ?? state.leaderboard
           const yourRank =
             typeof self?.rank === 'number' ? self.rank : state.yourRank
           const yourScore = self?.totalScore ?? state.yourScore
+          const participantCount =
+            typeof data.participantCount === 'number'
+              ? data.participantCount
+              : state.participantCount
 
           return {
             ...state,
@@ -423,11 +569,62 @@ export function participantLiveReducer(
             self,
             question,
             options: question?.options ?? [],
+            questionOpenedAt: resolvedOpenedAt,
             leaderboard,
+            previousLeaderboardRanks: ranksFromLeaderboard(state.leaderboard),
             yourRank,
             yourScore,
+            participantCount,
             lastError: null,
             ...submissionPatch,
+          }
+        }
+
+        case 'participant:count':
+          return {
+            ...state,
+            participantCount:
+              typeof data.participantCount === 'number'
+                ? data.participantCount
+                : state.participantCount,
+          }
+
+        case 'score:personal': {
+          const feedback = parsePersonalFeedback(data)
+          return {
+            ...state,
+            lastFeedback: feedback,
+            yourScore: feedback.totalScore,
+            cumulativeTimeBonus: state.cumulativeTimeBonus + feedback.timeBonus,
+            cumulativeStreakBonus: state.cumulativeStreakBonus + feedback.streakBonus,
+            self: state.self
+              ? {
+                  ...state.self,
+                  totalScore: feedback.totalScore,
+                  streak: feedback.streak,
+                }
+              : state.self,
+          }
+        }
+
+        case 'room:paused':
+        case 'room:resumed': {
+          const room = mapRoom(state.room, data.room ? asRecord(data.room) : data)
+          const timerEndsAt =
+            (data.timerEndsAt as string | undefined) ??
+            (asRecord(data.room).timerEndsAt as string | undefined)
+          const question =
+            state.question && typeof timerEndsAt === 'string'
+              ? { ...state.question, timerEndsAt }
+              : state.question
+          return {
+            ...state,
+            room,
+            question,
+            participantCount:
+              typeof data.participantCount === 'number'
+                ? data.participantCount
+                : state.participantCount,
           }
         }
 
@@ -435,8 +632,6 @@ export function participantLiveReducer(
         case 'room:lobbyOpened':
         case 'room:lobbyClosed':
         case 'room:sessionStarted':
-        case 'room:paused':
-        case 'room:resumed':
         case 'room:closed':
         case 'section:break':
         case 'section:continued':
@@ -470,18 +665,29 @@ export function participantLiveReducer(
           }
 
         case 'question:started': {
+          const openedAt = action.message.timestamp
           const question = mapQuestion(data, null, { reveal: false })
           if (question) {
             question.state = question.state ?? 'Open'
+            question.timerEndsAt = deriveTimerEndsAt(
+              (data.timerEndsAt as string | undefined) ??
+                (asRecord(data.question).timerEndsAt as string | undefined) ??
+                question.timerEndsAt,
+              question.timeLimitSeconds,
+              openedAt,
+            )
           }
           return {
             ...state,
             question,
             options: question?.options ?? [],
+            questionOpenedAt: openedAt,
             submissionStatus: 'idle',
             submissionError: null,
             selectedOptionIds: [],
             submittedCount: 0,
+            lastFeedback: null,
+            showLeaderboardInterstitial: false,
             room: mapRoom(state.room, {
               currentQuestionIndex: question?.index ?? data.questionIndex,
             }),
@@ -561,11 +767,17 @@ export function participantLiveReducer(
           const own = selfId
             ? leaderboard.find((e) => e.participantId === selfId)
             : undefined
+          const wasScored =
+            state.question?.state === 'Scored' ||
+            state.lastFeedback != null
           return {
             ...state,
             leaderboard,
+            previousLeaderboardRanks: ranksFromLeaderboard(state.leaderboard),
             yourRank: own?.rank ?? state.yourRank,
             yourScore: own?.score ?? state.yourScore,
+            showLeaderboardInterstitial:
+              wasScored && leaderboard.length > 0,
             self: state.self
               ? {
                   ...state.self,
@@ -577,7 +789,22 @@ export function participantLiveReducer(
           }
         }
 
-        case 'error':
+        case 'error': {
+          const code = String(data.code ?? '')
+          if (
+            code === 'AUTH_ERROR' ||
+            code === 'ROOM_CLOSED' ||
+            code === 'FORBIDDEN' ||
+            code === 'UNAUTHORIZED' ||
+            code === 'INVALID_PARTICIPANT_TOKEN'
+          ) {
+            return {
+              ...state,
+              authFailed: true,
+              lastError: String(data.message ?? 'Authentication failed'),
+              connectionStatus: 'error',
+            }
+          }
           return {
             ...state,
             lastError: String(data.message ?? 'WebSocket error'),
@@ -588,6 +815,7 @@ export function participantLiveReducer(
                 ? String(data.message ?? 'WebSocket error')
                 : state.submissionError,
           }
+        }
 
         case 'ping':
         case 'pong':

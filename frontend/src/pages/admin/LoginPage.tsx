@@ -28,15 +28,20 @@ export function LoginPage() {
   })
 
   if (!isLoading && isAuthenticated) {
-    const from = (location.state as { from?: string } | null)?.from ?? '/admin/dashboard'
-    return <Navigate to={from} replace />
+    const from = (location.state as { from?: string } | null)?.from
+    const destination =
+      from && from.startsWith('/admin') && from !== '/admin/login' ? from : '/admin/dashboard'
+    return <Navigate to={destination} replace />
   }
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null)
     try {
       await login(values)
-      navigate('/admin/dashboard', { replace: true })
+      const from = (location.state as { from?: string } | null)?.from
+      const destination =
+        from && from.startsWith('/admin') && from !== '/admin/login' ? from : '/admin/dashboard'
+      navigate(destination, { replace: true })
     } catch (error) {
       if (error instanceof ApiError) {
         setFormError(error.message)

@@ -150,6 +150,7 @@ export interface Question {
   sectionId: string
   questionType: QuestionType
   promptText?: string | null
+  explanation?: string | null
   mediaFileId?: string | null
   basePoints: number
   timeLimitSeconds?: number | null
@@ -162,6 +163,7 @@ export interface Question {
 export interface QuestionCreateInput {
   questionType: QuestionType
   promptText: string
+  explanation?: string | null
   basePoints?: number
   timeLimitSeconds?: number | null
   allowMultipleCorrect?: boolean
@@ -171,10 +173,12 @@ export interface QuestionCreateInput {
 export interface QuestionUpdateInput {
   questionType?: QuestionType
   promptText?: string
+  explanation?: string | null
   basePoints?: number
   timeLimitSeconds?: number | null
   allowMultipleCorrect?: boolean
   sortOrder?: number | null
+  clearMedia?: boolean
 }
 
 export interface QuestionList {
@@ -219,6 +223,11 @@ export interface MediaFile {
   url: string
   createdAt: string
   updatedAt: string
+}
+
+export interface MediaList {
+  items: MediaFile[]
+  total: number
 }
 
 export interface RoomConfig {
@@ -429,6 +438,7 @@ export interface ParticipantLiveQuestion {
   id: string
   index: number
   promptText?: string | null
+  explanation?: string | null
   questionType?: QuestionType
   state?: SessionQuestionState
   timeLimitSeconds?: number | null
@@ -441,6 +451,19 @@ export interface ParticipantLiveQuestion {
   totalQuestions?: number | null
   options: ParticipantLiveOption[]
   isAcceptingAnswers?: boolean
+}
+
+export interface PersonalScoreFeedback {
+  questionId: string
+  questionIndex: number
+  isCorrect: boolean
+  isUnanswered: boolean
+  basePoints: number
+  timeBonus: number
+  streakBonus: number
+  pointsEarned: number
+  totalScore: number
+  streak: number
 }
 
 export interface ParticipantSelfSnapshot {
@@ -456,3 +479,122 @@ export interface ParticipantSelfSnapshot {
   unansweredCount?: number
   email?: string
 }
+
+/** Admin dashboard */
+
+export interface DashboardSummary {
+  quizzesTotal: number
+  quizzesDraft: number
+  quizzesReady: number
+  quizzesInUse: number
+  quizzesArchived: number
+  roomsActive: number
+  roomsCompleted: number
+  participantsToday: number
+}
+
+/** Admin room participants */
+
+export interface AdminParticipant {
+  id: string
+  displayName: string
+  email: string
+  state: ParticipantState
+  connectionStatus: string
+  totalScore: number
+  streak: number
+  rank?: number | null
+  totalCorrect: number
+  totalIncorrect: number
+  unansweredCount: number
+  joinedAt: string
+}
+
+export interface AdminParticipantList {
+  items: AdminParticipant[]
+  total: number
+}
+
+/** Room results & analytics */
+
+export interface ResultsRoom {
+  id: string
+  roomCode: string
+  quizTitleSnapshot: string
+  state: RoomState
+  startedAt?: string | null
+  completedAt?: string | null
+}
+
+export interface ResultsSummary {
+  participantCount: number
+  averageScore: number
+  averageAccuracyPercent: number
+  totalQuestions: number
+  averageResponseTimeMs?: number | null
+}
+
+export interface ResultsLeaderboardEntry {
+  rank: number
+  participantId: string
+  displayName: string
+  score: number
+  streak: number
+  totalCorrect: number
+  totalIncorrect: number
+  unansweredCount: number
+}
+
+export interface ResultsPodium {
+  entries: ResultsLeaderboardEntry[]
+}
+
+export interface OptionDistribution {
+  optionId: string
+  text: string
+  selectedCount: number
+  isCorrect: boolean
+}
+
+export interface QuestionAnalytics {
+  questionId: string
+  questionIndex: number
+  promptText?: string | null
+  sectionName: string
+  submissionCount: number
+  correctCount: number
+  incorrectCount: number
+  unansweredCount: number
+  accuracyPercent: number
+  averageResponseTimeMs?: number | null
+  optionDistribution: OptionDistribution[]
+}
+
+export interface SectionAnalytics {
+  sectionId: string
+  name: string
+  averageScore: number
+  questionCount: number
+}
+
+export interface RoomResults {
+  room: ResultsRoom
+  summary: ResultsSummary
+  leaderboard: ResultsLeaderboardEntry[]
+  podium: ResultsPodium
+  questionAnalytics: QuestionAnalytics[]
+  sectionAnalytics: SectionAnalytics[]
+}
+
+/** Auth: change password */
+
+export interface ChangePasswordRequest {
+  currentPassword: string
+  newPassword: string
+}
+
+export interface ChangePasswordResponse {
+  message: string
+}
+
+export type AdminTheme = 'light' | 'dark'

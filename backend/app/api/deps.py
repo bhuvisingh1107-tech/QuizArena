@@ -28,11 +28,14 @@ def get_engine(settings: Settings | None = None) -> Engine:
     if _engine is None:
         settings = settings or get_settings()
         connect_args = {"check_same_thread": False} if settings.is_sqlite else {}
-        _engine = create_engine(
-            settings.database_url,
-            connect_args=connect_args,
-            pool_pre_ping=True,
-        )
+        kwargs: dict = {
+            "connect_args": connect_args,
+            "pool_pre_ping": True,
+        }
+        if settings.is_postgres:
+            kwargs["pool_size"] = settings.db_pool_size
+            kwargs["max_overflow"] = settings.db_max_overflow
+        _engine = create_engine(settings.database_url, **kwargs)
     return _engine
 
 

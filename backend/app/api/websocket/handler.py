@@ -81,6 +81,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             role=auth.role,
             room_id=auth.room.id,
             participant_id=auth.participant.id if auth.participant else None,
+            auth_token=token if auth.role == ClientRole.ADMIN else None,
         )
         replaced = await connection_manager.connect(connection)
         if replaced is not None:
@@ -109,6 +110,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 room_id=auth.room.id,
                 event_type=presence_event,
                 participant=auth.participant,
+                session=session,
             )
 
         dispatcher = EventDispatcher(connection_manager, session)
@@ -165,20 +167,53 @@ async def _send_handshake(
 
     submission: dict | None = None
     question_snapshot: dict | None = None
+    leaderboard: list | None = None
+    participant_count: int | None = None
+    timer_payload: dict | None = None
+
+    from app.api.websocket.dispatcher import count_active_participants
+    from app.services.leaderboard_service import LeaderboardService
+
+    participant_count = count_active_participants(session, room.id)
+
+    # Shared live snapshot for admin, display, and participant reconnects.
+    execution = QuizExecutionService(session).get_execution_state(room.id)
+    if execution.question is not None:
+        reveal = execution.question.state.value in {"Revealed", "Scored"}
+        question_snapshot = QuizExecutionService(session)._question_payload(
+            room,
+            execution.question,
+            execution.question.session_section,
+            include_correct=reveal,
+        )
+        question_snapshot["isAcceptingAnswers"] = execution.is_accepting_answers
+        question_snapshot["questionIndex"] = execution.question_index
+        # Prefer pause-aware ends from _question_payload (do not overwrite).
+        ends_at = question_snapshot.get("timerEndsAt")
+        nested_q = question_snapshot.get("question")
+        if not ends_at and isinstance(nested_q, dict):
+            ends_at = nested_q.get("timerEndsAt")
+        if ends_at:
+            timer_payload = {
+                "endsAt": ends_at,
+                "timeLimitSeconds": execution.question.time_limit_seconds,
+                "timerPaused": bool(
+                    (nested_q or {}).get("timerPaused")
+                    if isinstance(nested_q, dict)
+                    else False
+                ),
+            }
+
+    board = LeaderboardService(session).snapshot(room.id)
+    leaderboard = board.get("entries")
+    session.commit()
+
     if connection.role == ClientRole.PARTICIPANT and participant is not None:
         responses = ResponseService(session)
         submission = responses.get_submission_status(
             room_id=room.id,
             participant_id=participant.id,
         )
-        execution = QuizExecutionService(session).get_execution_state(room.id)
-        if execution.question is not None:
-            question_snapshot = {
-                "id": str(execution.question.id),
-                "state": execution.question.state.value,
-                "questionIndex": execution.question_index,
-                "isAcceptingAnswers": execution.is_accepting_answers,
-            }
 
     resync = ResyncPayload(
         role=connection.role.value,
@@ -190,6 +225,9 @@ async def _send_handshake(
         ),
         question=question_snapshot,
         submission=submission,
+        leaderboard=leaderboard,
+        participant_count=participant_count,
+        timer=timer_payload,
     )
     await connection_manager.send_to_connection(
         connection,
@@ -228,10 +266,12 @@ async def _cleanup_connection(session: Session, connection: WSConnection) -> Non
         room_id=connection.room_id,
         event_type=ServerEventType.PARTICIPANT_DISCONNECTED,
         participant=participant,
+        session=session,
     )
     await notify_participant_presence(
         connection_manager,
         room_id=connection.room_id,
         event_type=ServerEventType.PARTICIPANT_LEFT,
         participant=participant,
+        session=session,
     )

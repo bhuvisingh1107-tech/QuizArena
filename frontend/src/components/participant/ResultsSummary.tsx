@@ -8,6 +8,8 @@ export interface ResultsSummaryProps {
   correct: number
   incorrect: number
   unanswered?: number
+  timeBonus?: number
+  streakBonus?: number
   className?: string
 }
 
@@ -18,6 +20,8 @@ export function ResultsSummary({
   correct,
   incorrect,
   unanswered = 0,
+  timeBonus = 0,
+  streakBonus = 0,
   className,
 }: ResultsSummaryProps) {
   const accuracy = computeAccuracyPercent(correct, incorrect)
@@ -25,7 +29,7 @@ export function ResultsSummary({
   return (
     <section
       className={cn(
-        'rounded-xl border border-[var(--border)] bg-[var(--card)]/90 p-5',
+        'participant-celebrate rounded-xl border border-[var(--border)] bg-[var(--card)]/90 p-5',
         className,
       )}
       aria-label="Your results"
@@ -40,6 +44,8 @@ export function ResultsSummary({
         <Stat label="Incorrect" value={String(incorrect)} />
         <Stat label="Unanswered" value={String(unanswered)} />
         <Stat label="Accuracy" value={`${accuracy}%`} />
+        {timeBonus > 0 ? <Stat label="Time bonus" value={`+${timeBonus}`} /> : null}
+        {streakBonus > 0 ? <Stat label="Streak bonus" value={`+${streakBonus}`} /> : null}
       </div>
     </section>
   )

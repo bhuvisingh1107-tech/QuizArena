@@ -115,3 +115,31 @@ class LeaveResponseData(BaseModel):
     id: UUID
     left: bool = True
     state: ParticipantState
+
+
+class AdminParticipantItem(BaseModel):
+    """Admin participant list row for a live room."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    display_name: str = Field(serialization_alias="displayName")
+    email: str
+    state: ParticipantState
+    connection_status: ConnectionStatus = Field(serialization_alias="connectionStatus")
+    total_score: int = Field(serialization_alias="totalScore")
+    streak: int
+    rank: int | None = None
+    total_correct: int = Field(serialization_alias="totalCorrect")
+    total_incorrect: int = Field(serialization_alias="totalIncorrect")
+    unanswered_count: int = Field(serialization_alias="unansweredCount")
+    joined_at: datetime = Field(serialization_alias="joinedAt")
+
+
+class AdminParticipantListData(BaseModel):
+    """GET /live-rooms/{room_id}/participants payload."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: list[AdminParticipantItem]
+    total: int

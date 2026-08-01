@@ -13,6 +13,7 @@ export type WsConnectionStatus = 'connecting' | 'connected' | 'disconnected' | '
 export type DisplayViewMode =
   | 'waiting'
   | 'question'
+  | 'time_up'
   | 'reveal'
   | 'section_break'
   | 'leaderboard'
@@ -37,6 +38,8 @@ export interface DisplayLiveQuestion {
   state?: SessionQuestionState
   basePoints?: number
   allowMultipleCorrect?: boolean
+  timeLimitSeconds?: number | null
+  timerEndsAt?: string | null
   options: DisplayLiveOption[]
 }
 
@@ -56,6 +59,51 @@ export interface DisplaySection {
   sortOrder?: number
 }
 
+export interface DisplayOptionDistribution {
+  optionId: string
+  text: string
+  selectedCount: number
+  percent: number
+  isCorrect: boolean
+}
+
+export interface DisplaySectionStats {
+  questionCount: number
+  participantCount: number
+  averageAccuracy: number
+}
+
+export interface DisplayQuestionHighlight {
+  questionId: string
+  questionIndex: number
+  promptText?: string | null
+  accuracyPercent: number
+  missPercent?: number
+}
+
+export interface DisplayFastestAnswer {
+  participantId: string
+  displayName: string
+  responseTimeMs: number
+  questionId: string
+  promptText?: string | null
+}
+
+export interface DisplayWinner {
+  participantId: string
+  displayName: string
+  score: number
+  rank: number
+}
+
+export interface DisplaySessionHighlights {
+  averageScore?: number | null
+  winner?: DisplayWinner | null
+  hardestQuestion?: DisplayQuestionHighlight | null
+  mostMissedQuestion?: DisplayQuestionHighlight | null
+  fastestAnswer?: DisplayFastestAnswer | null
+}
+
 export interface DisplayLiveState {
   connectionStatus: WsConnectionStatus
   room: DisplayLiveRoom | null
@@ -63,8 +111,19 @@ export interface DisplayLiveState {
   viewMode: DisplayViewMode
   leaderboard: LeaderboardEntry[]
   previousRanks: Record<string, number>
+  top3: LeaderboardEntry[]
   podium: Podium | null
   section: DisplaySection | null
+  sectionStats: DisplaySectionStats | null
+  sessionHighlights: DisplaySessionHighlights | null
+  participantCount: number
+  submittedCount: number
+  optionDistribution: DisplayOptionDistribution[]
+  explanation: string | null
+  answeredCount: number | null
+  accuracyPercent: number | null
+  questionOpenedAt: number | null
+  showLeaderboardAfterScore: boolean
   resultsReady: boolean
   lastError: string | null
   authFailed: boolean
@@ -85,8 +144,19 @@ export const initialDisplayLiveState: DisplayLiveState = {
   viewMode: 'waiting',
   leaderboard: [],
   previousRanks: {},
+  top3: [],
   podium: null,
   section: null,
+  sectionStats: null,
+  sessionHighlights: null,
+  participantCount: 0,
+  submittedCount: 0,
+  optionDistribution: [],
+  explanation: null,
+  answeredCount: null,
+  accuracyPercent: null,
+  questionOpenedAt: null,
+  showLeaderboardAfterScore: false,
   resultsReady: false,
   lastError: null,
   authFailed: false,
@@ -152,7 +222,6 @@ function mapQuestion(
 ): DisplayLiveQuestion | null {
   const nested = payload.question ? asRecord(payload.question) : payload
   const id = String(nested.id ?? existing?.id ?? '')
-  // Minimal resync snapshots may lack an id — keep existing when possible
   if (!id && !existing) {
     const hasAnyContent =
       nested.promptText != null ||
@@ -209,6 +278,15 @@ function mapQuestion(
       typeof nested.allowMultipleCorrect === 'boolean'
         ? nested.allowMultipleCorrect
         : existing?.allowMultipleCorrect,
+    timeLimitSeconds:
+      typeof nested.timeLimitSeconds === 'number'
+        ? nested.timeLimitSeconds
+        : (existing?.timeLimitSeconds ?? null),
+    timerEndsAt:
+      (nested.timerEndsAt as string | null | undefined) ??
+      (payload.timerEndsAt as string | null | undefined) ??
+      existing?.timerEndsAt ??
+      null,
     mediaFileId:
       (nested.mediaFileId as string | null | undefined) ?? existing?.mediaFileId ?? null,
     sectionName:
@@ -264,6 +342,101 @@ function parseLeaderboard(data: Record<string, unknown>): LeaderboardEntry[] | n
   return null
 }
 
+function parseTop3(data: Record<string, unknown>): LeaderboardEntry[] | null {
+  if (Array.isArray(data.top3)) {
+    return stripEmailsFromLeaderboard(data.top3 as LeaderboardEntry[])
+  }
+  const podium = asRecord(data.podium)
+  if (Array.isArray(podium.entries)) {
+    return stripEmailsFromLeaderboard(podium.entries as LeaderboardEntry[])
+  }
+  const board = parseLeaderboard(data)
+  return board ? board.slice(0, 3) : null
+}
+
+function parseOptionDistribution(
+  data: Record<string, unknown>,
+): DisplayOptionDistribution[] {
+  if (!Array.isArray(data.optionDistribution)) return []
+  return data.optionDistribution.map((item) => {
+    const row = asRecord(item)
+    return {
+      optionId: String(row.optionId ?? ''),
+      text: String(row.text ?? ''),
+      selectedCount:
+        typeof row.selectedCount === 'number' ? row.selectedCount : 0,
+      percent: typeof row.percent === 'number' ? row.percent : 0,
+      isCorrect: row.isCorrect === true,
+    }
+  })
+}
+
+function parseSectionStats(data: Record<string, unknown>): DisplaySectionStats | null {
+  const stats = asRecord(data.sectionStats)
+  if (!Object.keys(stats).length) return null
+  return {
+    questionCount:
+      typeof stats.questionCount === 'number' ? stats.questionCount : 0,
+    participantCount:
+      typeof stats.participantCount === 'number' ? stats.participantCount : 0,
+    averageAccuracy:
+      typeof stats.averageAccuracy === 'number' ? stats.averageAccuracy : 0,
+  }
+}
+
+function parseQuestionHighlight(raw: unknown): DisplayQuestionHighlight | null {
+  if (!raw || typeof raw !== 'object') return null
+  const data = asRecord(raw)
+  if (!data.questionId) return null
+  return {
+    questionId: String(data.questionId),
+    questionIndex:
+      typeof data.questionIndex === 'number' ? data.questionIndex : 0,
+    promptText: (data.promptText as string | null | undefined) ?? null,
+    accuracyPercent:
+      typeof data.accuracyPercent === 'number' ? data.accuracyPercent : 0,
+    missPercent:
+      typeof data.missPercent === 'number' ? data.missPercent : undefined,
+  }
+}
+
+function parseFastestAnswer(raw: unknown): DisplayFastestAnswer | null {
+  if (!raw || typeof raw !== 'object') return null
+  const data = asRecord(raw)
+  if (!data.participantId) return null
+  return {
+    participantId: String(data.participantId),
+    displayName: String(data.displayName ?? 'Player'),
+    responseTimeMs:
+      typeof data.responseTimeMs === 'number' ? data.responseTimeMs : 0,
+    questionId: String(data.questionId ?? ''),
+    promptText: (data.promptText as string | null | undefined) ?? null,
+  }
+}
+
+function parseWinner(raw: unknown): DisplayWinner | null {
+  if (!raw || typeof raw !== 'object') return null
+  const data = asRecord(raw)
+  if (!data.participantId) return null
+  return {
+    participantId: String(data.participantId),
+    displayName: String(data.displayName ?? 'Winner'),
+    score: typeof data.score === 'number' ? data.score : 0,
+    rank: typeof data.rank === 'number' ? data.rank : 1,
+  }
+}
+
+function parseSessionHighlights(data: Record<string, unknown>): DisplaySessionHighlights {
+  return {
+    averageScore:
+      typeof data.averageScore === 'number' ? data.averageScore : null,
+    winner: parseWinner(data.winner),
+    hardestQuestion: parseQuestionHighlight(data.hardestQuestion),
+    mostMissedQuestion: parseQuestionHighlight(data.mostMissedQuestion),
+    fastestAnswer: parseFastestAnswer(data.fastestAnswer),
+  }
+}
+
 function parsePodium(data: Record<string, unknown>): Podium | null {
   const podiumPayload = data.podium ?? data
   const entries = Array.isArray(asRecord(podiumPayload).entries)
@@ -280,6 +453,23 @@ function ranksFromLeaderboard(entries: LeaderboardEntry[]): Record<string, numbe
     ranks[entry.participantId] = entry.rank
   }
   return ranks
+}
+
+function parseParticipantCount(
+  data: Record<string, unknown>,
+  fallback: number,
+): number {
+  if (typeof data.participantCount === 'number') return data.participantCount
+  return fallback
+}
+
+function parseSubmittedCount(
+  data: Record<string, unknown>,
+  fallback: number,
+): number {
+  if (typeof data.submittedCount === 'number') return data.submittedCount
+  if (typeof data.count === 'number') return data.count
+  return fallback
 }
 
 function isAuthFailureCode(code: string): boolean {
@@ -317,6 +507,10 @@ export function deriveViewMode(input: {
   if (roomState === 'Active' || roomState === 'Paused') {
     if (!input.question) return 'waiting'
 
+    if (qState === 'Closed') {
+      return 'time_up'
+    }
+
     if (qState === 'Revealed' || qState === 'Scored') {
       if (input.preferLeaderboard) return 'leaderboard'
       return 'reveal'
@@ -324,7 +518,6 @@ export function deriveViewMode(input: {
 
     if (
       qState === 'Open' ||
-      qState === 'Closed' ||
       qState === 'BuzzerOpen' ||
       qState === 'BuzzerLocked' ||
       qState === 'Pending'
@@ -349,9 +542,20 @@ function withViewMode(
     question: next.question,
     podium: next.podium,
     resultsReady: next.resultsReady,
-    preferLeaderboard,
+    preferLeaderboard: preferLeaderboard || next.showLeaderboardAfterScore,
   })
   return next
+}
+
+function questionResetPatch(): Partial<DisplayLiveState> {
+  return {
+    submittedCount: 0,
+    optionDistribution: [],
+    explanation: null,
+    answeredCount: null,
+    accuracyPercent: null,
+    showLeaderboardAfterScore: false,
+  }
 }
 
 export function displayLiveReducer(
@@ -419,6 +623,36 @@ export function displayLiveReducer(
             room?.state === 'Completed' ||
             room?.state === 'Closed' ||
             state.resultsReady
+          const participantCount = parseParticipantCount(data, state.participantCount)
+          const qPayload =
+            data.question && typeof data.question === 'object'
+              ? asRecord(data.question)
+              : null
+          const qState = question?.state
+          const isQuestionOpen =
+            qState === 'Open' ||
+            qState === 'BuzzerOpen' ||
+            qState === 'BuzzerLocked' ||
+            qState === 'Pending'
+          let questionOpenedAt: number | null = null
+          if (question && isQuestionOpen) {
+            if (typeof data.questionOpenedAt === 'string') {
+              questionOpenedAt = new Date(data.questionOpenedAt).getTime()
+            } else if (qPayload && typeof qPayload.questionOpenedAt === 'string') {
+              questionOpenedAt = new Date(qPayload.questionOpenedAt).getTime()
+            } else {
+              const timerEndsAt =
+                (data.timerEndsAt as string | undefined) ??
+                (qPayload?.timerEndsAt as string | undefined)
+              const limit = question.timeLimitSeconds
+              if (timerEndsAt && limit) {
+                const end = new Date(timerEndsAt).getTime()
+                if (!Number.isNaN(end)) {
+                  questionOpenedAt = end - limit * 1000
+                }
+              }
+            }
+          }
 
           return withViewMode(state, {
             connectionStatus: 'connected',
@@ -426,22 +660,70 @@ export function displayLiveReducer(
             question,
             section,
             leaderboard,
+            top3: parseTop3(data) ?? state.top3,
             previousRanks: ranksFromLeaderboard(state.leaderboard),
             podium,
+            participantCount,
             resultsReady,
+            questionOpenedAt: isQuestionOpen ? questionOpenedAt : null,
             lastError: null,
             authFailed: false,
+          })
+        }
+
+        case 'participant:count':
+          return {
+            ...state,
+            participantCount: parseParticipantCount(data, state.participantCount),
+          }
+
+        case 'answer:submission_count':
+        case 'answer:received':
+          return {
+            ...state,
+            submittedCount: parseSubmittedCount(data, state.submittedCount),
+            participantCount: parseParticipantCount(data, state.participantCount),
+          }
+
+        case 'room:paused':
+        case 'room:resumed': {
+          const room = mapRoom(state.room, data.room ? asRecord(data.room) : data)
+          let question = state.question
+          const timerEndsAt =
+            (data.timerEndsAt as string | undefined) ??
+            (asRecord(data.room).timerEndsAt as string | undefined)
+          if (question && typeof timerEndsAt === 'string') {
+            question = { ...question, timerEndsAt }
+            const limit = question.timeLimitSeconds
+            let questionOpenedAt = state.questionOpenedAt
+            if (limit) {
+              const end = new Date(timerEndsAt).getTime()
+              if (!Number.isNaN(end)) {
+                questionOpenedAt = end - limit * 1000
+              }
+            }
+            return withViewMode(state, {
+              room,
+              question,
+              questionOpenedAt,
+              participantCount: parseParticipantCount(data, state.participantCount),
+            })
+          }
+          return withViewMode(state, {
+            room,
+            participantCount: parseParticipantCount(data, state.participantCount),
           })
         }
 
         case 'room:state_changed':
         case 'room:lobbyOpened':
         case 'room:lobbyClosed':
-        case 'room:sessionStarted':
-        case 'room:paused':
-        case 'room:resumed': {
+        case 'room:sessionStarted': {
           const room = mapRoom(state.room, data.room ? asRecord(data.room) : data)
-          return withViewMode(state, { room })
+          return withViewMode(state, {
+            room,
+            participantCount: parseParticipantCount(data, state.participantCount),
+          })
         }
 
         case 'room:closed': {
@@ -465,10 +747,13 @@ export function displayLiveReducer(
           if (!roomPatch.state) roomPatch.state = 'SectionBreak'
           const room = mapRoom(state.room, roomPatch)
           const leaderboard = parseLeaderboard(data) ?? state.leaderboard
+          const top3 = parseTop3(data) ?? leaderboard.slice(0, 3)
           return withViewMode(state, {
             section,
             room,
             leaderboard,
+            top3,
+            sectionStats: parseSectionStats(data),
             previousRanks: ranksFromLeaderboard(state.leaderboard),
             question: state.question
               ? { ...state.question, state: state.question.state ?? 'Scored' }
@@ -489,6 +774,8 @@ export function displayLiveReducer(
             section,
             room,
             question: null,
+            sectionStats: null,
+            ...questionResetPatch(),
           })
         }
 
@@ -504,7 +791,10 @@ export function displayLiveReducer(
             room,
             podium,
             leaderboard,
+            top3: parseTop3(data) ?? leaderboard.slice(0, 3),
+            sessionHighlights: parseSessionHighlights(data),
             previousRanks: ranksFromLeaderboard(state.leaderboard),
+            participantCount: parseParticipantCount(data, state.participantCount),
             resultsReady: true,
           })
         }
@@ -514,6 +804,7 @@ export function displayLiveReducer(
             resultsReady: true,
             podium: parsePodium(data) ?? state.podium,
             leaderboard: parseLeaderboard(data) ?? state.leaderboard,
+            sessionHighlights: parseSessionHighlights(data),
             previousRanks: ranksFromLeaderboard(state.leaderboard),
           })
 
@@ -525,9 +816,14 @@ export function displayLiveReducer(
           const section = data.section
             ? mapSection(data.section, state.section)
             : state.section
+          const openedAt = action.message.timestamp
+            ? new Date(action.message.timestamp).getTime()
+            : Date.now()
           return withViewMode(state, {
             question,
             section,
+            questionOpenedAt: openedAt,
+            ...questionResetPatch(),
             room: mapRoom(state.room, {
               state: state.room?.state === 'Paused' ? 'Paused' : 'Active',
               currentQuestionIndex: question?.index ?? data.questionIndex,
@@ -547,20 +843,32 @@ export function displayLiveReducer(
           if (question) {
             question.state = type === 'question:reveal' ? 'Revealed' : 'Scored'
           }
-          return withViewMode(state, { question })
+          return withViewMode(state, {
+            question,
+            optionDistribution: parseOptionDistribution(data),
+            explanation:
+              typeof data.explanation === 'string' ? data.explanation : null,
+            answeredCount:
+              typeof data.answeredCount === 'number' ? data.answeredCount : null,
+            accuracyPercent:
+              typeof data.accuracyPercent === 'number' ? data.accuracyPercent : null,
+            showLeaderboardAfterScore: false,
+          })
         }
 
         case 'leaderboard:updated': {
           const leaderboard = parseLeaderboard(data) ?? state.leaderboard
-          // Stay on reveal while Active with a scored/revealed question;
-          // section_break already shows leaderboard via deriveViewMode.
+          const qState = state.question?.state
+          const preferLeaderboard =
+            qState === 'Scored' || qState === 'Revealed'
           return withViewMode(
             state,
             {
               leaderboard,
               previousRanks: ranksFromLeaderboard(state.leaderboard),
+              showLeaderboardAfterScore: preferLeaderboard,
             },
-            false,
+            preferLeaderboard,
           )
         }
 

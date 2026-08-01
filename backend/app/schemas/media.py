@@ -46,6 +46,15 @@ class MediaResponseData(BaseModel):
     updated_at: datetime = Field(serialization_alias="updatedAt")
 
 
+class MediaListData(BaseModel):
+    """Media files scoped to a quiz (for builder picker)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: list[MediaResponseData]
+    total: int
+
+
 class MediaDeleteData(BaseModel):
     """Delete acknowledgement."""
 

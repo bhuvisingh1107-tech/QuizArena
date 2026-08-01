@@ -517,7 +517,8 @@ def test_persistence_fields(
     assert row.session_question_id is not None
     assert row.selected_option_ids == [option_ids[0]]
     assert row.submitted_at is not None
-    assert row.response_time_ms is None
+    assert row.response_time_ms is not None
+    assert row.response_time_ms >= 0
     assert row.status == "submitted"
     assert row.is_correct is False
     assert row.total_points_earned == 0

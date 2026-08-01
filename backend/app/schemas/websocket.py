@@ -54,8 +54,9 @@ class ResyncPayload(BaseModel):
     participant: dict[str, Any] | None = None
     question: dict[str, Any] | None = None
     submission: dict[str, Any] | None = None
-    leaderboard: None = None
-    timer: None = None
+    leaderboard: list[dict[str, Any]] | None = None
+    participant_count: int | None = Field(default=None, serialization_alias="participantCount")
+    timer: dict[str, Any] | None = None
 
 
 def make_message(event_type: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:

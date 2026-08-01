@@ -27,6 +27,8 @@ class WSConnection:
     room_id: UUID
     connection_id: str = field(default_factory=lambda: str(uuid4()))
     participant_id: UUID | None = None
+    # Admin JWT retained so mid-session expiry can be re-checked on control events.
+    auth_token: str | None = None
     last_pong_at: float = field(default_factory=time.monotonic)
     connected_at: float = field(default_factory=time.monotonic)
 
@@ -241,6 +243,19 @@ class ConnectionManager:
 
     def connection_count(self) -> int:
         return len(self._by_connection_id)
+
+    def snapshot_counts(self) -> dict[str, int]:
+        with self._lock:
+            participants = sum(len(pool.participants) for pool in self._rooms.values())
+            admins = sum(1 for pool in self._rooms.values() if pool.admin is not None)
+            displays = sum(1 for pool in self._rooms.values() if pool.display is not None)
+            return {
+                "activeRooms": len(self._rooms),
+                "connections": len(self._by_connection_id),
+                "participants": participants,
+                "admins": admins,
+                "displays": displays,
+            }
 
     def reset(self) -> None:
         """Test helper — clear all pools."""

@@ -4,10 +4,12 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import AppSettings, CurrentAdmin, RequestId, get_db
+from app.api.websocket.connection_manager import connection_manager
+from app.api.websocket.events import ServerEventType
 from app.models.enums import RoomState
 from app.models.live_room import LiveRoom
 from app.schemas.common import DataResponse, Meta
@@ -19,7 +21,11 @@ from app.schemas.live_room import (
     RoomConfigData,
     RoomConfigResponseData,
 )
+from app.schemas.participant import AdminParticipantItem, AdminParticipantListData
+from app.schemas.results import ResultsData
 from app.services.live_room_service import LiveRoomService
+from app.services.quiz_execution_service import QuizExecutionService
+from app.services.results_service import ResultsService
 
 router = APIRouter()
 
@@ -31,7 +37,44 @@ def get_live_room_service(
     return LiveRoomService(db, settings)
 
 
+def get_results_service(db: Annotated[Session, Depends(get_db)]) -> ResultsService:
+    return ResultsService(db)
+
+
+def _lifecycle_payload(room: LiveRoom, db: Session) -> dict:
+    payload: dict = {
+        "roomId": str(room.id),
+        "state": room.state.value,
+        "lobbySubState": room.lobby_sub_state.value if room.lobby_sub_state else None,
+        "codesExpired": room.codes_expired,
+    }
+    if room.state in {RoomState.PAUSED, RoomState.ACTIVE}:
+        execution = QuizExecutionService(db).get_execution_state(room.id)
+        if execution.question is not None:
+            ends = QuizExecutionService._timer_ends_at_ts(room, execution.question)
+            if ends is not None:
+                from datetime import UTC, datetime
+
+                ends_at = (
+                    datetime.fromtimestamp(ends, tz=UTC).isoformat().replace("+00:00", "Z")
+                )
+                payload["timerEndsAt"] = ends_at
+                payload["timerPaused"] = room.state == RoomState.PAUSED
+    return payload
+
+
+async def _broadcast_lifecycle(room: LiveRoom, event_type: str, db: Session) -> None:
+    payload = _lifecycle_payload(room, db)
+    await connection_manager.broadcast_to_room(room.id, event_type, payload)
+    await connection_manager.broadcast_to_room(
+        room.id,
+        ServerEventType.ROOM_STATE_CHANGED,
+        payload,
+    )
+
+
 LiveRoomServiceDep = Annotated[LiveRoomService, Depends(get_live_room_service)]
+ResultsServiceDep = Annotated[ResultsService, Depends(get_results_service)]
 
 
 def _room_response(room: LiveRoom, service: LiveRoomService) -> LiveRoomResponseData:
@@ -201,13 +244,15 @@ def start_session(
     status_code=status.HTTP_200_OK,
     summary="Pause session (Active → Paused)",
 )
-def pause_session(
+async def pause_session(
     room_id: UUID,
     _: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
+    db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
     room = service.pause(room_id)
+    await _broadcast_lifecycle(room, ServerEventType.ROOM_PAUSED, db)
     return _envelope(_room_response(room, service), request_id)
 
 
@@ -217,13 +262,15 @@ def pause_session(
     status_code=status.HTTP_200_OK,
     summary="Resume session (Paused → Active)",
 )
-def resume_session(
+async def resume_session(
     room_id: UUID,
     _: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
+    db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
     room = service.resume(room_id)
+    await _broadcast_lifecycle(room, ServerEventType.ROOM_RESUMED, db)
     return _envelope(_room_response(room, service), request_id)
 
 
@@ -273,3 +320,71 @@ def delete_live_room(
 ) -> JSONResponse:
     service.delete(room_id)
     return _envelope(LiveRoomDeleteData(id=room_id, deleted=True), request_id)
+
+
+@router.get(
+    "/{room_id}/participants",
+    response_model=DataResponse[AdminParticipantListData],
+    status_code=status.HTTP_200_OK,
+    summary="List room participants (admin)",
+)
+def list_room_participants(
+    room_id: UUID,
+    _: CurrentAdmin,
+    service: ResultsServiceDep,
+    request_id: RequestId,
+) -> JSONResponse:
+    participants, ranks, total = service.list_participants_admin(room_id)
+    items = [
+        AdminParticipantItem(
+            id=p.id,
+            display_name=p.display_name,
+            email=p.email,
+            state=p.state,
+            connection_status=p.connection_status,
+            total_score=int(p.total_score or 0),
+            streak=int(p.streak or 0),
+            rank=rank,
+            total_correct=int(p.total_correct or 0),
+            total_incorrect=int(p.total_incorrect or 0),
+            unanswered_count=int(p.unanswered_count or 0),
+            joined_at=p.joined_at,
+        )
+        for p, rank in zip(participants, ranks, strict=True)
+    ]
+    return _envelope(AdminParticipantListData(items=items, total=total), request_id)
+
+
+@router.get(
+    "/{room_id}/results",
+    response_model=DataResponse[ResultsData],
+    status_code=status.HTTP_200_OK,
+    summary="Session results and analytics",
+)
+def get_room_results(
+    room_id: UUID,
+    _: CurrentAdmin,
+    service: ResultsServiceDep,
+    request_id: RequestId,
+) -> JSONResponse:
+    data = service.get_results(room_id)
+    return _envelope(data, request_id)
+
+
+@router.get(
+    "/{room_id}/results/export",
+    status_code=status.HTTP_200_OK,
+    summary="Export session results as CSV",
+)
+def export_room_results(
+    room_id: UUID,
+    _: CurrentAdmin,
+    service: ResultsServiceDep,
+) -> Response:
+    csv_text = service.export_csv(room_id)
+    filename = f"room-{room_id}-results.csv"
+    return StreamingResponse(
+        iter([csv_text]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

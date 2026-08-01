@@ -6,6 +6,7 @@ import {
   initialDisplayLiveState,
   type WsConnectionStatus,
 } from '@/hooks/displayLiveReducer'
+import { getWsBaseUrl } from '@/lib/env'
 import type { WsMessage } from '@/types/api'
 
 export interface UseDisplayWebSocketOptions {
@@ -23,6 +24,7 @@ export function useDisplayWebSocket({
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const intentionalClose = useRef(false)
   const authFailedRef = useRef(false)
+  const connectRef = useRef<(() => void) | null>(null)
 
   const clearReconnectTimer = () => {
     if (reconnectTimer.current) {
@@ -40,6 +42,27 @@ export function useDisplayWebSocket({
     }
     dispatch({ type: 'STATUS', status: 'disconnected' satisfies WsConnectionStatus })
   }, [])
+
+  const reconnect = useCallback(() => {
+    if (!enabled || authFailedRef.current || !secretToken?.trim()) return
+    intentionalClose.current = false
+    reconnectAttempt.current = 0
+    clearReconnectTimer()
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+    connectRef.current?.()
+  }, [enabled, secretToken])
+
+  useEffect(() => {
+    const onOnline = () => {
+      if (!enabled || authFailedRef.current) return
+      reconnect()
+    }
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [enabled, reconnect])
 
   useEffect(() => {
     authFailedRef.current = state.authFailed
@@ -67,8 +90,7 @@ export function useDisplayWebSocket({
     const connect = () => {
       if (cancelled || intentionalClose.current || authFailedRef.current) return
 
-      const base =
-        import.meta.env.VITE_WS_BASE_URL?.replace(/\/$/, '') || 'ws://localhost:8000/ws'
+      const base = getWsBaseUrl()
       const url = `${base}?role=display&token=${encodeURIComponent(secretToken)}`
 
       dispatch({ type: 'STATUS', status: 'connecting' })
@@ -138,11 +160,13 @@ export function useDisplayWebSocket({
       }
     }
 
+    connectRef.current = connect
     connect()
 
     return () => {
       cancelled = true
       intentionalClose.current = true
+      connectRef.current = null
       clearReconnectTimer()
       if (wsRef.current) {
         wsRef.current.close()
@@ -154,6 +178,7 @@ export function useDisplayWebSocket({
   return {
     ...state,
     disconnect,
+    reconnect,
     clearError: () => dispatch({ type: 'CLEAR_ERROR' }),
   }
 }

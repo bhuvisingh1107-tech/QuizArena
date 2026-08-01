@@ -29,12 +29,14 @@ describe('displayLiveReducer', () => {
           state: 'Lobby',
           quizTitle: 'Trivia Night',
         },
+        participantCount: 4,
       }),
     )
 
     expect(lobby.room?.roomCode).toBe('ABC123')
     expect(lobby.room?.quizTitle).toBe('Trivia Night')
     expect(lobby.viewMode).toBe('waiting')
+    expect(lobby.participantCount).toBe(4)
     expect(lobby.connectionStatus).toBe('connected')
   })
 
@@ -57,6 +59,7 @@ describe('displayLiveReducer', () => {
           id: 'q1',
           promptText: 'Capital of France?',
           state: 'Open',
+          timeLimitSeconds: 30,
           options: [
             { id: 'a', text: 'Paris', sortOrder: 0, isCorrect: true },
             { id: 'b', text: 'Lyon', sortOrder: 1, isCorrect: false },
@@ -67,13 +70,15 @@ describe('displayLiveReducer', () => {
 
     expect(started.viewMode).toBe('question')
     expect(started.question?.promptText).toBe('Capital of France?')
+    expect(started.question?.timeLimitSeconds).toBe(30)
     expect(started.question?.options).toHaveLength(2)
     expect(started.question?.options[0]).not.toHaveProperty('isCorrect')
-    expect(started.question?.options[1]).not.toHaveProperty('isCorrect')
+    expect(started.questionOpenedAt).toBeTypeOf('number')
+    expect(started.submittedCount).toBe(0)
     expect(started.section?.name).toBe('Warmup')
   })
 
-  it('keeps isCorrect hidden after question:closed until reveal', () => {
+  it('shows time_up when question is closed', () => {
     const open = displayLiveReducer(
       {
         ...initialDisplayLiveState,
@@ -111,12 +116,28 @@ describe('displayLiveReducer', () => {
       }),
     )
 
-    expect(closed.viewMode).toBe('question')
+    expect(closed.viewMode).toBe('time_up')
     expect(closed.question?.state).toBe('Closed')
     expect(closed.question?.options.every((o) => !('isCorrect' in o))).toBe(true)
   })
 
-  it('highlights correct options on reveal', () => {
+  it('tracks submission counts from answer:submission_count', () => {
+    const next = displayLiveReducer(
+      {
+        ...initialDisplayLiveState,
+        participantCount: 10,
+      },
+      event('answer:submission_count', {
+        submittedCount: 7,
+        participantCount: 10,
+      }),
+    )
+
+    expect(next.submittedCount).toBe(7)
+    expect(next.participantCount).toBe(10)
+  })
+
+  it('highlights correct options and stores reveal stats', () => {
     const base = {
       ...initialDisplayLiveState,
       room: {
@@ -135,7 +156,7 @@ describe('displayLiveReducer', () => {
           { id: 'b', text: 'Lyon', sortOrder: 1 },
         ],
       },
-      viewMode: 'question' as const,
+      viewMode: 'time_up' as const,
     }
 
     const revealed = displayLiveReducer(
@@ -148,16 +169,37 @@ describe('displayLiveReducer', () => {
             { id: 'b', text: 'Lyon', sortOrder: 1, isCorrect: false },
           ],
         },
+        explanation: 'Paris is the capital.',
+        answeredCount: 8,
+        accuracyPercent: 75,
+        optionDistribution: [
+          {
+            optionId: 'a',
+            text: 'Paris',
+            selectedCount: 6,
+            percent: 75,
+            isCorrect: true,
+          },
+          {
+            optionId: 'b',
+            text: 'Lyon',
+            selectedCount: 2,
+            percent: 25,
+            isCorrect: false,
+          },
+        ],
       }),
     )
 
     expect(revealed.viewMode).toBe('reveal')
     expect(revealed.question?.state).toBe('Revealed')
+    expect(revealed.explanation).toBe('Paris is the capital.')
+    expect(revealed.accuracyPercent).toBe(75)
+    expect(revealed.optionDistribution).toHaveLength(2)
     expect(revealed.question?.options.find((o) => o.id === 'a')?.isCorrect).toBe(true)
-    expect(revealed.question?.options.find((o) => o.id === 'b')?.isCorrect).toBe(false)
   })
 
-  it('updates leaderboard and stores previousRanks', () => {
+  it('switches to leaderboard after leaderboard:updated on scored question', () => {
     const withBoard = {
       ...initialDisplayLiveState,
       room: {
@@ -189,6 +231,7 @@ describe('displayLiveReducer', () => {
             participantId: 'p2',
             displayName: 'Sam',
             score: 50,
+            streak: 3,
             email: 'secret@example.com',
           },
           {
@@ -208,13 +251,14 @@ describe('displayLiveReducer', () => {
       participantId: 'p2',
       displayName: 'Sam',
       score: 50,
+      streak: 3,
     })
     expect(next.leaderboard[0]).not.toHaveProperty('email')
-    // Prefer staying on reveal while Active with scored question
-    expect(next.viewMode).toBe('reveal')
+    expect(next.viewMode).toBe('leaderboard')
+    expect(next.showLeaderboardAfterScore).toBe(true)
   })
 
-  it('enters section_break on section:break', () => {
+  it('enters section_break with stats and top3', () => {
     const next = displayLiveReducer(
       {
         ...initialDisplayLiveState,
@@ -227,19 +271,29 @@ describe('displayLiveReducer', () => {
       },
       event('section:break', {
         section: { id: 's1', name: 'Round 1', sortOrder: 0 },
-        entries: [
+        leaderboard: [
+          { rank: 1, participantId: 'p1', displayName: 'Alex', score: 30 },
+          { rank: 2, participantId: 'p2', displayName: 'Sam', score: 20 },
+        ],
+        top3: [
           { rank: 1, participantId: 'p1', displayName: 'Alex', score: 30 },
         ],
+        sectionStats: {
+          questionCount: 5,
+          participantCount: 12,
+          averageAccuracy: 68.5,
+        },
       }),
     )
 
     expect(next.viewMode).toBe('section_break')
     expect(next.room?.state).toBe('SectionBreak')
     expect(next.section?.name).toBe('Round 1')
-    expect(next.leaderboard).toHaveLength(1)
+    expect(next.sectionStats?.averageAccuracy).toBe(68.5)
+    expect(next.top3).toHaveLength(1)
   })
 
-  it('moves to podium then completed on quiz:completed', () => {
+  it('moves to podium with session highlights on quiz:completed', () => {
     const podium = displayLiveReducer(
       {
         ...initialDisplayLiveState,
@@ -258,13 +312,28 @@ describe('displayLiveReducer', () => {
             { rank: 3, participantId: 'p3', displayName: 'Jo', score: 60 },
           ],
         },
+        averageScore: 42.5,
+        winner: {
+          participantId: 'p1',
+          displayName: 'Alex',
+          score: 100,
+          rank: 1,
+        },
+        fastestAnswer: {
+          participantId: 'p2',
+          displayName: 'Sam',
+          responseTimeMs: 1200,
+          questionId: 'q1',
+          promptText: 'Quick one',
+        },
       }),
     )
 
     expect(podium.resultsReady).toBe(true)
     expect(podium.room?.state).toBe('Completed')
     expect(podium.viewMode).toBe('podium')
-    expect(podium.podium?.entries).toHaveLength(3)
+    expect(podium.sessionHighlights?.averageScore).toBe(42.5)
+    expect(podium.sessionHighlights?.winner?.displayName).toBe('Alex')
 
     const completedOnly = displayLiveReducer(
       {
@@ -323,6 +392,14 @@ describe('displayLiveReducer', () => {
     expect(next.question?.promptText).toBe('Kept')
     expect(next.viewMode).toBe('question')
   })
+
+  it('updates participant count from participant:count', () => {
+    const next = displayLiveReducer(
+      initialDisplayLiveState,
+      event('participant:count', { participantCount: 15 }),
+    )
+    expect(next.participantCount).toBe(15)
+  })
 })
 
 describe('deriveViewMode', () => {
@@ -354,6 +431,45 @@ describe('deriveViewMode', () => {
         resultsReady: false,
       }),
     ).toBe('section_break')
+
+    expect(
+      deriveViewMode({
+        room: {
+          id: 'r',
+          roomCode: 'A',
+          state: 'Active',
+          quizTitle: 'T',
+        },
+        question: {
+          id: 'q',
+          index: 0,
+          state: 'Closed',
+          options: [],
+        },
+        podium: null,
+        resultsReady: false,
+      }),
+    ).toBe('time_up')
+
+    expect(
+      deriveViewMode({
+        room: {
+          id: 'r',
+          roomCode: 'A',
+          state: 'Active',
+          quizTitle: 'T',
+        },
+        question: {
+          id: 'q',
+          index: 0,
+          state: 'Scored',
+          options: [],
+        },
+        podium: null,
+        resultsReady: false,
+        preferLeaderboard: true,
+      }),
+    ).toBe('leaderboard')
   })
 })
 

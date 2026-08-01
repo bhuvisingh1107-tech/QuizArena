@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient, apiDelete, apiGet, apiPost, unwrapData } from '@/lib/api-client'
 import { queryKeys } from '@/hooks/queries/keys'
-import type { ApiEnvelope, MediaCategory, MediaFile } from '@/types/api'
+import type { ApiEnvelope, MediaCategory, MediaFile, MediaList } from '@/types/api'
 
 export function useMedia(mediaId: string | undefined, enabled = true) {
   return useQuery({
@@ -12,8 +12,36 @@ export function useMedia(mediaId: string | undefined, enabled = true) {
   })
 }
 
+export function useQuizMedia(
+  quizId: string | undefined,
+  params: { category?: MediaCategory } = {},
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.media.list(quizId ?? '', params),
+    queryFn: () =>
+      apiGet<MediaList>('/media', {
+        params: {
+          quizId,
+          ...(params.category ? { category: params.category } : {}),
+        },
+      }),
+    enabled: Boolean(quizId) && enabled,
+  })
+}
+
 export function useMediaMutations() {
   const queryClient = useQueryClient()
+
+  const invalidateMedia = async (quizId?: string | null, mediaId?: string) => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.media.all })
+    if (quizId) {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.media.list(quizId) })
+    }
+    if (mediaId) {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.media.detail(mediaId) })
+    }
+  }
 
   const uploadMedia = useMutation({
     mutationFn: async (input: {
@@ -33,7 +61,7 @@ export function useMediaMutations() {
       return unwrapData(response)
     },
     onSuccess: async (media) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.media.detail(media.id) })
+      await invalidateMedia(media.quizId, media.id)
     },
   })
 
@@ -41,7 +69,7 @@ export function useMediaMutations() {
     mutationFn: (mediaId: string) =>
       apiDelete<{ id: string; deleted: boolean }>(`/media/${mediaId}`),
     onSuccess: async (_result, mediaId) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.media.detail(mediaId) })
+      await invalidateMedia(undefined, mediaId)
     },
   })
 
@@ -61,6 +89,12 @@ export function useMediaMutations() {
         `/media/${mediaId}/attach`,
         { quizId, sectionId, questionId },
       ),
+    onSuccess: async (_result, variables) => {
+      await invalidateMedia(variables.quizId, variables.mediaId)
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.questions.list(variables.quizId, variables.sectionId),
+      })
+    },
   })
 
   return { uploadMedia, deleteMedia, attachMedia }

@@ -18,7 +18,7 @@ export function PageHeader({ title, description, actions, className }: PageHeade
       )}
     >
       <div className="space-y-1">
-        <h1 className="font-display text-3xl font-bold tracking-tight text-[#f0f4fa]">{title}</h1>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--heading)]">{title}</h1>
         {description ? (
           <p className="max-w-2xl text-sm text-[var(--muted-foreground)]">{description}</p>
         ) : null}

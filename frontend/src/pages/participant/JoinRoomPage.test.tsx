@@ -44,13 +44,20 @@ function renderJoinRoom() {
 describe('JoinRoomPage session persistence', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    try {
+      localStorage.clear()
+    } catch {
+      // jsdom may not provide localStorage
+    }
     participantPost.mockReset()
   })
 
-  it('stores participant session on successful join', async () => {
+  it('stores participant session on successful join with generated email', async () => {
     const user = userEvent.setup()
-    participantPost.mockImplementation(async (url: string) => {
+    participantPost.mockImplementation(async (url: string, body: unknown) => {
       if (url === '/join') {
+        const req = body as { email: string }
+        expect(req.email).toMatch(/^player-.+@participants\.local$/)
         return {
           sessionToken: 'tok-1',
           restored: false,
@@ -58,7 +65,7 @@ describe('JoinRoomPage session persistence', () => {
             id: 'p1',
             liveRoomId: 'r1',
             displayName: 'Alex',
-            email: 'alex@example.com',
+            email: req.email,
             state: 'InLobby',
             connectionStatus: 'connected',
             totalScore: 0,
@@ -86,9 +93,11 @@ describe('JoinRoomPage session persistence', () => {
 
     renderJoinRoom()
 
-    await user.clear(screen.getByLabelText(/display name/i))
-    await user.type(screen.getByLabelText(/display name/i), 'Alex')
-    await user.type(screen.getByLabelText(/email/i), 'alex@example.com')
+    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/room code/i)).toHaveValue('ABC123')
+
+    await user.clear(screen.getByLabelText(/your name|display name/i))
+    await user.type(screen.getByLabelText(/your name|display name/i), 'Alex')
     await user.click(screen.getByRole('button', { name: /join room/i }))
 
     await waitFor(() => {
@@ -101,9 +110,9 @@ describe('JoinRoomPage session persistence', () => {
       roomCode: 'ABC123',
       roomId: 'r1',
       displayName: 'Alex',
-      email: 'alex@example.com',
       quizTitle: 'Science Night',
       participantId: 'p1',
     })
+    expect(session?.email).toMatch(/^player-.+@participants\.local$/)
   })
 })

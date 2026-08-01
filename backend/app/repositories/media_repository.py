@@ -43,6 +43,18 @@ class MediaRepository:
     def get_by_id(self, media_id: UUID) -> MediaFile | None:
         return self._session.get(MediaFile, media_id)
 
+    def list_for_quiz(
+        self,
+        quiz_id: UUID,
+        *,
+        category: MediaCategory | None = None,
+    ) -> list[MediaFile]:
+        stmt = select(MediaFile).where(MediaFile.quiz_id == quiz_id)
+        if category is not None:
+            stmt = stmt.where(MediaFile.category == category)
+        stmt = stmt.order_by(MediaFile.created_at.desc())
+        return list(self._session.scalars(stmt).all())
+
     def delete(self, media: MediaFile) -> None:
         self._session.delete(media)
         self._session.flush()

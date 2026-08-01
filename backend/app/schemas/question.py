@@ -22,6 +22,12 @@ class QuestionCreateRequest(BaseModel):
         serialization_alias="promptText",
         validation_alias=AliasChoices("promptText", "prompt_text"),
     )
+    explanation: str | None = Field(
+        default=None,
+        max_length=10_000,
+        serialization_alias="explanation",
+        validation_alias=AliasChoices("explanation"),
+    )
     base_points: int = Field(
         default=1,
         ge=1,
@@ -71,6 +77,12 @@ class QuestionUpdateRequest(BaseModel):
         serialization_alias="promptText",
         validation_alias=AliasChoices("promptText", "prompt_text"),
     )
+    explanation: str | None = Field(
+        default=None,
+        max_length=10_000,
+        serialization_alias="explanation",
+        validation_alias=AliasChoices("explanation"),
+    )
     base_points: int | None = Field(
         default=None,
         ge=1,
@@ -94,6 +106,11 @@ class QuestionUpdateRequest(BaseModel):
         serialization_alias="sortOrder",
         validation_alias=AliasChoices("sortOrder", "sort_order"),
     )
+    clear_media: bool | None = Field(
+        default=None,
+        serialization_alias="clearMedia",
+        validation_alias=AliasChoices("clearMedia", "clear_media"),
+    )
 
     @field_validator("prompt_text")
     @classmethod
@@ -115,6 +132,7 @@ class QuestionResponseData(BaseModel):
     section_id: UUID = Field(serialization_alias="sectionId")
     question_type: QuestionType = Field(serialization_alias="questionType")
     prompt_text: str | None = Field(default=None, serialization_alias="promptText")
+    explanation: str | None = Field(default=None, serialization_alias="explanation")
     media_file_id: UUID | None = Field(default=None, serialization_alias="mediaFileId")
     base_points: int = Field(serialization_alias="basePoints")
     time_limit_seconds: int | None = Field(default=None, serialization_alias="timeLimitSeconds")

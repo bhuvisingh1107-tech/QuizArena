@@ -6,12 +6,11 @@ import axios, {
 } from 'axios'
 
 import { ApiError, toApiError, unwrapData } from '@/lib/api-client'
+import { getApiBaseUrl } from '@/lib/env'
 import { clearParticipantSession, getSessionToken } from '@/lib/participant-session'
 import type { ApiEnvelope, ApiErrorBody } from '@/types/api'
 
-const baseURL =
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ||
-  'http://localhost:8000/api/v1'
+const baseURL = getApiBaseUrl()
 
 export const participantApiClient: AxiosInstance = axios.create({
   baseURL,

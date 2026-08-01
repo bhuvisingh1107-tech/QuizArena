@@ -27,5 +27,10 @@ class AdminRepository:
         self._session.flush()
         return admin
 
+    def update_password_hash(self, admin: Admin, password_hash: str) -> Admin:
+        admin.password_hash = password_hash
+        self._session.flush()
+        return admin
+
     def exists_any(self) -> bool:
         return self._session.scalar(select(Admin.id).limit(1)) is not None

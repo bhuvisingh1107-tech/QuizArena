@@ -53,7 +53,7 @@ export function ParticipantShell({
       </main>
 
       {footer ? (
-        <footer className="relative z-10 border-t border-[var(--border)]/60 bg-[var(--background)]/90 px-4 py-4 backdrop-blur">
+        <footer className="relative z-10 border-t border-[var(--border)]/60 bg-[var(--background)]/90 px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur">
           <div className="mx-auto max-w-lg">{footer}</div>
         </footer>
       ) : null}

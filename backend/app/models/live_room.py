@@ -60,6 +60,8 @@ class LiveRoom(Base, TimestampMixin):
         index=True,
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pause_accumulated_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="live_rooms")
     config: Mapped[Optional["RoomConfig"]] = relationship(

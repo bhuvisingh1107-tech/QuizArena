@@ -1,4 +1,6 @@
+import { Maximize, Minimize } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { DisplayConnectionBadge } from '@/components/display/DisplayConnectionBadge'
 import type { WsConnectionStatus } from '@/hooks/displayLiveReducer'
@@ -21,6 +23,28 @@ export function DisplayShell({
   footer,
   className,
 }: DisplayShellProps) {
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  useEffect(() => {
+    const onChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement))
+    }
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      } else {
+        await document.documentElement.requestFullscreen()
+      }
+    } catch {
+      // Browser may block without user gesture or policy
+    }
+  }, [])
+
   return (
     <div className="relative flex min-h-svh w-full flex-col overflow-hidden bg-[var(--background)]">
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -39,7 +63,10 @@ export function DisplayShell({
       <header className="relative z-10 border-b border-[var(--border)]/70 bg-[var(--background)]/85 px-6 py-4 backdrop-blur-md lg:px-10 lg:py-5">
         <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <p className="font-display text-2xl font-extrabold tracking-tight text-[#f0f4fa] lg:text-3xl">
+            <p
+              className="font-display font-extrabold tracking-tight text-[#f0f4fa]"
+              style={{ fontSize: 'clamp(1.25rem, 2.5vw, 1.875rem)' }}
+            >
               Quiz<span className="text-[var(--primary)]">Arena</span>
             </p>
             {quizTitle ? (
@@ -55,11 +82,27 @@ export function DisplayShell({
                 <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
                   Room
                 </p>
-                <p className="font-display text-2xl font-bold tracking-[0.18em] text-[var(--accent)] lg:text-3xl">
+                <p
+                  className="font-display font-bold tracking-[0.18em] text-[var(--accent)]"
+                  style={{ fontSize: 'clamp(1.25rem, 2.5vw, 1.875rem)' }}
+                >
                   {roomCode}
                 </p>
               </div>
             ) : null}
+            <button
+              type="button"
+              onClick={() => void toggleFullscreen()}
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--card)]/80 text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)]/50 hover:text-[#f0f4fa]"
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              data-testid="fullscreen-toggle"
+            >
+              {isFullscreen ? (
+                <Minimize className="h-5 w-5" aria-hidden />
+              ) : (
+                <Maximize className="h-5 w-5" aria-hidden />
+              )}
+            </button>
             <DisplayConnectionBadge status={connectionStatus} />
           </div>
         </div>
@@ -67,8 +110,8 @@ export function DisplayShell({
 
       <main
         className={cn(
-          'relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-6 py-6 lg:px-10 lg:py-8',
-          'aspect-auto min-h-0',
+          'relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 flex-col overflow-y-auto px-6 py-6 lg:px-10 lg:py-8',
+          'min-h-0',
           className,
         )}
       >

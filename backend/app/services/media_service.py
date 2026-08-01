@@ -80,7 +80,7 @@ class MediaService:
             mime_type=stored.mime_type,
             file_size=stored.file_size,
             original_filename=original_filename,
-            quiz_id=quiz_id if category == MediaCategory.QUIZ_BRANDING else None,
+            quiz_id=quiz_id,
         )
         self._session.commit()
         self._session.refresh(media)
@@ -91,6 +91,17 @@ class MediaService:
         if media is None:
             raise NotFoundError("MEDIA_NOT_FOUND", "Media file not found")
         return media
+
+    def list_for_quiz(
+        self,
+        quiz_id: UUID,
+        *,
+        category: MediaCategory | None = None,
+    ) -> list[MediaFile]:
+        quiz = self._quizzes.get_by_id(quiz_id, include_deleted=False)
+        if quiz is None:
+            raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
+        return self._media.list_for_quiz(quiz_id, category=category)
 
     def read_content(self, media_id: UUID) -> tuple[MediaFile, bytes]:
         media = self.get(media_id)
@@ -140,11 +151,28 @@ class MediaService:
 
         allowed = _QUESTION_TYPE_CATEGORIES.get(question.question_type, set())
         if media.category not in allowed:
-            raise ValidationError(
-                "MEDIA_TYPE_MISMATCH",
-                f"Media category '{media.category.value}' is not valid for "
-                f"question type '{question.question_type.value}'",
-            )
+            # Promote Text questions to the matching media type so the builder can
+            # attach image/audio without a separate type PATCH.
+            if question.question_type == QuestionType.TEXT:
+                if media.category == MediaCategory.QUESTION_IMAGE:
+                    question.question_type = QuestionType.IMAGE
+                elif media.category == MediaCategory.QUESTION_AUDIO:
+                    question.question_type = QuestionType.AUDIO
+                else:
+                    raise ValidationError(
+                        "MEDIA_TYPE_MISMATCH",
+                        f"Media category '{media.category.value}' is not valid for "
+                        f"question type '{question.question_type.value}'",
+                    )
+            else:
+                raise ValidationError(
+                    "MEDIA_TYPE_MISMATCH",
+                    f"Media category '{media.category.value}' is not valid for "
+                    f"question type '{question.question_type.value}'",
+                )
+
+        if media.quiz_id is None:
+            media.quiz_id = payload.quiz_id
 
         previous_media_id = question.media_file_id
         question.media_file_id = media.id

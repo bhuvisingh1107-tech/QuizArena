@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.models.enums import AdminRole
 
@@ -38,3 +38,28 @@ class LogoutResponseData(BaseModel):
     """Successful logout acknowledgement."""
 
     message: str = "Logged out successfully"
+
+
+class ChangePasswordRequest(BaseModel):
+    """POST /admin/change-password body."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    current_password: str = Field(
+        min_length=1,
+        max_length=128,
+        serialization_alias="currentPassword",
+        validation_alias=AliasChoices("currentPassword", "current_password"),
+    )
+    new_password: str = Field(
+        min_length=8,
+        max_length=128,
+        serialization_alias="newPassword",
+        validation_alias=AliasChoices("newPassword", "new_password"),
+    )
+
+
+class ChangePasswordResponseData(BaseModel):
+    """Successful password change acknowledgement."""
+
+    message: str = "Password changed successfully"

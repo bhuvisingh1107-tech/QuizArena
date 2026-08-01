@@ -141,6 +141,48 @@ class ScoringService:
             already_scored=False,
         )
         summary.events = [self._scored_event(summary)]
+
+        # Personal feedback for each participant (used by participant client).
+        for participant in participants:
+            response = self._responses.get_by_participant_and_question(
+                participant.id,
+                question.id,
+            )
+            if response is None:
+                continue
+            summary.events.append(
+                {
+                    "type": "score:personal",
+                    "payload": {
+                        "roomId": str(room_id),
+                        "questionId": str(question.id),
+                        "questionIndex": question_index,
+                        "participantId": str(participant.id),
+                        "isCorrect": bool(response.is_correct),
+                        "isUnanswered": bool(response.is_unanswered),
+                        "basePoints": int(response.base_points_earned or 0),
+                        "timeBonus": int(response.time_bonus_earned or 0),
+                        "streakBonus": int(response.streak_bonus_earned or 0),
+                        "pointsEarned": int(response.total_points_earned or 0),
+                        "totalScore": int(participant.total_score or 0),
+                        "streak": int(participant.streak or 0),
+                    },
+                    "audience": "participant",
+                    "participantId": str(participant.id),
+                }
+            )
+
+        from app.services.leaderboard_service import LeaderboardService
+
+        board = LeaderboardService(self._session).snapshot(room_id)
+        self._session.commit()
+        summary.events.append(
+            {
+                "type": "leaderboard:updated",
+                "payload": board,
+                "audience": "room",
+            }
+        )
         return summary
 
     def score_response(
@@ -171,8 +213,20 @@ class ScoringService:
         correct = False if unanswered else self._evaluate_correctness(response, question)
 
         base = question.base_points if correct else 0
-        # Timers are deferred — time bonus is always 0 in this module.
         time_bonus = 0
+        if (
+            correct
+            and not unanswered
+            and room_config is not None
+            and bool(getattr(room_config, "time_bonus_enabled", False))
+            and response.response_time_ms is not None
+            and question.time_limit_seconds
+            and question.time_limit_seconds > 0
+        ):
+            limit_ms = int(question.time_limit_seconds) * 1000
+            remaining_ratio = max(0.0, 1.0 - (response.response_time_ms / limit_ms))
+            max_bonus = int(getattr(room_config, "time_bonus_max_points", 0) or 0)
+            time_bonus = int(round(remaining_ratio * max_bonus))
 
         if unanswered or not correct:
             participant.streak = 0

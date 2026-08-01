@@ -1,3 +1,5 @@
+import { useCallback, useRef, type KeyboardEvent } from 'react'
+
 import type { AnswerSubmitState, ParticipantLiveOption } from '@/types/api'
 import { cn } from '@/lib/utils'
 
@@ -22,26 +24,70 @@ export function OptionList({
   onChange,
   className,
 }: OptionListProps) {
+  const listRef = useRef<HTMLUListElement>(null)
   const locked =
     disabled ||
     submissionStatus === 'submitting' ||
     submissionStatus === 'submitted' ||
     submissionStatus === 'already_submitted'
 
-  const toggle = (id: string) => {
-    if (locked) return
-    if (allowMultiple) {
-      const next = selectedOptionIds.includes(id)
-        ? selectedOptionIds.filter((x) => x !== id)
-        : [...selectedOptionIds, id]
-      onChange(next)
+  const toggle = useCallback(
+    (id: string) => {
+      if (locked) return
+      if (allowMultiple) {
+        const next = selectedOptionIds.includes(id)
+          ? selectedOptionIds.filter((x) => x !== id)
+          : [...selectedOptionIds, id]
+        onChange(next)
+        return
+      }
+      onChange(selectedOptionIds.includes(id) ? [] : [id])
+    },
+    [allowMultiple, locked, onChange, selectedOptionIds],
+  )
+
+  const onKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
+    if (locked || options.length === 0) return
+    const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' ']
+    if (!keys.includes(event.key)) return
+    event.preventDefault()
+
+    const currentIndex = Math.max(
+      0,
+      options.findIndex((option) => selectedOptionIds.includes(option.id)),
+    )
+    let nextIndex = currentIndex
+    if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % options.length
+    if (event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + options.length) % options.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = options.length - 1
+
+    const next = options[nextIndex]
+    if (!next) return
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      toggle(next.id)
       return
     }
-    onChange(selectedOptionIds.includes(id) ? [] : [id])
+
+    if (!allowMultiple) {
+      onChange([next.id])
+    }
+    const button = listRef.current?.querySelectorAll<HTMLButtonElement>('button[role="option"]')[
+      nextIndex
+    ]
+    button?.focus()
   }
 
   return (
-    <ul className={cn('space-y-3', className)} role="listbox" aria-multiselectable={allowMultiple}>
+    <ul
+      ref={listRef}
+      className={cn('space-y-3', className)}
+      role="listbox"
+      aria-multiselectable={allowMultiple}
+      tabIndex={locked ? -1 : 0}
+      onKeyDown={onKeyDown}
+    >
       {options.map((option, index) => {
         const selected = selectedOptionIds.includes(option.id)
         const letter = String.fromCharCode(65 + index)
