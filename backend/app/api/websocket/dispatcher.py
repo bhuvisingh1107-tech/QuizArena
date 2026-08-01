@@ -234,6 +234,11 @@ class EventDispatcher:
                 result = self._execution.close_question(connection.room_id)
             elif event_type == ClientEventType.ADMIN_REVEAL_ANSWER:
                 result = self._execution.reveal_answer(connection.room_id)
+            elif event_type == ClientEventType.ADMIN_SKIP:
+                from app.services.timer_service import auto_progression
+
+                auto_progression.cancel_room(connection.room_id)
+                result = self._execution.skip_question(connection.room_id)
             elif event_type in {
                 ClientEventType.ADMIN_NEXT_QUESTION,
                 ClientEventType.ADMIN_ADVANCE,
@@ -280,6 +285,7 @@ class EventDispatcher:
             ClientEventType.ADMIN_NEXT_QUESTION,
             ClientEventType.ADMIN_ADVANCE,
             ClientEventType.ADMIN_NEXT_SECTION,
+            ClientEventType.ADMIN_SKIP,
         }:
             schedule_after_question_started(connection.room_id, result.events)
         if event_type in {

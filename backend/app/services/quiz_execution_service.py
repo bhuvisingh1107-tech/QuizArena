@@ -367,6 +367,53 @@ class QuizExecutionService:
 
         return self._complete_quiz(room)
 
+    def skip_question(self, room_id: UUID) -> ExecutionResult:
+        """Emergency skip: close → reveal/score → advance to next (or complete)."""
+        room = self._require_room(room_id)
+        if room.state == RoomState.PAUSED:
+            # Resume first so FSM transitions for questions remain valid.
+            from app.services.state_machine import room_fsm as _room_fsm
+
+            room.state = _room_fsm.transition(room.state, "resume")
+            if room.paused_at is not None:
+                paused_at = room.paused_at
+                if paused_at.tzinfo is None:
+                    paused_at = paused_at.replace(tzinfo=UTC)
+                delta_ms = int((datetime.now(UTC) - paused_at).total_seconds() * 1000)
+                room.pause_accumulated_ms = int(room.pause_accumulated_ms or 0) + max(
+                    0, delta_ms
+                )
+                room.paused_at = None
+            self._rooms.flush()
+            self._session.commit()
+            room = self._require_room(room_id)
+
+        if room.state == RoomState.SECTION_BREAK:
+            return self.next_section(room_id)
+
+        self._ensure_room_active(room)
+        events: list[BroadcastEvent] = []
+
+        question = self._current_question(room)
+        if question.state in {
+            SessionQuestionState.OPEN,
+            SessionQuestionState.BUZZER_OPEN,
+            SessionQuestionState.BUZZER_LOCKED,
+        }:
+            closed = self.close_question(room_id)
+            events.extend(closed.events)
+            room = closed.room
+
+        question = self._current_question(room)
+        if question.state == SessionQuestionState.CLOSED:
+            revealed = self.reveal_answer(room_id)
+            events.extend(revealed.events)
+            room = revealed.room
+
+        advanced = self.next_question(room_id)
+        events.extend(advanced.events)
+        return ExecutionResult(room=advanced.room, events=events)
+
     # ── Internals ──────────────────────────────────────────────────────────
 
     def _finalize_current_for_advance(

@@ -93,7 +93,6 @@ DISPLAY_FORBIDDEN_EVENTS = frozenset(ClientEventType)
 
 DEFERRED_CLIENT_EVENTS = frozenset(
     {
-        ClientEventType.ADMIN_SKIP,
         ClientEventType.ADMIN_KICK,
         ClientEventType.ADMIN_BAN,
         ClientEventType.PARTICIPANT_BUZZ,
@@ -109,5 +108,6 @@ EXECUTION_CLIENT_EVENTS = frozenset(
         ClientEventType.ADMIN_NEXT_SECTION,
         ClientEventType.ADMIN_END_QUIZ,
         ClientEventType.ADMIN_ADVANCE,
+        ClientEventType.ADMIN_SKIP,
     }
 )

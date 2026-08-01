@@ -180,6 +180,32 @@ def test_pause_cancels_and_resume_reschedules(
     auto_progression.cancel_room(room_id)
 
 
+def test_emergency_skip_advances(
+    client: TestClient,
+    admin_token: str,
+    db_session: Session,
+) -> None:
+    quiz_id = _ready_quiz(client, admin_token, db_session, "Skip Q")
+    room = client.post(
+        "/api/v1/live-rooms",
+        headers=_auth(admin_token),
+        json={"quizId": quiz_id},
+    ).json()["data"]
+    client.post(f"/api/v1/live-rooms/{room['id']}/open-lobby", headers=_auth(admin_token))
+    client.post(f"/api/v1/live-rooms/{room['id']}/start", headers=_auth(admin_token))
+
+    with client.websocket_connect(
+        f"/ws?role=admin&token={admin_token}&roomId={room['id']}",
+    ) as ws:
+        _recv_until(ws, ServerEventType.CONNECTION_ACK)
+        _recv_until(ws, ServerEventType.RESYNC)
+        ws.send_json({"type": "admin:skip", "payload": {}})
+        # May receive closed/reveal before next started
+        next_q = _recv_until(ws, ServerEventType.QUESTION_STARTED)
+        assert next_q["payload"]["question"]["promptText"] == "Q2?"
+        auto_progression.cancel_room(UUID(room["id"]))
+
+
 def test_timer_expiry_auto_advances(
     client: TestClient,
     admin_token: str,

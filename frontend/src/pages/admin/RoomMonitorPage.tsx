@@ -5,6 +5,7 @@ import {
   Pause,
   Play,
   Printer,
+  SkipForward,
   Square,
   Trophy,
 } from 'lucide-react'
@@ -48,23 +49,23 @@ const connectionVariant: Record<string, 'default' | 'success' | 'warning' | 'dan
 
 function canRest(
   state: RoomState,
-  action: 'openLobby' | 'toggle' | 'start' | 'pause' | 'resume' | 'end' | 'close',
+  action: 'openLobby' | 'start' | 'pause' | 'resume' | 'end' | 'close' | 'skip',
 ): boolean {
   switch (action) {
     case 'openLobby':
       return state === 'Setup'
-    case 'toggle':
-      return state === 'Lobby'
     case 'start':
       return state === 'Lobby'
     case 'pause':
       return state === 'Active'
     case 'resume':
       return state === 'Paused'
+    case 'skip':
+      return state === 'Active' || state === 'Paused' || state === 'SectionBreak'
     case 'end':
       return state === 'Active' || state === 'Paused' || state === 'SectionBreak'
     case 'close':
-      return state === 'Lobby' || state === 'Completed'
+      return state === 'Completed'
     default:
       return false
   }
@@ -99,7 +100,6 @@ export function RoomMonitorPage() {
   )
   const {
     openLobby,
-    toggleLobby,
     startSession,
     pauseSession,
     resumeSession,
@@ -109,6 +109,7 @@ export function RoomMonitorPage() {
 
   const [endConfirm, setEndConfirm] = useState(false)
   const [closeConfirm, setCloseConfirm] = useState(false)
+  const [skipConfirm, setSkipConfirm] = useState(false)
   const [timerTick, setTimerTick] = useState(0)
 
   const timerEndsAt = live.currentQuestion?.timerEndsAt
@@ -186,6 +187,12 @@ export function RoomMonitorPage() {
     } catch (error) {
       toastError(error)
     }
+  }
+
+  const runWs = (type: string, label: string) => {
+    const ok = live.send(type, {})
+    if (ok) toastSuccess(label)
+    else toastError(new Error('WebSocket not connected'))
   }
 
   if (roomQuery.isLoading && !room) {
@@ -333,29 +340,24 @@ export function RoomMonitorPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Room lifecycle</CardTitle>
+            <CardTitle className="text-base">Host controls</CardTitle>
             <CardDescription>
-              Start the quiz to begin automatic question progression. Pause freezes the timer.
+              Open the lobby once, then Start Quiz. Questions advance automatically. Use Skip only
+              in emergencies.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={!canRest(state, 'openLobby')}
-              onClick={() => void runRest('Lobby opened', () => openLobby.mutateAsync(room.id))}
-            >
-              <DoorOpen className="h-4 w-4" />
-              Open lobby
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!canRest(state, 'toggle')}
-              onClick={() => void runRest('Lobby toggled', () => toggleLobby.mutateAsync(room.id))}
-            >
-              Toggle lobby
-            </Button>
+            {state === 'Setup' ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!canRest(state, 'openLobby')}
+                onClick={() => void runRest('Lobby opened', () => openLobby.mutateAsync(room.id))}
+              >
+                <DoorOpen className="h-4 w-4" />
+                Open lobby
+              </Button>
+            ) : null}
             <Button
               size="sm"
               disabled={!canRest(state, 'start')}
@@ -386,6 +388,15 @@ export function RoomMonitorPage() {
             </Button>
             <Button
               size="sm"
+              variant="secondary"
+              disabled={!canRest(state, 'skip')}
+              onClick={() => setSkipConfirm(true)}
+            >
+              <SkipForward className="h-4 w-4" />
+              Emergency Skip
+            </Button>
+            <Button
+              size="sm"
               variant="destructive"
               disabled={!canRest(state, 'end')}
               onClick={() => setEndConfirm(true)}
@@ -393,15 +404,17 @@ export function RoomMonitorPage() {
               <Square className="h-4 w-4" />
               End Quiz
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!canRest(state, 'close')}
-              onClick={() => setCloseConfirm(true)}
-            >
-              <DoorClosed className="h-4 w-4" />
-              Close
-            </Button>
+            {state === 'Completed' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!canRest(state, 'close')}
+                onClick={() => setCloseConfirm(true)}
+              >
+                <DoorClosed className="h-4 w-4" />
+                Close room
+              </Button>
+            ) : null}
           </CardContent>
         </Card>
       </div>
@@ -410,8 +423,8 @@ export function RoomMonitorPage() {
         <CardHeader>
           <CardTitle className="text-base">Live progression</CardTitle>
           <CardDescription>
-            Questions advance automatically after the timer expires or everyone answers: reveal →
-            explanation → next question → leaderboard when finished.
+            Timer or all answers → reveal → next question → final leaderboard. No manual Next
+            required.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -538,6 +551,19 @@ export function RoomMonitorPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={skipConfirm}
+        onOpenChange={setSkipConfirm}
+        title="Emergency skip?"
+        description="Skip the current question immediately: reveal scores and advance to the next question."
+        confirmLabel="Skip question"
+        variant="destructive"
+        onConfirm={() => {
+          runWs('admin:skip', 'Question skipped')
+          setSkipConfirm(false)
+        }}
+      />
 
       <ConfirmDialog
         open={endConfirm}
