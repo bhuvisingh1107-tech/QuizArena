@@ -27,34 +27,46 @@ from app.services.state_machine import room_fsm
 _ROOM_CODE_ALPHABET = string.ascii_uppercase + string.digits
 _ROOM_CODE_LENGTH = 6
 _MAX_CODE_ATTEMPTS = 32
+# Dev-only fallback when Settings.public_app_url is unset. Production UIs must
+# rebuild join/display links from the SPA origin (see frontend getAppOrigin).
 _PUBLIC_APP_URL_FALLBACK = "http://localhost:5173"
 
 
 class LiveRoomService:
     """Create, configure, and control live rooms (no participant/WS execution)."""
 
-    def __init__(self, session: Session, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        session: Session,
+        settings: Settings | None = None,
+        *,
+        spa_origin: str | None = None,
+    ) -> None:
         self._session = session
         self._settings = settings
         self._rooms = LiveRoomRepository(session)
-        if settings is not None and getattr(settings, "public_app_url", None):
-            self._app_url = str(settings.public_app_url)
+        if spa_origin and spa_origin.strip():
+            self._app_url = spa_origin.strip().rstrip("/")
+        elif settings is not None and getattr(settings, "public_app_url", None):
+            self._app_url = str(settings.public_app_url).rstrip("/")
         else:
             from app.config import get_settings
 
-            self._app_url = get_settings().public_app_url or _PUBLIC_APP_URL_FALLBACK
+            self._app_url = (get_settings().public_app_url or _PUBLIC_APP_URL_FALLBACK).rstrip(
+                "/"
+            )
 
     # ── URLs ──────────────────────────────────────────────────────────────
 
     def join_url(self, room_code: str) -> str:
-        return f"{self._app_url.rstrip('/')}/join/{room_code}"
+        return f"{self._app_url}/join/{room_code}"
 
     def display_url(self, secret_token: str) -> str:
         from urllib.parse import quote
 
         # Encode path segment so tokens remain intact in copied links.
         safe = quote(secret_token.strip(), safe="")
-        return f"{self._app_url.rstrip('/')}/display/{safe}"
+        return f"{self._app_url}/display/{safe}"
 
     def qr_target(self, room_code: str) -> str:
         return self.join_url(room_code)

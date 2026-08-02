@@ -36,7 +36,7 @@ import { useRoomParticipants } from '@/hooks/queries/useRoomParticipants'
 import { useRoomResults } from '@/hooks/queries/useRoomResults'
 import { useAdminWebSocket } from '@/hooks/useAdminWebSocket'
 import { canRest, preferFreshestRoom } from '@/lib/room-lifecycle'
-import { getDisplayPageUrl } from '@/lib/display-url'
+import { getDisplayPageUrl, getJoinPageUrl, getQrJoinUrl } from '@/lib/app-url'
 import { cn } from '@/lib/utils'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
 import type { LiveParticipant, LiveRoom } from '@/types/api'
@@ -162,14 +162,32 @@ export function RoomMonitorPage() {
     (live.currentQuestion as { sectionName?: string } | null)?.sectionName ??
     null
 
+  const joinPageUrl = useMemo(() => {
+    if (!room?.roomCode?.trim()) return ''
+    try {
+      return getJoinPageUrl(room.roomCode)
+    } catch {
+      return ''
+    }
+  }, [room?.roomCode])
+
   const displayPageUrl = useMemo(() => {
-    if (!room?.secretToken?.trim()) return room?.displayUrl ?? ''
+    if (!room?.secretToken?.trim()) return ''
     try {
       return getDisplayPageUrl(room.secretToken)
     } catch {
-      return room.displayUrl
+      return ''
     }
-  }, [room?.secretToken, room?.displayUrl])
+  }, [room?.secretToken])
+
+  const qrTarget = useMemo(() => {
+    if (!room?.roomCode?.trim()) return ''
+    try {
+      return getQrJoinUrl(room.roomCode)
+    } catch {
+      return ''
+    }
+  }, [room?.roomCode])
 
   const copy = async (label: string, value: string) => {
     try {
@@ -227,7 +245,6 @@ export function RoomMonitorPage() {
   }
 
   const state = room.state
-  const qrTarget = room.qrTarget || room.joinUrl
   const isCompleted = state === 'Completed' || state === 'Closed'
 
   return (
@@ -324,13 +341,13 @@ export function RoomMonitorPage() {
             <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm">
               <div className="min-w-0">
                 <p className="text-xs text-[var(--muted-foreground)]">Join</p>
-                <p className="truncate">{room.joinUrl}</p>
+                <p className="truncate">{joinPageUrl}</p>
               </div>
               <Button
                 size="icon"
                 variant="ghost"
                 aria-label="Copy join link"
-                onClick={() => void copy('Join URL', room.joinUrl)}
+                onClick={() => void copy('Join URL', joinPageUrl)}
               >
                 <Copy className="h-4 w-4" />
               </Button>

@@ -205,7 +205,7 @@ Work through each item on production URLs:
 | CORS blocked | `CORS_ORIGINS` must exactly match the Vercel HTTPS origin |
 | WS fails / 404 | Confirm `VITE_WS_BASE_URL=wss://…/ws` and Render plan is always-on |
 | 400 Bad Host | Add Render hostname to `TRUSTED_HOSTS` |
-| Join/display wrong domain | Set `PUBLIC_APP_URL` to the Vercel origin |
+| Join/display wrong domain | Host UI rebuilds links from `window.location.origin` via `getAppOrigin()` — redeploy the Vercel frontend. Optionally set Render `PUBLIC_APP_URL` for API-returned URLs when no Origin header is present. |
 | DB connection error | Neon URL + `sslmode=require`; use direct host |
 | Media 404 after restart | Attach Render persistent disk at `/app/storage` |
 | SPA refresh 404 | Confirm `frontend/vercel.json` rewrites and Root Directory=`frontend` |

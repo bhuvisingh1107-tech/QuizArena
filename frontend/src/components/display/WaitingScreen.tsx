@@ -2,6 +2,7 @@ import { QRCodeSVG } from 'qrcode.react'
 
 import { AnimatedCounter } from '@/components/display/AnimatedCounter'
 import type { WsConnectionStatus } from '@/hooks/displayLiveReducer'
+import { getJoinPageUrl } from '@/lib/app-url'
 import { cn } from '@/lib/utils'
 
 interface WaitingScreenProps {
@@ -28,8 +29,8 @@ export function WaitingScreen({
           ? 'Connection issue — retrying…'
           : 'Reconnecting…'
 
-  const joinUrl = roomCode
-    ? `${window.location.origin}/join/${roomCode}`
+  const joinUrl = roomCode?.trim()
+    ? getJoinPageUrl(roomCode)
     : null
 
   return (

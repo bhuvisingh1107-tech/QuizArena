@@ -10,7 +10,7 @@ Configuration reference for QuizArena. Copy `backend/.env.example` → `backend/
 | `DEBUG` | `false` | Enable OpenAPI docs and verbose errors |
 | `LOG_LEVEL` | `INFO` | Python log level |
 | `LOG_FORMAT` | `json` | `json` or `text` |
-| `PUBLIC_APP_URL` | `http://localhost:5173` | Public SPA URL for join/display links |
+| `PUBLIC_APP_URL` | `http://localhost:5173` | Fallback SPA origin for API `joinUrl`/`displayUrl` when the request has no `Origin` header. Browser hosts rebuild links from `window.location.origin` (see `frontend/src/lib/app-url.ts`). |
 
 ## Database
 
@@ -62,6 +62,7 @@ Production requires PostgreSQL (`postgresql://user:pass@host:5432/dbname` or Neo
 |----------|-----------------|-------------|
 | `VITE_API_BASE_URL` | `/api/v1` | REST API prefix — on Vercel set to `https://<render>/api/v1` |
 | `VITE_WS_BASE_URL` | `ws(s)://<host>/ws` | WebSocket URL — on Vercel set to `wss://<render>/ws` |
+| `VITE_PUBLIC_APP_URL` | *(unset)* | Optional SPA origin override for join/display links. Leave unset so production uses `window.location.origin`. |
 
 Local direct backend (no proxy):
 

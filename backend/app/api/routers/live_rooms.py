@@ -2,14 +2,16 @@
 
 from typing import Annotated
 from uuid import UUID
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import AppSettings, CurrentAdmin, RequestId, get_db
 from app.api.websocket.connection_manager import connection_manager
 from app.api.websocket.events import ServerEventType
+from app.config import _is_absolute_http_origin
 from app.models.enums import LobbySubState, RoomState
 from app.models.live_room import LiveRoom
 from app.schemas.common import DataResponse, Meta
@@ -30,11 +32,28 @@ from app.services.results_service import ResultsService
 router = APIRouter()
 
 
+def _spa_origin_from_request(request: Request) -> str | None:
+    """Prefer the browser Origin so join/display URLs match the SPA host."""
+    origin = (request.headers.get("origin") or "").strip()
+    if origin and _is_absolute_http_origin(origin):
+        return origin.rstrip("/")
+
+    referer = (request.headers.get("referer") or "").strip()
+    if referer:
+        parsed = urlparse(referer)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            candidate = f"{parsed.scheme}://{parsed.netloc}"
+            if _is_absolute_http_origin(candidate):
+                return candidate
+    return None
+
+
 def get_live_room_service(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     settings: AppSettings,
 ) -> LiveRoomService:
-    return LiveRoomService(db, settings)
+    return LiveRoomService(db, settings, spa_origin=_spa_origin_from_request(request))
 
 
 def get_results_service(db: Annotated[Session, Depends(get_db)]) -> ResultsService:
