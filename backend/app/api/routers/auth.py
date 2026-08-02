@@ -17,6 +17,7 @@ from app.schemas.auth import (
     LoginRequest,
     LoginResponseData,
     LogoutResponseData,
+    RegisterRequest,
 )
 from app.schemas.common import DataResponse, Meta
 
@@ -36,7 +37,7 @@ def _client_key(request: Request) -> str:
     "/login",
     response_model=DataResponse[LoginResponseData],
     status_code=status.HTTP_200_OK,
-    summary="Administrator login",
+    summary="Host login",
 )
 def login(
     body: LoginRequest,
@@ -45,7 +46,7 @@ def login(
     request_id: RequestId,
     context: RequestContextDep,
 ) -> JSONResponse:
-    """Issue admin JWT; log security event (API_SPEC.md §3.1 / §7)."""
+    """Issue host JWT; log security event (API_SPEC.md §3.1 / §7)."""
     login_rate_limiter.check(_client_key(request))
     result = auth_service.login(body.username, body.password, context=context)
     payload = DataResponse[LoginResponseData](
@@ -57,6 +58,41 @@ def login(
     )
     return JSONResponse(
         status_code=status.HTTP_200_OK,
+        content=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
+    )
+
+
+@router.post(
+    "/register",
+    response_model=DataResponse[LoginResponseData],
+    status_code=status.HTTP_201_CREATED,
+    summary="Host registration",
+)
+def register(
+    body: RegisterRequest,
+    request: Request,
+    auth_service: AuthServiceDep,
+    request_id: RequestId,
+    context: RequestContextDep,
+) -> JSONResponse:
+    """Create a host account and return a JWT (auto sign-in)."""
+    login_rate_limiter.check(_client_key(request))
+    result = auth_service.register(
+        name=body.name,
+        email=str(body.email),
+        username=body.username,
+        password=body.password,
+        context=context,
+    )
+    payload = DataResponse[LoginResponseData](
+        data=LoginResponseData(
+            access_token=result.access_token,
+            expires_at=result.expires_at,
+        ),
+        meta=Meta(request_id=request_id),
+    )
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED,
         content=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
     )
 

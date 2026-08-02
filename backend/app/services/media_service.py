@@ -56,6 +56,7 @@ class MediaService:
         original_filename: str | None,
         quiz_id: UUID | None = None,
         declared_content_type: str | None = None,
+        owner_id: UUID | None = None,
     ) -> MediaFile:
         if category == MediaCategory.QUIZ_BRANDING:
             if quiz_id is None:
@@ -63,7 +64,11 @@ class MediaService:
                     "QUIZ_ID_REQUIRED",
                     "quizId is required when uploading quiz branding media",
                 )
-            quiz = self._quizzes.get_by_id(quiz_id, include_deleted=False)
+            quiz = self._quizzes.get_by_id(
+                quiz_id,
+                include_deleted=False,
+                owner_id=owner_id,
+            )
             if quiz is None:
                 raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
 
@@ -97,8 +102,13 @@ class MediaService:
         quiz_id: UUID,
         *,
         category: MediaCategory | None = None,
+        owner_id: UUID | None = None,
     ) -> list[MediaFile]:
-        quiz = self._quizzes.get_by_id(quiz_id, include_deleted=False)
+        quiz = self._quizzes.get_by_id(
+            quiz_id,
+            include_deleted=False,
+            owner_id=owner_id,
+        )
         if quiz is None:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
         return self._media.list_for_quiz(quiz_id, category=category)
@@ -124,6 +134,8 @@ class MediaService:
         self,
         media_id: UUID,
         payload: MediaAttachRequest,
+        *,
+        owner_id: UUID | None = None,
     ) -> tuple[MediaFile, UUID]:
         """Attach media to a question; replace prior attachment and orphan-delete if unused."""
         media = self.get(media_id)
@@ -136,7 +148,11 @@ class MediaService:
                 "Only question image or audio media can be attached to a question",
             )
 
-        quiz = self._quizzes.get_by_id(payload.quiz_id, include_deleted=False)
+        quiz = self._quizzes.get_by_id(
+            payload.quiz_id,
+            include_deleted=False,
+            owner_id=owner_id,
+        )
         if quiz is None:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
         self._ensure_quiz_mutable(quiz.status)

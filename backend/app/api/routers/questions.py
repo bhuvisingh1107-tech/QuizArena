@@ -50,11 +50,11 @@ def create_question(
     quiz_id: UUID,
     section_id: UUID,
     body: QuestionCreateRequest,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuestionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    question = service.create(quiz_id, section_id, body)
+    question = service.create(quiz_id, section_id, body, owner_id=admin.id)
     return _envelope(
         _question_response(question),
         request_id,
@@ -71,11 +71,11 @@ def create_question(
 def list_questions(
     quiz_id: UUID,
     section_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuestionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    items, total = service.list(quiz_id, section_id)
+    items, total = service.list(quiz_id, section_id, owner_id=admin.id)
     data = QuestionListData(
         items=[_question_response(q) for q in items],
         total=total,
@@ -93,11 +93,11 @@ def get_question(
     quiz_id: UUID,
     section_id: UUID,
     question_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuestionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    question = service.get(quiz_id, section_id, question_id)
+    question = service.get(quiz_id, section_id, question_id, owner_id=admin.id)
     return _envelope(_question_response(question), request_id)
 
 
@@ -112,11 +112,11 @@ def update_question(
     section_id: UUID,
     question_id: UUID,
     body: QuestionUpdateRequest,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuestionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    question = service.update(quiz_id, section_id, question_id, body)
+    question = service.update(quiz_id, section_id, question_id, body, owner_id=admin.id)
     return _envelope(_question_response(question), request_id)
 
 
@@ -130,9 +130,9 @@ def delete_question(
     quiz_id: UUID,
     section_id: UUID,
     question_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuestionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    service.delete(quiz_id, section_id, question_id)
+    service.delete(quiz_id, section_id, question_id, owner_id=admin.id)
     return _envelope(QuestionDeleteData(id=question_id, deleted=True), request_id)

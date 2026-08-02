@@ -3,7 +3,6 @@ import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { AdminLayout } from '@/layouts/AdminLayout'
 import { DashboardPage } from '@/pages/admin/DashboardPage'
 import { LiveRoomsPage } from '@/pages/admin/LiveRoomsPage'
-import { LoginPage } from '@/pages/admin/LoginPage'
 import { QuizBuilderPage } from '@/pages/admin/QuizBuilderPage'
 import { QuizzesPage } from '@/pages/admin/QuizzesPage'
 import { ResultsPage } from '@/pages/admin/ResultsPage'
@@ -20,7 +19,7 @@ function RedirectToBuilderQuestions() {
 export function AdminRoutes() {
   return (
     <Routes>
-      <Route path="login" element={<LoginPage />} />
+      <Route path="login" element={<Navigate to="/host/login" replace />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<AdminLayout />}>
           <Route index element={<Navigate to="dashboard" replace />} />
@@ -44,6 +43,7 @@ export function AdminRoutes() {
           <Route path="results/:roomId" element={<RoomResultsPage />} />
 
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="profile" element={<SettingsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />

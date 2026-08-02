@@ -5,6 +5,9 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { LoadingState } from '@/components/shared/LoadingState'
 import { Toaster } from '@/components/ui/toast'
 import { AuthProvider } from '@/contexts/AuthContext'
+import { LandingPage } from '@/pages/LandingPage'
+import { LoginPage } from '@/pages/admin/LoginPage'
+import { SignupPage } from '@/pages/host/SignupPage'
 
 const AdminRoutes = lazy(() =>
   import('@/routes/AdminRoutes').then((module) => ({ default: module.AdminRoutes })),
@@ -37,7 +40,11 @@ export function App() {
         <AuthProvider>
           <Suspense fallback={<RouteFallback />}>
             <Routes>
-              <Route path="/" element={<Navigate to="/admin" replace />} />
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/host/login" element={<LoginPage />} />
+              <Route path="/host/signup" element={<SignupPage />} />
+              <Route path="/admin/login" element={<Navigate to="/host/login" replace />} />
+              <Route path="/dashboard" element={<Navigate to="/admin/dashboard" replace />} />
               <Route path="/admin/*" element={<AdminRoutes />} />
               <Route path="/display/*" element={<DisplayRoutes />} />
               <Route path="/*" element={<ParticipantRoutes />} />

@@ -1,6 +1,7 @@
 """Admin dashboard aggregate counts."""
 
 from datetime import UTC, datetime
+from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -22,16 +23,16 @@ _HOSTING_STATES = (
 
 
 class DashboardService:
-    """Read-only dashboard summary for the admin home screen."""
+    """Read-only dashboard summary for the host home screen."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def summary(self) -> DashboardSummaryData:
+    def summary(self, *, owner_id: UUID) -> DashboardSummaryData:
         quiz_counts = dict(
             self._session.execute(
                 select(Quiz.status, func.count())
-                .where(Quiz.status != QuizStatus.DELETED)
+                .where(Quiz.status != QuizStatus.DELETED, Quiz.owner_id == owner_id)
                 .group_by(Quiz.status)
             ).all()
         )
@@ -49,7 +50,8 @@ class DashboardService:
             self._session.scalar(
                 select(func.count())
                 .select_from(LiveRoom)
-                .where(LiveRoom.state.in_(_HOSTING_STATES))
+                .join(Quiz, Quiz.id == LiveRoom.quiz_id)
+                .where(LiveRoom.state.in_(_HOSTING_STATES), Quiz.owner_id == owner_id)
             )
             or 0
         )
@@ -57,7 +59,8 @@ class DashboardService:
             self._session.scalar(
                 select(func.count())
                 .select_from(LiveRoom)
-                .where(LiveRoom.state == RoomState.COMPLETED)
+                .join(Quiz, Quiz.id == LiveRoom.quiz_id)
+                .where(LiveRoom.state == RoomState.COMPLETED, Quiz.owner_id == owner_id)
             )
             or 0
         )
@@ -72,7 +75,12 @@ class DashboardService:
             self._session.scalar(
                 select(func.count())
                 .select_from(Participant)
-                .where(Participant.joined_at >= start_of_utc_today)
+                .join(LiveRoom, LiveRoom.id == Participant.room_id)
+                .join(Quiz, Quiz.id == LiveRoom.quiz_id)
+                .where(
+                    Participant.joined_at >= start_of_utc_today,
+                    Quiz.owner_id == owner_id,
+                )
             )
             or 0
         )

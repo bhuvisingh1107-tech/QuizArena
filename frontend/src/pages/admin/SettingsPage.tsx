@@ -82,19 +82,27 @@ export function SettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Settings"
-        description="Administrator profile, security, and preferences."
+        title="Profile"
+        description="Host profile, security, and preferences."
       />
 
       <Card className="max-w-xl">
         <CardHeader>
-          <CardTitle>Administrator profile</CardTitle>
-          <CardDescription>Your signed-in administrator account</CardDescription>
+          <CardTitle>Host profile</CardTitle>
+          <CardDescription>Your signed-in host account</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div className="flex justify-between gap-4 border-b border-[var(--border)] py-2">
+            <span className="text-[var(--muted-foreground)]">Name</span>
+            <span className="font-medium text-[var(--heading)]">{admin?.name || '—'}</span>
+          </div>
+          <div className="flex justify-between gap-4 border-b border-[var(--border)] py-2">
             <span className="text-[var(--muted-foreground)]">Username</span>
             <span className="font-medium text-[var(--heading)]">{admin?.username ?? '—'}</span>
+          </div>
+          <div className="flex justify-between gap-4 border-b border-[var(--border)] py-2">
+            <span className="text-[var(--muted-foreground)]">Email</span>
+            <span className="font-medium text-[var(--heading)]">{admin?.email || '—'}</span>
           </div>
           <div className="flex justify-between gap-4 border-b border-[var(--border)] py-2">
             <span className="text-[var(--muted-foreground)]">Role</span>
@@ -170,7 +178,7 @@ export function SettingsPage() {
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle>Appearance</CardTitle>
-          <CardDescription>Choose light or dark for the admin console</CardDescription>
+          <CardDescription>Choose light or dark for the host console</CardDescription>
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-4">
           <div>
@@ -228,7 +236,7 @@ export function SettingsPage() {
           setBusy(true)
           try {
             await logout()
-            navigate('/admin/login', { replace: true })
+            navigate('/host/login', { replace: true })
           } finally {
             setBusy(false)
             setLogoutOpen(false)
@@ -247,7 +255,7 @@ export function SettingsPage() {
           clearToken()
           toastSuccess('Local session cleared')
           setClearOpen(false)
-          navigate('/admin/login', { replace: true })
+          navigate('/host/login', { replace: true })
           window.location.reload()
         }}
       />

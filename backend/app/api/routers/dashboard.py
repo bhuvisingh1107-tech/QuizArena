@@ -28,11 +28,11 @@ DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)
     summary="Admin dashboard summary",
 )
 def dashboard_summary(
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: DashboardServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    data = service.summary()
+    data = service.summary(owner_id=admin.id)
     payload = DataResponse(data=data, meta=Meta(request_id=request_id))
     return JSONResponse(
         status_code=status.HTTP_200_OK,

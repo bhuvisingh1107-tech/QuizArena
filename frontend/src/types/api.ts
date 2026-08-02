@@ -294,12 +294,22 @@ export interface LiveRoomDeleteResult {
 export interface Admin {
   id: string
   username: string
+  name?: string
+  email?: string | null
   role: AdminRole
 }
 
 export interface LoginRequest {
   username: string
   password: string
+}
+
+export interface RegisterRequest {
+  name: string
+  email: string
+  username: string
+  password: string
+  confirmPassword?: string
 }
 
 export interface LoginResponse {

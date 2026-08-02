@@ -32,8 +32,10 @@ class QuestionService:
         quiz_id: UUID,
         section_id: UUID,
         payload: QuestionCreateRequest,
+        *,
+        owner_id: UUID | None = None,
     ) -> Question:
-        quiz = self._require_parent_quiz(quiz_id)
+        quiz = self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._ensure_quiz_mutable(quiz.status)
         self._require_section(quiz_id, section_id)
 
@@ -65,14 +67,27 @@ class QuestionService:
         self._session.refresh(question)
         return question
 
-    def list(self, quiz_id: UUID, section_id: UUID) -> tuple[list[Question], int]:
-        self._require_parent_quiz(quiz_id)
+    def list(
+        self,
+        quiz_id: UUID,
+        section_id: UUID,
+        *,
+        owner_id: UUID | None = None,
+    ) -> tuple[list[Question], int]:
+        self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._require_section(quiz_id, section_id)
         items = self._questions.list_for_section(section_id)
         return items, len(items)
 
-    def get(self, quiz_id: UUID, section_id: UUID, question_id: UUID) -> Question:
-        self._require_parent_quiz(quiz_id)
+    def get(
+        self,
+        quiz_id: UUID,
+        section_id: UUID,
+        question_id: UUID,
+        *,
+        owner_id: UUID | None = None,
+    ) -> Question:
+        self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._require_section(quiz_id, section_id)
         question = self._questions.get_for_section(section_id, question_id)
         if question is None:
@@ -85,11 +100,13 @@ class QuestionService:
         section_id: UUID,
         question_id: UUID,
         payload: QuestionUpdateRequest,
+        *,
+        owner_id: UUID | None = None,
     ) -> Question:
-        quiz = self._require_parent_quiz(quiz_id)
+        quiz = self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._ensure_quiz_mutable(quiz.status)
         self._require_section(quiz_id, section_id)
-        question = self.get(quiz_id, section_id, question_id)
+        question = self.get(quiz_id, section_id, question_id, owner_id=owner_id)
 
         if payload.question_type is not None:
             question.question_type = payload.question_type
@@ -119,17 +136,28 @@ class QuestionService:
         self._session.refresh(question)
         return question
 
-    def delete(self, quiz_id: UUID, section_id: UUID, question_id: UUID) -> None:
-        quiz = self._require_parent_quiz(quiz_id)
+    def delete(
+        self,
+        quiz_id: UUID,
+        section_id: UUID,
+        question_id: UUID,
+        *,
+        owner_id: UUID | None = None,
+    ) -> None:
+        quiz = self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._ensure_quiz_mutable(quiz.status)
         self._require_section(quiz_id, section_id)
-        question = self.get(quiz_id, section_id, question_id)
+        question = self.get(quiz_id, section_id, question_id, owner_id=owner_id)
         self._questions.delete(question)
         self._demote_ready_if_needed(quiz)
         self._session.commit()
 
-    def _require_parent_quiz(self, quiz_id: UUID):
-        quiz = self._quizzes.get_by_id(quiz_id, include_deleted=False)
+    def _require_parent_quiz(self, quiz_id: UUID, *, owner_id: UUID | None = None):
+        quiz = self._quizzes.get_by_id(
+            quiz_id,
+            include_deleted=False,
+            owner_id=owner_id,
+        )
         if quiz is None:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
         return quiz

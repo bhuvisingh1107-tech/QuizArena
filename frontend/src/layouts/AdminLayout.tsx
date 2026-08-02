@@ -18,10 +18,10 @@ import { cn } from '@/lib/utils'
 
 const navItems = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/admin/quizzes', label: 'Quizzes', icon: ClipboardList },
+  { to: '/admin/quizzes', label: 'My Quizzes', icon: ClipboardList },
   { to: '/admin/live-rooms', label: 'Live Rooms', icon: Radio },
-  { to: '/admin/results', label: 'Results', icon: Trophy },
-  { to: '/admin/settings', label: 'Settings', icon: Settings },
+  { to: '/admin/results', label: 'History', icon: Trophy },
+  { to: '/admin/settings', label: 'Profile', icon: Settings },
 ]
 
 export function AdminLayout() {
@@ -31,7 +31,7 @@ export function AdminLayout() {
 
   const handleLogout = async () => {
     await logout()
-    navigate('/admin/login', { replace: true })
+    navigate('/host/login', { replace: true })
   }
 
   const nav = (
@@ -65,7 +65,7 @@ export function AdminLayout() {
             Quiz<span className="text-[var(--primary)]">Arena</span>
           </p>
           <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-            Admin Console
+            Host Console
           </p>
         </div>
         <Separator />
@@ -73,7 +73,9 @@ export function AdminLayout() {
         <div className="mt-auto border-t border-[var(--border)] p-4">
           <p className="mb-3 truncate text-sm text-[var(--muted-foreground)]">
             Signed in as{' '}
-            <span className="font-medium text-[var(--foreground)]">{admin?.username}</span>
+            <span className="font-medium text-[var(--foreground)]">
+              {admin?.name || admin?.username}
+            </span>
           </p>
           <Button variant="outline" className="w-full" onClick={() => void handleLogout()}>
             <LogOut className="h-4 w-4" />

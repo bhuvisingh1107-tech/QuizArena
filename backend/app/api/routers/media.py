@@ -69,7 +69,7 @@ def _envelope(data, request_id: str, *, status_code: int = status.HTTP_200_OK) -
     summary="Upload media file",
 )
 async def upload_media(
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: MediaServiceDep,
     request_id: RequestId,
     file: Annotated[UploadFile, File()],
@@ -91,6 +91,7 @@ async def upload_media(
         original_filename=file.filename,
         quiz_id=quiz_id,
         declared_content_type=file.content_type,
+        owner_id=admin.id,
     )
     return _envelope(
         _media_response(media, url=MediaService.public_url(media.id)),
@@ -106,13 +107,13 @@ async def upload_media(
     summary="List media for a quiz",
 )
 def list_media(
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: MediaServiceDep,
     request_id: RequestId,
     quiz_id: Annotated[UUID, Query(alias="quizId")],
     category: Annotated[MediaCategory | None, Query()] = None,
 ) -> JSONResponse:
-    items = service.list_for_quiz(quiz_id, category=category)
+    items = service.list_for_quiz(quiz_id, category=category, owner_id=admin.id)
     data = MediaListData(
         items=[
             _media_response(media, url=MediaService.public_url(media.id)) for media in items
@@ -130,7 +131,7 @@ def list_media(
 )
 def get_media(
     media_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: MediaServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
@@ -231,7 +232,7 @@ def serve_media(
 )
 def delete_media(
     media_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: MediaServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
@@ -248,11 +249,11 @@ def delete_media(
 def attach_media(
     media_id: UUID,
     body: MediaAttachRequest,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: MediaServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    media, question_id = service.attach_to_question(media_id, body)
+    media, question_id = service.attach_to_question(media_id, body, owner_id=admin.id)
     return _envelope(
         MediaAttachData(
             media_id=media.id,

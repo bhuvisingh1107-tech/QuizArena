@@ -1,4 +1,4 @@
-"""Administrator authentication service (SYSTEM_ARCHITECTURE.md §5.1)."""
+"""Host authentication service (SYSTEM_ARCHITECTURE.md §5.1)."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.core.exceptions import AuthenticationError, ValidationError
+from app.core.exceptions import AuthenticationError, ConflictError, ValidationError
 from app.core.password_policy import validate_password_policy
 from app.core.security import (
     TokenValidationError,
@@ -37,13 +37,52 @@ class RequestContext:
 
 
 class AuthService:
-    """Admin login, logout, and JWT validation."""
+    """Host login, registration, logout, and JWT validation."""
 
     def __init__(self, session: Session, settings: Settings) -> None:
         self._session = session
         self._settings = settings
         self._admins = AdminRepository(session)
         self._security_logs = SecurityLogRepository(session)
+
+    def register(
+        self,
+        *,
+        name: str,
+        email: str,
+        username: str,
+        password: str,
+        context: RequestContext | None = None,
+    ) -> LoginResult:
+        """Create a host account and issue a JWT."""
+        context = context or RequestContext()
+        validate_password_policy(password)
+
+        if self._admins.get_by_username(username) is not None:
+            raise ConflictError("USERNAME_TAKEN", "That username is already taken")
+        if self._admins.get_by_email(email) is not None:
+            raise ConflictError("EMAIL_TAKEN", "That email is already registered")
+
+        admin = self._admins.create(
+            username=username,
+            password_hash=hash_password(password),
+            name=name,
+            email=email,
+        )
+        token, expires_at = create_access_token(
+            subject=admin.id,
+            role=admin.role.value,
+            settings=self._settings,
+        )
+        self._security_logs.create(
+            event_type=SecurityEventType.LOGIN_SUCCESS,
+            username=admin.username,
+            message="Host registered and signed in",
+            ip_address=context.ip_address,
+            user_agent=context.user_agent,
+        )
+        self._session.commit()
+        return LoginResult(access_token=token, expires_at=expires_at)
 
     def login(
         self,
@@ -52,9 +91,9 @@ class AuthService:
         *,
         context: RequestContext | None = None,
     ) -> LoginResult:
-        """Verify credentials, issue JWT, and log the security event."""
+        """Verify credentials (username or email), issue JWT, and log the event."""
         context = context or RequestContext()
-        admin = self._admins.get_by_username(username)
+        admin = self._admins.get_by_username_or_email(username)
 
         if admin is None or not verify_password(password, admin.password_hash):
             self._security_logs.create(
@@ -78,7 +117,7 @@ class AuthService:
         self._security_logs.create(
             event_type=SecurityEventType.LOGIN_SUCCESS,
             username=admin.username,
-            message="Administrator logged in",
+            message="Host logged in",
             ip_address=context.ip_address,
             user_agent=context.user_agent,
         )
@@ -96,7 +135,7 @@ class AuthService:
         self._security_logs.create(
             event_type=SecurityEventType.LOGOUT,
             username=admin.username,
-            message="Administrator logged out",
+            message="Host logged out",
             ip_address=context.ip_address,
             user_agent=context.user_agent,
         )

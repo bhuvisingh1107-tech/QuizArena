@@ -32,13 +32,14 @@ class QuizService:
         self._session = session
         self._quizzes = QuizRepository(session)
 
-    def create(self, payload: QuizCreateRequest) -> Quiz:
+    def create(self, payload: QuizCreateRequest, *, owner_id: UUID) -> Quiz:
         config_data = payload.config or QuizConfigData()
         config = self._build_config(config_data)
         quiz = self._quizzes.create(
             title=payload.title,
             description=payload.description,
             config=config,
+            owner_id=owner_id,
         )
         self._session.commit()
         self._session.refresh(quiz)
@@ -47,6 +48,7 @@ class QuizService:
     def list(
         self,
         *,
+        owner_id: UUID,
         offset: int = 0,
         limit: int = 20,
         status: QuizStatus | None = None,
@@ -59,11 +61,16 @@ class QuizService:
             search=search,
             include_deleted=False,
             include_archived=False,
+            owner_id=owner_id,
         )
         return items, total
 
-    def get(self, quiz_id: UUID) -> Quiz:
-        quiz = self._quizzes.get_by_id(quiz_id, include_deleted=False)
+    def get(self, quiz_id: UUID, *, owner_id: UUID | None = None) -> Quiz:
+        quiz = self._quizzes.get_by_id(
+            quiz_id,
+            include_deleted=False,
+            owner_id=owner_id,
+        )
         if quiz is None:
             deleted = self._quizzes.get_by_id(quiz_id, include_deleted=True)
             if deleted is not None and deleted.status == QuizStatus.DELETED:
@@ -71,8 +78,14 @@ class QuizService:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
         return quiz
 
-    def update(self, quiz_id: UUID, payload: QuizUpdateRequest) -> Quiz:
-        quiz = self.get(quiz_id)
+    def update(
+        self,
+        quiz_id: UUID,
+        payload: QuizUpdateRequest,
+        *,
+        owner_id: UUID | None = None,
+    ) -> Quiz:
+        quiz = self.get(quiz_id, owner_id=owner_id)
 
         if quiz.status == QuizStatus.IN_USE:
             raise ConflictError(
@@ -100,7 +113,13 @@ class QuizService:
         self._session.refresh(quiz)
         return quiz
 
-    def delete(self, quiz_id: UUID, *, hard: bool = False) -> Quiz | None:
+    def delete(
+        self,
+        quiz_id: UUID,
+        *,
+        hard: bool = False,
+        owner_id: UUID | None = None,
+    ) -> Quiz | None:
         """Soft-delete (status=Deleted) or hard-delete.
 
         Blocked only when a room for this quiz is actively hosting
@@ -108,7 +127,11 @@ class QuizService:
         """
         from app.repositories.live_room_repository import LiveRoomRepository
 
-        quiz = self._quizzes.get_by_id(quiz_id, include_deleted=True)
+        quiz = self._quizzes.get_by_id(
+            quiz_id,
+            include_deleted=True,
+            owner_id=owner_id,
+        )
         if quiz is None:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
 
@@ -147,9 +170,9 @@ class QuizService:
         self._session.refresh(quiz)
         return quiz
 
-    def validate(self, quiz_id: UUID) -> Quiz:
+    def validate(self, quiz_id: UUID, *, owner_id: UUID | None = None) -> Quiz:
         """Run Ready checklist and promote Draft → Ready (API_SPEC.md §8 Validate)."""
-        quiz = self.get_with_content_loaded(quiz_id)
+        quiz = self.get_with_content_loaded(quiz_id, owner_id=owner_id)
 
         if quiz.status == QuizStatus.IN_USE:
             raise ConflictError(
@@ -184,8 +207,8 @@ class QuizService:
         audit("quiz.publish", quiz_id=str(quiz.id), title=quiz.title, status=quiz.status.value)
         return quiz
 
-    def archive(self, quiz_id: UUID) -> Quiz:
-        quiz = self.get(quiz_id)
+    def archive(self, quiz_id: UUID, *, owner_id: UUID | None = None) -> Quiz:
+        quiz = self.get(quiz_id, owner_id=owner_id)
         if quiz.status != QuizStatus.READY:
             raise ValidationError(
                 "QUIZ_NOT_ARCHIVABLE",
@@ -197,8 +220,12 @@ class QuizService:
         self._session.refresh(quiz)
         return quiz
 
-    def restore(self, quiz_id: UUID) -> Quiz:
-        quiz = self._quizzes.get_by_id(quiz_id, include_deleted=False)
+    def restore(self, quiz_id: UUID, *, owner_id: UUID | None = None) -> Quiz:
+        quiz = self._quizzes.get_by_id(
+            quiz_id,
+            include_deleted=False,
+            owner_id=owner_id,
+        )
         if quiz is None:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
         if quiz.status != QuizStatus.ARCHIVED:
@@ -206,7 +233,7 @@ class QuizService:
                 "QUIZ_NOT_RESTORABLE",
                 "Only Archived quizzes can be restored",
             )
-        loaded = self.get_with_content_loaded(quiz_id)
+        loaded = self.get_with_content_loaded(quiz_id, owner_id=owner_id)
         errors = self._collect_ready_errors(loaded)
         if errors:
             quiz.status = QuizStatus.DRAFT
@@ -224,7 +251,12 @@ class QuizService:
         self._session.refresh(quiz)
         return quiz
 
-    def get_with_content_loaded(self, quiz_id: UUID) -> Quiz:
+    def get_with_content_loaded(
+        self,
+        quiz_id: UUID,
+        *,
+        owner_id: UUID | None = None,
+    ) -> Quiz:
         from app.models.question import Question
         from sqlalchemy import select
 
@@ -238,6 +270,8 @@ class QuizService:
                 .selectinload(Question.options),
             )
         )
+        if owner_id is not None:
+            stmt = stmt.where(Quiz.owner_id == owner_id)
         quiz = self._session.scalar(stmt)
         if quiz is None or quiz.status == QuizStatus.DELETED:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")

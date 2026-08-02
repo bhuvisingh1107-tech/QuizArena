@@ -123,11 +123,11 @@ def _envelope(data, request_id: str, *, status_code: int = status.HTTP_200_OK) -
 )
 def create_live_room(
     body: LiveRoomCreateRequest,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    room = service.create(body)
+    room = service.create(body, owner_id=admin.id)
     return _envelope(
         _room_response(room, service),
         request_id,
@@ -142,14 +142,14 @@ def create_live_room(
     summary="List live rooms",
 )
 def list_live_rooms(
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     state: Annotated[RoomState | None, Query()] = None,
 ) -> JSONResponse:
-    items, total = service.list(offset=offset, limit=limit, state=state)
+    items, total = service.list(offset=offset, limit=limit, state=state, owner_id=admin.id)
     data = LiveRoomListData(
         items=[_room_response(room, service) for room in items],
         total=total,
@@ -165,11 +165,11 @@ def list_live_rooms(
 )
 def get_live_room(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    room = service.get(room_id)
+    room = service.get(room_id, owner_id=admin.id)
     return _envelope(_room_response(room, service), request_id)
 
 
@@ -182,11 +182,11 @@ def get_live_room(
 def update_room_config(
     room_id: UUID,
     body: RoomConfigData,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    room = service.update_config(room_id, body)
+    room = service.update_config(room_id, body, owner_id=admin.id)
     return _envelope(_room_response(room, service), request_id)
 
 
@@ -198,11 +198,11 @@ def update_room_config(
 )
 def open_lobby(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    room = service.open_lobby(room_id)
+    room = service.open_lobby(room_id, owner_id=admin.id)
     return _envelope(_room_response(room, service), request_id)
 
 
@@ -214,11 +214,11 @@ def open_lobby(
 )
 def toggle_lobby(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    room = service.toggle_lobby(room_id)
+    room = service.toggle_lobby(room_id, owner_id=admin.id)
     return _envelope(_room_response(room, service), request_id)
 
 
@@ -230,12 +230,12 @@ def toggle_lobby(
 )
 async def start_session(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
     db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
-    room = service.start(room_id)
+    room = service.start(room_id, owner_id=admin.id)
     await _broadcast_lifecycle(room, ServerEventType.ROOM_SESSION_STARTED, db)
 
     # Open first question immediately — host only needs Start Quiz.
@@ -265,12 +265,12 @@ async def start_session(
 )
 async def pause_session(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
     db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
-    room = service.pause(room_id)
+    room = service.pause(room_id, owner_id=admin.id)
     await _broadcast_lifecycle(room, ServerEventType.ROOM_PAUSED, db)
     return _envelope(_room_response(room, service), request_id)
 
@@ -283,12 +283,12 @@ async def pause_session(
 )
 async def resume_session(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
     db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
-    room = service.resume(room_id)
+    room = service.resume(room_id, owner_id=admin.id)
     await _broadcast_lifecycle(room, ServerEventType.ROOM_RESUMED, db)
     return _envelope(_room_response(room, service), request_id)
 
@@ -301,7 +301,7 @@ async def resume_session(
 )
 async def end_session(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
     db: Annotated[Session, Depends(get_db)],
@@ -309,7 +309,7 @@ async def end_session(
     from app.services.timer_service import auto_progression
 
     auto_progression.cancel_room(room_id)
-    room = service.end(room_id)
+    room = service.end(room_id, owner_id=admin.id)
     await _broadcast_lifecycle(room, ServerEventType.ROOM_COMPLETED, db)
     return _envelope(_room_response(room, service), request_id)
 
@@ -322,11 +322,11 @@ async def end_session(
 )
 def close_room(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    room = service.close(room_id)
+    room = service.close(room_id, owner_id=admin.id)
     return _envelope(_room_response(room, service), request_id)
 
 
@@ -338,11 +338,11 @@ def close_room(
 )
 def delete_live_room(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    service.delete(room_id)
+    service.delete(room_id, owner_id=admin.id)
     return _envelope(LiveRoomDeleteData(id=room_id, deleted=True), request_id)
 
 
@@ -354,10 +354,12 @@ def delete_live_room(
 )
 def list_room_participants(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: ResultsServiceDep,
+    rooms: LiveRoomServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
+    rooms.get(room_id, owner_id=admin.id)
     participants, ranks, total = service.list_participants_admin(room_id)
     items = [
         AdminParticipantItem(
@@ -387,10 +389,12 @@ def list_room_participants(
 )
 def get_room_results(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: ResultsServiceDep,
+    rooms: LiveRoomServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
+    rooms.get(room_id, owner_id=admin.id)
     data = service.get_results(room_id)
     return _envelope(data, request_id)
 
@@ -402,9 +406,11 @@ def get_room_results(
 )
 def export_room_results(
     room_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: ResultsServiceDep,
+    rooms: LiveRoomServiceDep,
 ) -> Response:
+    rooms.get(room_id, owner_id=admin.id)
     csv_text = service.export_csv(room_id)
     filename = f"room-{room_id}-results.csv"
     return StreamingResponse(

@@ -49,12 +49,12 @@ def _envelope(data, request_id: str, *, status_code: int = status.HTTP_200_OK) -
 )
 def create_quiz(
     body: QuizCreateRequest,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuizServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
     """Create a Draft quiz with default configuration."""
-    quiz = service.create(body)
+    quiz = service.create(body, owner_id=admin.id)
     return _envelope(_quiz_response(quiz), request_id, status_code=status.HTTP_201_CREATED)
 
 
@@ -65,7 +65,7 @@ def create_quiz(
     summary="List quizzes",
 )
 def list_quizzes(
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuizServiceDep,
     request_id: RequestId,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -82,6 +82,7 @@ def list_quizzes(
         limit=limit,
         status=status_filter,
         search=search,
+        owner_id=admin.id,
     )
     data = QuizListData(
         items=[_quiz_response(q) for q in items],
@@ -108,11 +109,11 @@ def list_quizzes(
 )
 def get_quiz(
     quiz_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuizServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    quiz = service.get(quiz_id)
+    quiz = service.get(quiz_id, owner_id=admin.id)
     return _envelope(_quiz_response(quiz), request_id)
 
 
@@ -125,11 +126,11 @@ def get_quiz(
 def update_quiz(
     quiz_id: UUID,
     body: QuizUpdateRequest,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuizServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    quiz = service.update(quiz_id, body)
+    quiz = service.update(quiz_id, body, owner_id=admin.id)
     return _envelope(_quiz_response(quiz), request_id)
 
 
@@ -141,7 +142,7 @@ def update_quiz(
 )
 def delete_quiz(
     quiz_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuizServiceDep,
     request_id: RequestId,
     hard: Annotated[
@@ -150,7 +151,7 @@ def delete_quiz(
     ] = False,
 ) -> JSONResponse:
     """Soft-delete by default (status=Deleted). Blocked when InUse."""
-    quiz = service.delete(quiz_id, hard=hard)
+    quiz = service.delete(quiz_id, hard=hard, owner_id=admin.id)
     data = QuizDeleteData(
         id=quiz_id,
         deleted=True,
@@ -168,12 +169,12 @@ def delete_quiz(
 )
 def validate_quiz(
     quiz_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuizServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
     """Run Ready checklist; on success status becomes Ready (publish)."""
-    quiz = service.validate(quiz_id)
+    quiz = service.validate(quiz_id, owner_id=admin.id)
     return _envelope(_quiz_response(quiz), request_id)
 
 
@@ -185,11 +186,11 @@ def validate_quiz(
 )
 def archive_quiz(
     quiz_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuizServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    quiz = service.archive(quiz_id)
+    quiz = service.archive(quiz_id, owner_id=admin.id)
     return _envelope(_quiz_response(quiz), request_id)
 
 
@@ -201,9 +202,9 @@ def archive_quiz(
 )
 def restore_quiz(
     quiz_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: QuizServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    quiz = service.restore(quiz_id)
+    quiz = service.restore(quiz_id, owner_id=admin.id)
     return _envelope(_quiz_response(quiz), request_id)

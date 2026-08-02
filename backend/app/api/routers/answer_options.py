@@ -53,11 +53,11 @@ def create_answer_option(
     section_id: UUID,
     question_id: UUID,
     body: AnswerOptionCreateRequest,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: AnswerOptionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    option = service.create(quiz_id, section_id, question_id, body)
+    option = service.create(quiz_id, section_id, question_id, body, owner_id=admin.id)
     return _envelope(
         _option_response(option),
         request_id,
@@ -75,11 +75,11 @@ def list_answer_options(
     quiz_id: UUID,
     section_id: UUID,
     question_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: AnswerOptionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    items, total = service.list(quiz_id, section_id, question_id)
+    items, total = service.list(quiz_id, section_id, question_id, owner_id=admin.id)
     data = AnswerOptionListData(
         items=[_option_response(o) for o in items],
         total=total,
@@ -98,11 +98,11 @@ def get_answer_option(
     section_id: UUID,
     question_id: UUID,
     option_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: AnswerOptionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    option = service.get(quiz_id, section_id, question_id, option_id)
+    option = service.get(quiz_id, section_id, question_id, option_id, owner_id=admin.id)
     return _envelope(_option_response(option), request_id)
 
 
@@ -118,11 +118,11 @@ def update_answer_option(
     question_id: UUID,
     option_id: UUID,
     body: AnswerOptionUpdateRequest,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: AnswerOptionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    option = service.update(quiz_id, section_id, question_id, option_id, body)
+    option = service.update(quiz_id, section_id, question_id, option_id, body, owner_id=admin.id)
     return _envelope(_option_response(option), request_id)
 
 
@@ -137,9 +137,9 @@ def delete_answer_option(
     section_id: UUID,
     question_id: UUID,
     option_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: AnswerOptionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    service.delete(quiz_id, section_id, question_id, option_id)
+    service.delete(quiz_id, section_id, question_id, option_id, owner_id=admin.id)
     return _envelope(AnswerOptionDeleteData(id=option_id, deleted=True), request_id)

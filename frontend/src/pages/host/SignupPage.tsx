@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -10,40 +10,48 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/hooks/queries/useAuth'
 import { ApiError } from '@/lib/api-client'
-import { hostDestinationFrom } from '@/lib/host-routes'
-import { loginSchema, type LoginFormValues } from '@/schemas/login'
+import { registerSchema, type RegisterFormValues } from '@/schemas/register'
 
-export function LoginPage() {
-  const { login, isAuthenticated, isLoading } = useAuth()
+export function SignupPage() {
+  const { register: registerHost, isAuthenticated, isLoading } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
   const [formError, setFormError] = useState<string | null>(null)
 
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<LoginFormValues>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { username: '', password: '' },
+  } = useForm<RegisterFormValues>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      name: '',
+      email: '',
+      username: '',
+      password: '',
+      confirmPassword: '',
+    },
   })
 
   if (!isLoading && isAuthenticated) {
-    const from = (location.state as { from?: string } | null)?.from
-    return <Navigate to={hostDestinationFrom(from)} replace />
+    return <Navigate to="/dashboard" replace />
   }
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null)
     try {
-      await login(values)
-      const from = (location.state as { from?: string } | null)?.from
-      navigate(hostDestinationFrom(from), { replace: true })
+      await registerHost({
+        name: values.name,
+        email: values.email,
+        username: values.username,
+        password: values.password,
+        confirmPassword: values.confirmPassword,
+      })
+      navigate('/dashboard', { replace: true })
     } catch (error) {
       if (error instanceof ApiError) {
         setFormError(error.message)
       } else {
-        setFormError('Unable to sign in. Please try again.')
+        setFormError('Unable to create account. Please try again.')
       }
     }
   })
@@ -63,25 +71,58 @@ export function LoginPage() {
             </p>
           </Link>
           <p className="mt-3 text-sm text-[var(--muted-foreground)]">
-            Host live quizzes with precision control.
+            Create a host account to build and run live quizzes.
           </p>
         </div>
 
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)]/90 p-8 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur">
           <div className="mb-6">
-            <h1 className="font-display text-2xl font-semibold text-[#f0f4fa]">Host Sign In</h1>
+            <h1 className="font-display text-2xl font-semibold text-[#f0f4fa]">Create Host Account</h1>
             <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-              Sign in with your username or email to open the host console.
+              You&apos;ll be signed in automatically after registration.
             </p>
           </div>
 
-          <form onSubmit={onSubmit} className="space-y-5" noValidate>
+          <form onSubmit={onSubmit} className="space-y-4" noValidate>
             <div className="space-y-2">
-              <Label htmlFor="username">Username or Email</Label>
+              <Label htmlFor="name">Full Name</Label>
+              <Input
+                id="name"
+                autoComplete="name"
+                placeholder="Alex Host"
+                aria-invalid={Boolean(errors.name)}
+                {...register('name')}
+              />
+              {errors.name ? (
+                <p className="text-xs text-[var(--destructive)]" role="alert">
+                  {errors.name.message}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                placeholder="alex@example.com"
+                aria-invalid={Boolean(errors.email)}
+                {...register('email')}
+              />
+              {errors.email ? (
+                <p className="text-xs text-[var(--destructive)]" role="alert">
+                  {errors.email.message}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="username">Username</Label>
               <Input
                 id="username"
                 autoComplete="username"
-                placeholder="host@example.com"
+                placeholder="alex_host"
                 aria-invalid={Boolean(errors.username)}
                 {...register('username')}
               />
@@ -97,7 +138,7 @@ export function LoginPage() {
               <Input
                 id="password"
                 type="password"
-                autoComplete="current-password"
+                autoComplete="new-password"
                 placeholder="••••••••••••"
                 aria-invalid={Boolean(errors.password)}
                 {...register('password')}
@@ -105,6 +146,27 @@ export function LoginPage() {
               {errors.password ? (
                 <p className="text-xs text-[var(--destructive)]" role="alert">
                   {errors.password.message}
+                </p>
+              ) : (
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  At least 12 characters with upper, lower, number, and special character.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                placeholder="••••••••••••"
+                aria-invalid={Boolean(errors.confirmPassword)}
+                {...register('confirmPassword')}
+              />
+              {errors.confirmPassword ? (
+                <p className="text-xs text-[var(--destructive)]" role="alert">
+                  {errors.confirmPassword.message}
                 </p>
               ) : null}
             </div>
@@ -117,26 +179,20 @@ export function LoginPage() {
 
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {isSubmitting ? 'Signing in…' : 'Login'}
+              {isSubmitting ? 'Creating account…' : 'Create Account'}
             </Button>
           </form>
 
           <p className="mt-6 text-center text-sm text-[var(--muted-foreground)]">
-            Don&apos;t have an account?{' '}
+            Already have an account?{' '}
             <Link
-              to="/host/signup"
+              to="/host/login"
               className="font-medium text-[var(--primary)] underline-offset-2 hover:underline"
             >
-              Create Account
+              Host Sign In
             </Link>
           </p>
         </div>
-
-        <p className="mt-6 text-center text-xs text-[var(--muted-foreground)]">
-          <Link to="/join" className="underline-offset-2 hover:underline">
-            Join a quiz as a participant
-          </Link>
-        </p>
       </div>
     </div>
   )

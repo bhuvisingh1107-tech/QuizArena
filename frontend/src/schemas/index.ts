@@ -1,4 +1,5 @@
 export { loginSchema, type LoginFormValues } from './login'
+export { registerSchema, type RegisterFormValues } from './register'
 export {
   roomCodeSchema,
   joinRoomCodeSchema,

@@ -12,6 +12,7 @@ from app.schemas.auth import (
     LoginRequest,
     LoginResponseData,
     LogoutResponseData,
+    RegisterRequest,
 )
 from app.schemas.common import DataResponse, ErrorResponse, HealthData, Meta
 from app.schemas.live_room import (
@@ -79,6 +80,7 @@ __all__ = [
     "LoginRequest",
     "LoginResponseData",
     "LogoutResponseData",
+    "RegisterRequest",
     "MediaAttachData",
     "MediaAttachRequest",
     "MediaDeleteData",

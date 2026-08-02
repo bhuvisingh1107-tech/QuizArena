@@ -36,8 +36,10 @@ class AnswerOptionService:
         section_id: UUID,
         question_id: UUID,
         payload: AnswerOptionCreateRequest,
+        *,
+        owner_id: UUID | None = None,
     ) -> AnswerOption:
-        quiz = self._require_parent_quiz(quiz_id)
+        quiz = self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._ensure_quiz_mutable(quiz.status)
         self._require_section(quiz_id, section_id)
         question = self._require_question(section_id, question_id)
@@ -74,8 +76,10 @@ class AnswerOptionService:
         quiz_id: UUID,
         section_id: UUID,
         question_id: UUID,
+        *,
+        owner_id: UUID | None = None,
     ) -> tuple[list[AnswerOption], int]:
-        self._require_parent_quiz(quiz_id)
+        self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._require_section(quiz_id, section_id)
         self._require_question(section_id, question_id)
         items = self._options.list_for_question(question_id)
@@ -87,8 +91,10 @@ class AnswerOptionService:
         section_id: UUID,
         question_id: UUID,
         option_id: UUID,
+        *,
+        owner_id: UUID | None = None,
     ) -> AnswerOption:
-        self._require_parent_quiz(quiz_id)
+        self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._require_section(quiz_id, section_id)
         self._require_question(section_id, question_id)
         option = self._options.get_for_question(question_id, option_id)
@@ -103,12 +109,14 @@ class AnswerOptionService:
         question_id: UUID,
         option_id: UUID,
         payload: AnswerOptionUpdateRequest,
+        *,
+        owner_id: UUID | None = None,
     ) -> AnswerOption:
-        quiz = self._require_parent_quiz(quiz_id)
+        quiz = self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._ensure_quiz_mutable(quiz.status)
         self._require_section(quiz_id, section_id)
         question = self._require_question(section_id, question_id)
-        option = self.get(quiz_id, section_id, question_id, option_id)
+        option = self.get(quiz_id, section_id, question_id, option_id, owner_id=owner_id)
 
         if payload.text is not None:
             option.text = payload.text
@@ -142,18 +150,24 @@ class AnswerOptionService:
         section_id: UUID,
         question_id: UUID,
         option_id: UUID,
+        *,
+        owner_id: UUID | None = None,
     ) -> None:
-        quiz = self._require_parent_quiz(quiz_id)
+        quiz = self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._ensure_quiz_mutable(quiz.status)
         self._require_section(quiz_id, section_id)
         self._require_question(section_id, question_id)
-        option = self.get(quiz_id, section_id, question_id, option_id)
+        option = self.get(quiz_id, section_id, question_id, option_id, owner_id=owner_id)
         self._options.delete(option)
         self._demote_ready_if_needed(quiz)
         self._session.commit()
 
-    def _require_parent_quiz(self, quiz_id: UUID):
-        quiz = self._quizzes.get_by_id(quiz_id, include_deleted=False)
+    def _require_parent_quiz(self, quiz_id: UUID, *, owner_id: UUID | None = None):
+        quiz = self._quizzes.get_by_id(
+            quiz_id,
+            include_deleted=False,
+            owner_id=owner_id,
+        )
         if quiz is None:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
         return quiz

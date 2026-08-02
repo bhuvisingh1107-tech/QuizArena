@@ -76,10 +76,10 @@ export function JoinPage() {
         <p className="mt-8 text-center text-xs text-[var(--muted-foreground)]">
           Hosting instead?{' '}
           <Link
-            to="/admin/login"
+            to="/host/login"
             className="text-[var(--primary)] underline-offset-2 hover:underline"
           >
-            Admin sign in
+            Host Sign In
           </Link>
         </p>
       </div>

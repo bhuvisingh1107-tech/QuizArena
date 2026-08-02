@@ -16,18 +16,26 @@ import {
   setExpiresAt,
   setToken,
 } from '@/lib/auth-token'
-import type { Admin, LoginRequest, LoginResponse } from '@/types/api'
+import type { Admin, LoginRequest, LoginResponse, RegisterRequest } from '@/types/api'
 
 interface AuthContextValue {
   admin: Admin | null
   isAuthenticated: boolean
   isLoading: boolean
   login: (credentials: LoginRequest) => Promise<void>
+  register: (payload: RegisterRequest) => Promise<void>
   logout: () => Promise<void>
   refreshAdmin: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+
+async function persistSession(result: LoginResponse, setAdmin: (admin: Admin) => void) {
+  setToken(result.accessToken)
+  setExpiresAt(result.expiresAt)
+  const me = await apiGet<Admin>('/admin/me')
+  setAdmin(me)
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [admin, setAdmin] = useState<Admin | null>(null)
@@ -103,10 +111,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (credentials: LoginRequest) => {
     const result = await apiPost<LoginResponse>('/admin/login', credentials)
-    setToken(result.accessToken)
-    setExpiresAt(result.expiresAt)
-    const me = await apiGet<Admin>('/admin/me')
-    setAdmin(me)
+    await persistSession(result, setAdmin)
+  }, [])
+
+  const register = useCallback(async (payload: RegisterRequest) => {
+    const result = await apiPost<LoginResponse>('/admin/register', payload)
+    await persistSession(result, setAdmin)
   }, [])
 
   const logout = useCallback(async () => {
@@ -128,10 +138,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: Boolean(admin),
       isLoading,
       login,
+      register,
       logout,
       refreshAdmin,
     }),
-    [admin, isLoading, login, logout, refreshAdmin],
+    [admin, isLoading, login, register, logout, refreshAdmin],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

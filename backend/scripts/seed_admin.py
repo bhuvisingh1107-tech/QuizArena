@@ -57,7 +57,12 @@ def main() -> None:
             print(f"Admin '{username}' already exists (id={existing.id}). Skipping.")
             return
 
-        admin = repo.create(username=username, password_hash=password_hash)
+        admin = repo.create(
+            username=username,
+            password_hash=password_hash,
+            name=os.getenv("ADMIN_NAME", "Host"),
+            email=os.getenv("ADMIN_EMAIL") or None,
+        )
         session.commit()
         print(f"Seeded admin '{admin.username}' (id={admin.id}).")
     finally:

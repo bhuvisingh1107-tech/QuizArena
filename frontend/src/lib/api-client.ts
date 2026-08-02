@@ -56,8 +56,12 @@ apiClient.interceptors.response.use(
   (error: AxiosError<ApiErrorBody>) => {
     if (error.response?.status === 401) {
       clearToken()
-      if (typeof window !== 'undefined' && !window.location.pathname.includes('/admin/login')) {
-        window.location.assign('/admin/login')
+      if (
+        typeof window !== 'undefined' &&
+        !window.location.pathname.includes('/host/login') &&
+        !window.location.pathname.includes('/admin/login')
+      ) {
+        window.location.assign('/host/login')
       }
     }
     throw toApiError(error)

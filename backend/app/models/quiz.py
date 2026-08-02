@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class Quiz(Base, TimestampMixin):
-    """Durable quiz template in the global library."""
+    """Durable quiz template owned by a host account."""
 
     __tablename__ = "quizzes"
     __table_args__ = (
@@ -26,6 +26,12 @@ class Quiz(Base, TimestampMixin):
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("admins.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[QuizStatus] = mapped_column(

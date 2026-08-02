@@ -53,6 +53,8 @@ def test_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Settings:
     monkeypatch.setenv("LOG_FORMAT", "text")
     monkeypatch.setenv("STORAGE_BACKEND", "local")
     monkeypatch.setenv("STORAGE_PATH", str(tmp_path / "storage"))
+    monkeypatch.setenv("TRUSTED_HOSTS", "test,testserver,localhost,127.0.0.1")
+    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:5173,http://test")
     get_settings.cache_clear()
     settings = get_settings()
     yield settings
@@ -72,6 +74,8 @@ def db_session(test_settings: Settings) -> Generator[Session, None, None]:
     admin = Admin(
         username=TEST_USERNAME,
         password_hash=hash_password(TEST_PASSWORD),
+        name="Test Host",
+        email="admin@example.com",
     )
     session.add(admin)
     session.commit()

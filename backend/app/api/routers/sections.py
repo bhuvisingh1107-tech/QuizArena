@@ -49,11 +49,11 @@ def _envelope(data, request_id: str, *, status_code: int = status.HTTP_200_OK) -
 def create_section(
     quiz_id: UUID,
     body: SectionCreateRequest,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: SectionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    section = service.create(quiz_id, body)
+    section = service.create(quiz_id, body, owner_id=admin.id)
     return _envelope(
         _section_response(section),
         request_id,
@@ -69,11 +69,11 @@ def create_section(
 )
 def list_sections(
     quiz_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: SectionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    items, total = service.list(quiz_id)
+    items, total = service.list(quiz_id, owner_id=admin.id)
     data = SectionListData(
         items=[_section_response(s) for s in items],
         total=total,
@@ -90,11 +90,11 @@ def list_sections(
 def get_section(
     quiz_id: UUID,
     section_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: SectionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    section = service.get(quiz_id, section_id)
+    section = service.get(quiz_id, section_id, owner_id=admin.id)
     return _envelope(_section_response(section), request_id)
 
 
@@ -108,11 +108,11 @@ def update_section(
     quiz_id: UUID,
     section_id: UUID,
     body: SectionUpdateRequest,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: SectionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    section = service.update(quiz_id, section_id, body)
+    section = service.update(quiz_id, section_id, body, owner_id=admin.id)
     return _envelope(_section_response(section), request_id)
 
 
@@ -125,9 +125,9 @@ def update_section(
 def delete_section(
     quiz_id: UUID,
     section_id: UUID,
-    _: CurrentAdmin,
+    admin: CurrentAdmin,
     service: SectionServiceDep,
     request_id: RequestId,
 ) -> JSONResponse:
-    service.delete(quiz_id, section_id)
+    service.delete(quiz_id, section_id, owner_id=admin.id)
     return _envelope(SectionDeleteData(id=section_id, deleted=True), request_id)

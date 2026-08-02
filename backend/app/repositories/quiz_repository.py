@@ -24,18 +24,26 @@ class QuizRepository:
         title: str,
         description: str | None,
         config: QuizConfig,
+        owner_id: UUID | None = None,
     ) -> Quiz:
         quiz = Quiz(
             title=title,
             description=description,
             status=QuizStatus.DRAFT,
             config=config,
+            owner_id=owner_id,
         )
         self._session.add(quiz)
         self._session.flush()
         return quiz
 
-    def get_by_id(self, quiz_id: UUID, *, include_deleted: bool = False) -> Quiz | None:
+    def get_by_id(
+        self,
+        quiz_id: UUID,
+        *,
+        include_deleted: bool = False,
+        owner_id: UUID | None = None,
+    ) -> Quiz | None:
         stmt = (
             select(Quiz)
             .options(selectinload(Quiz.config))
@@ -43,6 +51,8 @@ class QuizRepository:
         )
         if not include_deleted:
             stmt = stmt.where(Quiz.status != QuizStatus.DELETED)
+        if owner_id is not None:
+            stmt = stmt.where(Quiz.owner_id == owner_id)
         return self._session.scalar(stmt)
 
     def list(
@@ -54,8 +64,11 @@ class QuizRepository:
         search: str | None = None,
         include_deleted: bool = False,
         include_archived: bool = True,
+        owner_id: UUID | None = None,
     ) -> tuple[list[Quiz], int]:
         filters = []
+        if owner_id is not None:
+            filters.append(Quiz.owner_id == owner_id)
         if status is not None:
             filters.append(Quiz.status == status)
         else:

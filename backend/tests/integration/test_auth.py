@@ -146,3 +146,50 @@ def test_authenticated_endpoint_access(client: TestClient, admin_token: str) -> 
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert response.status_code == 200, f"{method.upper()} {path}: {response.text}"
+
+
+def test_register_success(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/admin/register",
+        json={
+            "name": "New Host",
+            "email": "newhost@example.com",
+            "username": "new_host",
+            "password": "StrongPassw0rd!",
+            "confirmPassword": "StrongPassw0rd!",
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert "accessToken" in body["data"]
+
+    me = client.get(
+        "/api/v1/admin/me",
+        headers={"Authorization": f"Bearer {body['data']['accessToken']}"},
+    )
+    assert me.status_code == 200
+    assert me.json()["data"]["username"] == "new_host"
+    assert me.json()["data"]["email"] == "newhost@example.com"
+
+
+def test_register_duplicate_username(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/admin/register",
+        json={
+            "name": "Dup",
+            "email": "dup@example.com",
+            "username": TEST_USERNAME,
+            "password": "StrongPassw0rd!",
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "USERNAME_TAKEN"
+
+
+def test_login_by_email(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/admin/login",
+        json={"username": "admin@example.com", "password": TEST_PASSWORD},
+    )
+    assert response.status_code == 200
+    assert "accessToken" in response.json()["data"]

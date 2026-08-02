@@ -25,8 +25,14 @@ class SectionService:
         self._quizzes = QuizRepository(session)
         self._sections = SectionRepository(session)
 
-    def create(self, quiz_id: UUID, payload: SectionCreateRequest) -> Section:
-        quiz = self._require_parent_quiz(quiz_id)
+    def create(
+        self,
+        quiz_id: UUID,
+        payload: SectionCreateRequest,
+        *,
+        owner_id: UUID | None = None,
+    ) -> Section:
+        quiz = self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._ensure_quiz_mutable(quiz.status)
 
         sort_order = (
@@ -46,13 +52,19 @@ class SectionService:
         self._session.refresh(section)
         return section
 
-    def list(self, quiz_id: UUID) -> tuple[list[Section], int]:
-        self._require_parent_quiz(quiz_id)
+    def list(self, quiz_id: UUID, *, owner_id: UUID | None = None) -> tuple[list[Section], int]:
+        self._require_parent_quiz(quiz_id, owner_id=owner_id)
         items = self._sections.list_for_quiz(quiz_id)
         return items, len(items)
 
-    def get(self, quiz_id: UUID, section_id: UUID) -> Section:
-        self._require_parent_quiz(quiz_id)
+    def get(
+        self,
+        quiz_id: UUID,
+        section_id: UUID,
+        *,
+        owner_id: UUID | None = None,
+    ) -> Section:
+        self._require_parent_quiz(quiz_id, owner_id=owner_id)
         section = self._sections.get_for_quiz(quiz_id, section_id)
         if section is None:
             raise NotFoundError("SECTION_NOT_FOUND", "Section not found")
@@ -63,10 +75,12 @@ class SectionService:
         quiz_id: UUID,
         section_id: UUID,
         payload: SectionUpdateRequest,
+        *,
+        owner_id: UUID | None = None,
     ) -> Section:
-        quiz = self._require_parent_quiz(quiz_id)
+        quiz = self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._ensure_quiz_mutable(quiz.status)
-        section = self.get(quiz_id, section_id)
+        section = self.get(quiz_id, section_id, owner_id=owner_id)
 
         if payload.name is not None:
             section.name = payload.name
@@ -84,16 +98,26 @@ class SectionService:
         self._session.refresh(section)
         return section
 
-    def delete(self, quiz_id: UUID, section_id: UUID) -> None:
-        quiz = self._require_parent_quiz(quiz_id)
+    def delete(
+        self,
+        quiz_id: UUID,
+        section_id: UUID,
+        *,
+        owner_id: UUID | None = None,
+    ) -> None:
+        quiz = self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._ensure_quiz_mutable(quiz.status)
-        section = self.get(quiz_id, section_id)
+        section = self.get(quiz_id, section_id, owner_id=owner_id)
         self._sections.delete(section)
         self._demote_ready_if_needed(quiz)
         self._session.commit()
 
-    def _require_parent_quiz(self, quiz_id: UUID):
-        quiz = self._quizzes.get_by_id(quiz_id, include_deleted=False)
+    def _require_parent_quiz(self, quiz_id: UUID, *, owner_id: UUID | None = None):
+        quiz = self._quizzes.get_by_id(
+            quiz_id,
+            include_deleted=False,
+            owner_id=owner_id,
+        )
         if quiz is None:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
         return quiz

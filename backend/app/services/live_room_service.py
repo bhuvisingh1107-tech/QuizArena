@@ -57,14 +57,14 @@ class LiveRoomService:
 
     # ── CRUD / lifecycle ───────────────────────────────────────────────────
 
-    def create(self, payload: LiveRoomCreateRequest) -> LiveRoom:
-        if self._rooms.has_hosting_room():
+    def create(self, payload: LiveRoomCreateRequest, *, owner_id: UUID) -> LiveRoom:
+        if self._rooms.has_hosting_room(owner_id=owner_id):
             raise ConflictError(
                 "ACTIVE_ROOM_EXISTS",
                 "Only one live room may be hosted at a time (v1)",
             )
 
-        quiz = self._rooms.get_quiz_for_snapshot(payload.quiz_id)
+        quiz = self._rooms.get_quiz_for_snapshot(payload.quiz_id, owner_id=owner_id)
         if quiz is None:
             raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
         self._ensure_quiz_ready(quiz)
@@ -111,17 +111,23 @@ class LiveRoomService:
         offset: int = 0,
         limit: int = 20,
         state: RoomState | None = None,
+        owner_id: UUID | None = None,
     ) -> tuple[list[LiveRoom], int]:
-        return self._rooms.list(offset=offset, limit=limit, state=state)
+        return self._rooms.list(
+            offset=offset,
+            limit=limit,
+            state=state,
+            owner_id=owner_id,
+        )
 
-    def get(self, room_id: UUID) -> LiveRoom:
-        room = self._rooms.get_by_id(room_id)
+    def get(self, room_id: UUID, *, owner_id: UUID | None = None) -> LiveRoom:
+        room = self._rooms.get_by_id(room_id, owner_id=owner_id)
         if room is None:
             raise NotFoundError("LIVE_ROOM_NOT_FOUND", "Live room not found")
         return room
 
-    def update_config(self, room_id: UUID, payload: RoomConfigData) -> LiveRoom:
-        room = self.get(room_id)
+    def update_config(self, room_id: UUID, payload: RoomConfigData, *, owner_id: UUID | None = None) -> LiveRoom:
+        room = self.get(room_id, owner_id=owner_id)
         if room.state != RoomState.SETUP:
             raise ValidationError(
                 "ROOM_CONFIG_IMMUTABLE",
@@ -139,18 +145,18 @@ class LiveRoomService:
 
         self._rooms.flush()
         self._session.commit()
-        return self.get(room_id)
+        return self.get(room_id, owner_id=owner_id)
 
-    def open_lobby(self, room_id: UUID) -> LiveRoom:
-        room = self.get(room_id)
+    def open_lobby(self, room_id: UUID, *, owner_id: UUID | None = None) -> LiveRoom:
+        room = self.get(room_id, owner_id=owner_id)
         room.state = room_fsm.transition(room.state, "open_lobby")
         room.lobby_sub_state = LobbySubState.OPEN
         self._rooms.flush()
         self._session.commit()
-        return self.get(room_id)
+        return self.get(room_id, owner_id=owner_id)
 
-    def toggle_lobby(self, room_id: UUID) -> LiveRoom:
-        room = self.get(room_id)
+    def toggle_lobby(self, room_id: UUID, *, owner_id: UUID | None = None) -> LiveRoom:
+        room = self.get(room_id, owner_id=owner_id)
         if room.state != RoomState.LOBBY:
             raise ValidationError(
                 "INVALID_STATE_TRANSITION",
@@ -162,10 +168,10 @@ class LiveRoomService:
             room.lobby_sub_state = LobbySubState.OPEN
         self._rooms.flush()
         self._session.commit()
-        return self.get(room_id)
+        return self.get(room_id, owner_id=owner_id)
 
-    def start(self, room_id: UUID) -> LiveRoom:
-        room = self.get(room_id)
+    def start(self, room_id: UUID, *, owner_id: UUID | None = None) -> LiveRoom:
+        room = self.get(room_id, owner_id=owner_id)
         room.state = room_fsm.transition(room.state, "start")
         room.started_at = datetime.now(UTC)
         room.current_question_index = 0
@@ -175,10 +181,10 @@ class LiveRoomService:
             questions[0].state = SessionQuestionState.PENDING
         self._rooms.flush()
         self._session.commit()
-        return self.get(room_id)
+        return self.get(room_id, owner_id=owner_id)
 
-    def pause(self, room_id: UUID) -> LiveRoom:
-        room = self.get(room_id)
+    def pause(self, room_id: UUID, *, owner_id: UUID | None = None) -> LiveRoom:
+        room = self.get(room_id, owner_id=owner_id)
         room.state = room_fsm.transition(room.state, "pause")
         if room.paused_at is None:
             room.paused_at = datetime.now(UTC)
@@ -193,10 +199,10 @@ class LiveRoomService:
             auto_progression.cancel_room(room_id)
         except Exception:
             pass
-        return self.get(room_id)
+        return self.get(room_id, owner_id=owner_id)
 
-    def resume(self, room_id: UUID) -> LiveRoom:
-        room = self.get(room_id)
+    def resume(self, room_id: UUID, *, owner_id: UUID | None = None) -> LiveRoom:
+        room = self.get(room_id, owner_id=owner_id)
         room.state = room_fsm.transition(room.state, "resume")
         if room.paused_at is not None:
             paused_at = room.paused_at
@@ -210,7 +216,7 @@ class LiveRoomService:
         from app.core.audit import audit
 
         audit("room.resume", room_id=str(room_id))
-        room = self.get(room_id)
+        room = self.get(room_id, owner_id=owner_id)
         try:
             from app.models.enums import SessionQuestionState
             from app.services.quiz_execution_service import QuizExecutionService
@@ -245,9 +251,9 @@ class LiveRoomService:
         if quiz is not None and quiz.status == QuizStatus.IN_USE:
             quiz.status = QuizStatus.READY
 
-    def end(self, room_id: UUID) -> LiveRoom:
+    def end(self, room_id: UUID, *, owner_id: UUID | None = None) -> LiveRoom:
         """End session → Completed (API_SPEC end / architecture endSession)."""
-        room = self.get(room_id)
+        room = self.get(room_id, owner_id=owner_id)
         room.state = room_fsm.transition(room.state, "end")
         room.completed_at = datetime.now(UTC)
         self._release_quiz_if_idle(room.quiz_id, exclude_room_id=room.id)
@@ -259,10 +265,10 @@ class LiveRoomService:
             auto_progression.cancel_room(room_id)
         except Exception:
             pass
-        return self.get(room_id)
+        return self.get(room_id, owner_id=owner_id)
 
-    def close(self, room_id: UUID) -> LiveRoom:
-        room = self.get(room_id)
+    def close(self, room_id: UUID, *, owner_id: UUID | None = None) -> LiveRoom:
+        room = self.get(room_id, owner_id=owner_id)
         room.state = room_fsm.transition(room.state, "close")
         room.codes_expired = True
         room.closed_at = datetime.now(UTC)
@@ -279,10 +285,10 @@ class LiveRoomService:
             auto_progression.cancel_room(room_id)
         except Exception:
             pass
-        return self.get(room_id)
+        return self.get(room_id, owner_id=owner_id)
 
-    def delete(self, room_id: UUID) -> None:
-        room = self.get(room_id)
+    def delete(self, room_id: UUID, *, owner_id: UUID | None = None) -> None:
+        room = self.get(room_id, owner_id=owner_id)
         if room.state not in {RoomState.SETUP, RoomState.CLOSED}:
             raise ConflictError(
                 "ROOM_NOT_DELETABLE",
