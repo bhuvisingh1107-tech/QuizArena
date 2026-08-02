@@ -45,7 +45,7 @@ export function AnswerFeedbackCard({
           <Skeleton className="h-16 rounded-lg" />
         </div>
         <p className="mt-5 text-center text-sm text-[var(--muted-foreground)]">
-          Waiting for next question…
+          Checking your answer…
         </p>
       </section>
     )
@@ -97,7 +97,7 @@ export function AnswerFeedbackCard({
               ? 'No answer submitted'
               : isCorrect
                 ? 'Correct!'
-                : 'Incorrect'}
+                : 'Incorrect!'}
           </p>
           {!isCorrect || isUnanswered ? (
             <p className="mt-1 text-sm text-[var(--muted-foreground)]">
@@ -154,7 +154,7 @@ export function AnswerFeedbackCard({
       ) : null}
 
       <p className="mt-5 text-center text-sm text-[var(--muted-foreground)]">
-        Waiting for next question…
+        Standings up next…
       </p>
     </section>
   )

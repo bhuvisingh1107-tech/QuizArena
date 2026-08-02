@@ -249,14 +249,23 @@ class EventDispatcher:
                 ClientEventType.ADMIN_NEXT_QUESTION,
                 ClientEventType.ADMIN_ADVANCE,
             }:
+                from app.services.timer_service import auto_progression
+
+                auto_progression.cancel_room(connection.room_id)
                 room = self._rooms.get(connection.room_id)
                 if room.state == RoomState.SECTION_BREAK:
                     result = self._execution.next_section(connection.room_id)
                 else:
                     result = self._execution.next_question(connection.room_id)
             elif event_type == ClientEventType.ADMIN_NEXT_SECTION:
+                from app.services.timer_service import auto_progression
+
+                auto_progression.cancel_room(connection.room_id)
                 result = self._execution.next_section(connection.room_id)
             elif event_type == ClientEventType.ADMIN_END_QUIZ:
+                from app.services.timer_service import auto_progression
+
+                auto_progression.cancel_room(connection.room_id)
                 result = self._execution.end_quiz(connection.room_id)
             else:
                 await self._manager.send_to_connection(
@@ -294,14 +303,11 @@ class EventDispatcher:
             ClientEventType.ADMIN_SKIP,
         }:
             schedule_after_question_started(connection.room_id, result.events)
-        if event_type in {
-            ClientEventType.ADMIN_END_QUIZ,
-            ClientEventType.ADMIN_CLOSE_QUESTION,
-        }:
+        if event_type == ClientEventType.ADMIN_REVEAL_ANSWER:
             from app.services.timer_service import auto_progression
 
-            if event_type == ClientEventType.ADMIN_END_QUIZ:
-                auto_progression.cancel_room(connection.room_id)
+            # Reveal was just broadcast without leaderboard — dwell → LB → dwell → next.
+            auto_progression.schedule_after_reveal(connection.room_id)
 
     async def _dispatch_answer_submit(
         self,

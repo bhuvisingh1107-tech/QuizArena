@@ -38,6 +38,7 @@ def _auto_progression_isolation(monkeypatch: pytest.MonkeyPatch) -> Generator[No
     )
     monkeypatch.setattr("app.services.timer_service.DEFAULT_QUESTION_SECONDS", 3600)
     monkeypatch.setattr("app.services.timer_service.REVEAL_DWELL_SECONDS", 0.05)
+    monkeypatch.setattr("app.services.timer_service.LEADERBOARD_DWELL_SECONDS", 0.05)
     yield
     from app.services.timer_service import auto_progression
 

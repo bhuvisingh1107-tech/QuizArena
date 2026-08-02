@@ -454,7 +454,8 @@ export function RoomMonitorPage() {
         <CardHeader>
           <CardTitle className="text-base">Live progression</CardTitle>
           <CardDescription>
-            Timer or all answers → reveal → next question → final leaderboard. No manual Next
+            Timer or all answers → answer reveal (3s) → leaderboard (3s) → next question.
+            No manual Next required.
             required.
           </CardDescription>
         </CardHeader>

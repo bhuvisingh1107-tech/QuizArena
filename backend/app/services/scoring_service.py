@@ -56,8 +56,18 @@ class ScoringService:
         self._responses = ResponseRepository(session)
         self._participants = ParticipantRepository(session)
 
-    def score_question(self, room_id: UUID) -> ScoringSummary:
-        """Score every participant for the current revealed question (idempotent)."""
+    def score_question(
+        self,
+        room_id: UUID,
+        *,
+        include_leaderboard: bool = True,
+    ) -> ScoringSummary:
+        """Score every participant for the current revealed question (idempotent).
+
+        When ``include_leaderboard`` is False, omit ``leaderboard:updated`` so the
+        auto-progression pipeline can keep clients on the Answer Reveal screen
+        before broadcasting standings.
+        """
         room = self._rooms.get_by_id(room_id)
         if room is None:
             raise NotFoundError("NOT_FOUND", "Live room not found")
@@ -176,13 +186,14 @@ class ScoringService:
 
         board = LeaderboardService(self._session).snapshot(room_id)
         self._session.commit()
-        summary.events.append(
-            {
-                "type": "leaderboard:updated",
-                "payload": board,
-                "audience": "room",
-            }
-        )
+        if include_leaderboard:
+            summary.events.append(
+                {
+                    "type": "leaderboard:updated",
+                    "payload": board,
+                    "audience": "room",
+                }
+            )
         return summary
 
     def score_response(

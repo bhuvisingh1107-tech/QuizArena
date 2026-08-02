@@ -107,6 +107,7 @@ def test_all_answered_triggers_auto_reveal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("app.services.timer_service.REVEAL_DWELL_SECONDS", 0.15)
+    monkeypatch.setattr("app.services.timer_service.LEADERBOARD_DWELL_SECONDS", 0.05)
 
     quiz_id = _ready_quiz(client, admin_token, db_session, "Auto Reveal")
     room = client.post(
@@ -213,6 +214,7 @@ def test_timer_expiry_auto_advances(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("app.services.timer_service.REVEAL_DWELL_SECONDS", 0.1)
+    monkeypatch.setattr("app.services.timer_service.LEADERBOARD_DWELL_SECONDS", 0.05)
 
     quiz_id = _ready_quiz(client, admin_token, db_session, "Timer Advance")
     room = client.post(

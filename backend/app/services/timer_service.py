@@ -13,8 +13,10 @@ from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
-# Dwell after reveal / section break before advancing (seconds).
-REVEAL_DWELL_SECONDS = 5.0
+# Dwell after answer reveal before showing the leaderboard (seconds).
+REVEAL_DWELL_SECONDS = 3.0
+# Dwell after leaderboard:updated before advancing to the next question.
+LEADERBOARD_DWELL_SECONDS = 3.0
 # Used when a question has no timeLimitSeconds during live auto-play.
 DEFAULT_QUESTION_SECONDS = 30
 
@@ -93,6 +95,27 @@ class AutoProgressionScheduler:
         self._tasks[room_id] = task
         task.add_done_callback(lambda done, rid=room_id: self._cleanup(rid, done))
 
+    def schedule_after_reveal(self, room_id: UUID) -> None:
+        """After a manual/admin reveal: wait → leaderboard → wait → advance."""
+        self.cancel_room(room_id)
+        task = asyncio.create_task(
+            self._run_after_reveal(room_id),
+            name=f"auto-progress-after-reveal-{room_id}",
+        )
+        self._tasks[room_id] = task
+        task.add_done_callback(lambda done, rid=room_id: self._cleanup(rid, done))
+
+    async def _run_after_reveal(self, room_id: UUID) -> None:
+        try:
+            await asyncio.sleep(REVEAL_DWELL_SECONDS)
+            await self._leaderboard_and_broadcast(room_id)
+            await asyncio.sleep(LEADERBOARD_DWELL_SECONDS)
+            await self._advance_and_broadcast(room_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Post-reveal progression failed for room %s", room_id)
+
     async def _resume_pipeline(self, room_id: UUID) -> None:
         from app.models.enums import SessionQuestionState
 
@@ -105,10 +128,14 @@ class AutoProgressionScheduler:
             if state == SessionQuestionState.CLOSED:
                 await self._reveal_and_broadcast(room_id)
                 await asyncio.sleep(REVEAL_DWELL_SECONDS)
+                await self._leaderboard_and_broadcast(room_id)
+                await asyncio.sleep(LEADERBOARD_DWELL_SECONDS)
                 await self._advance_and_broadcast(room_id)
                 return
             if state in {SessionQuestionState.REVEALED, SessionQuestionState.SCORED}:
-                await asyncio.sleep(REVEAL_DWELL_SECONDS)
+                # Already revealed — show standings, then advance.
+                await self._leaderboard_and_broadcast(room_id)
+                await asyncio.sleep(LEADERBOARD_DWELL_SECONDS)
                 await self._advance_and_broadcast(room_id)
         except asyncio.CancelledError:
             raise
@@ -155,8 +182,12 @@ class AutoProgressionScheduler:
         try:
             await self._close_and_broadcast(room_id)
             await asyncio.sleep(0.05)
+            # Reveal batch intentionally omits leaderboard:updated so clients
+            # can show the Answer Reveal screen for REVEAL_DWELL_SECONDS.
             await self._reveal_and_broadcast(room_id)
             await asyncio.sleep(REVEAL_DWELL_SECONDS)
+            await self._leaderboard_and_broadcast(room_id)
+            await asyncio.sleep(LEADERBOARD_DWELL_SECONDS)
             await self._advance_and_broadcast(room_id)
         except asyncio.CancelledError:
             raise
@@ -191,6 +222,13 @@ class AutoProgressionScheduler:
         if result is not None:
             await self._broadcast_result(room_id, result)
 
+    async def _leaderboard_and_broadcast(self, room_id: UUID) -> None:
+        events = await asyncio.to_thread(self._sync_leaderboard_events, room_id)
+        if events:
+            from app.api.websocket.broadcast_helpers import broadcast_execution_events
+
+            await broadcast_execution_events(room_id, events)
+
     async def _advance_and_broadcast(self, room_id: UUID) -> None:
         result = await asyncio.to_thread(self._sync_advance, room_id)
         if result is None:
@@ -205,7 +243,7 @@ class AutoProgressionScheduler:
             return
 
         if any(e.type == "section:break" for e in result.events):
-            await asyncio.sleep(REVEAL_DWELL_SECONDS)
+            await asyncio.sleep(LEADERBOARD_DWELL_SECONDS)
             continued = await asyncio.to_thread(self._sync_continue_section, room_id)
             if continued is not None:
                 await self._broadcast_result(room_id, continued)
@@ -221,6 +259,34 @@ class AutoProgressionScheduler:
         from app.api.websocket.broadcast_helpers import schedule_after_question_started
 
         schedule_after_question_started(room_id, events)
+
+    def _sync_leaderboard_events(self, room_id: UUID) -> list[Any]:
+        from app.api.deps import get_session_factory
+        from app.core.exceptions import QuizArenaError
+        from app.models.enums import RoomState
+        from app.services.leaderboard_service import LeaderboardService
+        from app.services.quiz_execution_service import BroadcastEvent
+
+        session = get_session_factory()()
+        try:
+            from app.services.quiz_execution_service import QuizExecutionService
+
+            state = QuizExecutionService(session).get_execution_state(room_id)
+            if state.room.state != RoomState.ACTIVE:
+                return []
+            board = LeaderboardService(session).snapshot(room_id)
+            return [
+                BroadcastEvent(
+                    type="leaderboard:updated",
+                    payload=board,
+                    audience="room",
+                )
+            ]
+        except QuizArenaError as exc:
+            logger.info("Leaderboard broadcast skipped for %s: %s", room_id, exc.code)
+            return []
+        finally:
+            session.close()
 
     def _sync_close(self, room_id: UUID) -> Any | None:
         from app.api.deps import get_session_factory

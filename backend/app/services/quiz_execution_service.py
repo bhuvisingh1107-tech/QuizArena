@@ -166,7 +166,11 @@ class QuizExecutionService:
         return ExecutionResult(room=room, events=events)
 
     def reveal_answer(self, room_id: UUID) -> ExecutionResult:
-        """Reveal correct answers, then invoke ScoringService (idempotent)."""
+        """Reveal correct answers, then invoke ScoringService (idempotent).
+
+        ``leaderboard:updated`` is deferred to the auto-progression pipeline so
+        clients can display the Answer Reveal screen before standings.
+        """
         from app.services.scoring_service import ScoringService
 
         room = self._require_room(room_id)
@@ -174,17 +178,10 @@ class QuizExecutionService:
         question = self._current_question(room)
         section = self._section_for(room, question)
 
-        if question.state == SessionQuestionState.SCORED:
-            summary = ScoringService(self._session).score_question(room_id)
-            events = [
-                BroadcastEvent(
-                    type="question:reveal",
-                    payload=self._question_payload(
-                        room, question, section, include_correct=True
-                    ),
-                ),
-            ]
+        def _append_scoring_events(events: list[BroadcastEvent], summary) -> None:
             for item in summary.events:
+                if item.get("type") == "leaderboard:updated":
+                    continue
                 pid = item.get("participantId")
                 events.append(
                     BroadcastEvent(
@@ -194,11 +191,29 @@ class QuizExecutionService:
                         participant_id=UUID(str(pid)) if pid else None,
                     )
                 )
+
+        if question.state == SessionQuestionState.SCORED:
+            summary = ScoringService(self._session).score_question(
+                room_id,
+                include_leaderboard=False,
+            )
+            events = [
+                BroadcastEvent(
+                    type="question:reveal",
+                    payload=self._question_payload(
+                        room, question, section, include_correct=True
+                    ),
+                ),
+            ]
+            _append_scoring_events(events, summary)
             return ExecutionResult(room=room, events=events)
 
         if question.state == SessionQuestionState.REVEALED:
             # Reveal already happened; ensure scoring completes idempotently.
-            summary = ScoringService(self._session).score_question(room_id)
+            summary = ScoringService(self._session).score_question(
+                room_id,
+                include_leaderboard=False,
+            )
             room = self._rooms.get_by_id(room_id) or room
             events = [
                 BroadcastEvent(
@@ -211,16 +226,7 @@ class QuizExecutionService:
                     ),
                 ),
             ]
-            for item in summary.events:
-                pid = item.get("participantId")
-                events.append(
-                    BroadcastEvent(
-                        type=item["type"],
-                        payload=item["payload"],
-                        audience=item.get("audience", "admin"),
-                        participant_id=UUID(str(pid)) if pid else None,
-                    )
-                )
+            _append_scoring_events(events, summary)
             return ExecutionResult(room=room, events=events)
 
         question.state = question_fsm.transition(question.state, "reveal")
@@ -232,18 +238,12 @@ class QuizExecutionService:
         ]
         room = self._commit(room)
 
-        summary = ScoringService(self._session).score_question(room_id)
+        summary = ScoringService(self._session).score_question(
+            room_id,
+            include_leaderboard=False,
+        )
         room = self._rooms.get_by_id(room_id) or room
-        for item in summary.events:
-            pid = item.get("participantId")
-            events.append(
-                BroadcastEvent(
-                    type=item["type"],
-                    payload=item["payload"],
-                    audience=item.get("audience", "admin"),
-                    participant_id=UUID(str(pid)) if pid else None,
-                )
-            )
+        _append_scoring_events(events, summary)
         return ExecutionResult(room=room, events=events)
 
     def next_question(self, room_id: UUID) -> ExecutionResult:
