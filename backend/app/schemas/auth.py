@@ -1,5 +1,7 @@
 """Authentication request/response schemas (API_SPEC.md §3.1, §7)."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from uuid import UUID
 
