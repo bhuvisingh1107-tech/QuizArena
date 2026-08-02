@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from typing import Annotated, Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -42,6 +43,17 @@ def _parse_string_list(value: object) -> list[str]:
             # Origins are exact-match; strip trailing slashes to avoid silent CORS failures.
             normalized.append(item.rstrip("/"))
     return normalized
+
+
+def _is_absolute_http_origin(value: str) -> bool:
+    """True for http(s) origins such as localhost:5173 or a Vercel URL."""
+    parsed = urlparse(value)
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.netloc)
+        and not parsed.username
+        and not parsed.password
+    )
 
 
 class Settings(BaseSettings):
@@ -141,11 +153,14 @@ class Settings(BaseSettings):
                 )
             if "*" in self.cors_origins:
                 raise ValueError("CORS_ORIGINS must not include '*' in production")
-            if not self.public_app_url or self.public_app_url.startswith(
-                ("http://localhost", "http://127.0.0.1")
-            ):
+            # Require an absolute http(s) SPA origin. Localhost is allowed so an
+            # initial Render deploy can boot before the Vercel URL exists; a blank
+            # or relative value is not. (Previously localhost was hard-rejected,
+            # which made a set PUBLIC_APP_URL=http://localhost:5173 look "missing".)
+            if not self.public_app_url or not _is_absolute_http_origin(self.public_app_url):
                 raise ValueError(
-                    "PUBLIC_APP_URL must be set to the production SPA origin "
+                    "PUBLIC_APP_URL must be an absolute http(s) SPA origin "
+                    "(e.g. https://app.vercel.app or http://localhost:5173) "
                     "when APP_ENV=production",
                 )
             if self.trusted_hosts == ["*"] or not self.trusted_hosts:

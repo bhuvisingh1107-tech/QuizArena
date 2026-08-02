@@ -45,17 +45,32 @@ def test_production_accepts_postgres() -> None:
     assert settings.public_app_url == "https://app.vercel.app"
 
 
-def test_production_requires_public_app_url() -> None:
-    with pytest.raises(ValidationError):
-        Settings(
-            app_env="production",
-            debug=False,
-            jwt_secret_key="a-strong-production-secret-key",
-            database_url="postgresql://u:p@db.example/quizarena?sslmode=require",
-            cors_origins=["https://app.vercel.app"],
-            trusted_hosts=["api.example.onrender.com"],
-            public_app_url="http://localhost:5173",
-        )
+def test_production_accepts_localhost_public_app_url() -> None:
+    """Initial deploys may point PUBLIC_APP_URL at the local Vite origin."""
+    settings = Settings(
+        app_env="production",
+        debug=False,
+        jwt_secret_key="a-strong-production-secret-key",
+        database_url="postgresql://u:p@db.example/quizarena?sslmode=require",
+        cors_origins=["http://localhost:5173"],
+        trusted_hosts=["api.example.onrender.com"],
+        public_app_url="http://localhost:5173",
+    )
+    assert settings.public_app_url == "http://localhost:5173"
+
+
+def test_production_rejects_blank_or_relative_public_app_url() -> None:
+    for bad in ("", "   ", "/join", "app.vercel.app", "ftp://example.com"):
+        with pytest.raises(ValidationError):
+            Settings(
+                app_env="production",
+                debug=False,
+                jwt_secret_key="a-strong-production-secret-key",
+                database_url="postgresql://u:p@db.example/quizarena?sslmode=require",
+                cors_origins=["https://app.vercel.app"],
+                trusted_hosts=["api.example.onrender.com"],
+                public_app_url=bad,
+            )
 
 
 def test_production_requires_trusted_hosts() -> None:
