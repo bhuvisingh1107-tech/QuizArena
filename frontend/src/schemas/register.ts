@@ -1,13 +1,6 @@
 import { z } from 'zod'
 
-const strongPassword = z
-  .string()
-  .min(12, 'Password must be at least 12 characters')
-  .max(128)
-  .regex(/[A-Z]/, 'Password must include an uppercase letter')
-  .regex(/[a-z]/, 'Password must include a lowercase letter')
-  .regex(/[0-9]/, 'Password must include a digit')
-  .regex(/[^A-Za-z0-9]/, 'Password must include a special character')
+import { strongPasswordSchema } from '@/schemas/password'
 
 export const registerSchema = z
   .object({
@@ -22,7 +15,7 @@ export const registerSchema = z
         /^[A-Za-z0-9_-]+$/,
         'Username may only contain letters, numbers, hyphens, and underscores',
       ),
-    password: strongPassword,
+    password: strongPasswordSchema,
     confirmPassword: z.string().min(1, 'Confirm your password'),
   })
   .refine((data) => data.password === data.confirmPassword, {

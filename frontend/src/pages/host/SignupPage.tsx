@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/hooks/queries/useAuth'
 import { ApiError } from '@/lib/api-client'
+import { PASSWORD_POLICY_HINT } from '@/schemas/password'
 import { registerSchema, type RegisterFormValues } from '@/schemas/register'
 
 export function SignupPage() {
@@ -149,7 +150,7 @@ export function SignupPage() {
                 </p>
               ) : (
                 <p className="text-xs text-[var(--muted-foreground)]">
-                  At least 12 characters with upper, lower, number, and special character.
+                  {PASSWORD_POLICY_HINT}
                 </p>
               )}
             </div>

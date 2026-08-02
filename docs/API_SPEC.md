@@ -179,7 +179,7 @@ Login (and join) endpoints are rate-limited (NFR-023).
 | `POST` | `/admin/login` | Public | Issue admin JWT; log security event |
 | `POST` | `/admin/logout` | JWT | Log security event; client discards token |
 
-Password policy: minimum 12 characters with complexity requirements (FR-005). Passwords verified against stored hash.
+Password policy: minimum 8 characters with complexity requirements (FR-005). Passwords verified against stored hash.
 
 ---
 

@@ -154,7 +154,7 @@ Copy [`frontend/.env.production.example`](../frontend/.env.production.example) a
 | `CORS_ORIGINS` | Yes | Exact Vercel origin(s), comma-separated — no `*` |
 | `TRUSTED_HOSTS` | Yes | Render hostname, e.g. `quizarena-api.onrender.com` |
 | `ADMIN_USERNAME` | Seed | `admin` |
-| `ADMIN_PASSWORD` | Seed once | Strong password (≥12 chars, mixed) |
+| `ADMIN_PASSWORD` | Seed once | Strong password (≥8 chars, mixed) |
 | `ADMIN_PASSWORD_HASH` | Alt seed | bcrypt hash instead of plaintext |
 | `JWT_EXPIRY_HOURS` | No | `8` |
 | `LOG_LEVEL` | No | `INFO` |

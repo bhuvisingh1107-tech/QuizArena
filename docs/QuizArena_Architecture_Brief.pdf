@@ -1,0 +1,530 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [14 0 R 15 0 R 16 0 R 17 0 R 18 0 R 19 0 R 20 0 R 21 0 R 22 0 R] /Count 9 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+5 0 obj
+<< /Length 4079 >>
+stream
+BT /F2 16 Tf 50.0 716.0 Td (QuizArena - Complete Architecture Brief) Tj ET
+BT /F1 9 Tf 50.0 697.0 Td (Document purpose: Explain the full system to management - product, architecture, database, realtime, security,) Tj ET
+BT /F1 9 Tf 50.0 686.0 Td (and deployment.) Tj ET
+BT /F1 9 Tf 50.0 675.0 Td (Audience: Engineering managers, product stakeholders, technical reviewers) Tj ET
+BT /F1 9 Tf 50.0 664.0 Td (Date: August 2026) Tj ET
+BT /F1 9 Tf 50.0 653.0 Td (Codebase: QuizArena \(modular monolith\)) Tj ET
+50.0 641.0 m 562.0 641.0 l S
+BT /F2 13 Tf 50.0 606.0 Td (1. Executive Summary) Tj ET
+BT /F1 9 Tf 50.0 587.0 Td (QuizArena is a real-time live quiz platform. A host builds quizzes and runs a live session; participants join) Tj ET
+BT /F1 9 Tf 50.0 576.0 Td (with a room code or QR \(no account required\); a display screen shows the session for the room audience.) Tj ET
+BT /F1 9 Tf 50.0 557.0 Td (The product is designed for education, corporate events, and entertainment. One host can run one active hosting) Tj ET
+BT /F1 9 Tf 50.0 546.0 Td (room at a time. Sessions are synchronized in near real time: when the host starts a question, every participant) Tj ET
+BT /F1 9 Tf 50.0 535.0 Td (and the display screen receive the same question, timer, and \(later\) reveal and leaderboard.) Tj ET
+BT /F1 9 Tf 50.0 516.0 Td (Concern | Choice) Tj ET
+BT /F1 9 Tf 50.0 505.0 Td (Style | Modular monolith \(one backend process\)) Tj ET
+BT /F1 9 Tf 50.0 494.0 Td (Frontend | Single React SPA with three role-based experiences) Tj ET
+BT /F1 9 Tf 50.0 483.0 Td (Backend | FastAPI \(REST + native WebSockets\)) Tj ET
+BT /F1 9 Tf 50.0 472.0 Td (Database | PostgreSQL \(Neon in production\); SQLite for local/tests) Tj ET
+BT /F1 9 Tf 50.0 461.0 Td (Hosting | Vercel \(SPA\) + Render \(API/WS\) + Neon \(DB\)) Tj ET
+BT /F1 9 Tf 50.0 442.0 Td (Why this architecture: Keeps delivery fast for a v1 product, keeps scoring and timers server-authoritative \(fair) Tj ET
+BT /F1 9 Tf 50.0 431.0 Td (play\), and avoids complexity of microservices while the concurrent load target remains modest \(~5 rooms x ~100) Tj ET
+BT /F1 9 Tf 50.0 420.0 Td (participants\).) Tj ET
+50.0 408.0 m 562.0 408.0 l S
+BT /F2 13 Tf 50.0 373.0 Td (2. Product Overview) Tj ET
+BT /F2 11 Tf 50.0 352.0 Td (2.1 What the product does) Tj ET
+BT /F1 9 Tf 50.0 333.0 Td (1. Host signs up / logs in) Tj ET
+BT /F1 9 Tf 50.0 322.0 Td (2. Host creates a quiz \(sections -> questions -> options\), optionally adds media) Tj ET
+BT /F1 9 Tf 50.0 311.0 Td (3. Host validates quiz -> status becomes Ready) Tj ET
+BT /F1 9 Tf 50.0 300.0 Td (4. Host creates a live room from that quiz \(structure is snapshotted\)) Tj ET
+BT /F1 9 Tf 50.0 289.0 Td (5. Host opens lobby -> participants join via code/QR) Tj ET
+BT /F1 9 Tf 50.0 278.0 Td (6. Host starts quiz -> questions advance \(automatic timer or manual\)) Tj ET
+BT /F1 9 Tf 50.0 267.0 Td (7. Participants submit answers; scores and leaderboard update live) Tj ET
+BT /F1 9 Tf 50.0 256.0 Td (8. Quiz completes -> podium / final results) Tj ET
+BT /F1 9 Tf 50.0 245.0 Td (9. Host can export results and close the room) Tj ET
+BT /F2 11 Tf 50.0 224.0 Td (2.2 User roles) Tj ET
+BT /F1 9 Tf 50.0 205.0 Td (Role | Who | Auth | Main capabilities) Tj ET
+BT /F1 9 Tf 50.0 194.0 Td (Host | Quiz creator / session controller | JWT \(email/username + password\) | Build quizzes, control rooms, view) Tj ET
+BT /F1 9 Tf 50.0 183.0 Td (participants, export results) Tj ET
+BT /F1 9 Tf 50.0 172.0 Td (Participant | Player | Room-scoped session token \(no permanent account\) | Join, answer, see personal score &) Tj ET
+BT /F1 9 Tf 50.0 161.0 Td (leaderboard) Tj ET
+BT /F1 9 Tf 50.0 150.0 Td (Display | Presentation / projector screen | Secret token in URL | Read-only live view \(question, timer, reveal,) Tj ET
+BT /F1 9 Tf 50.0 139.0 Td (podium\)) Tj ET
+BT /F2 11 Tf 50.0 118.0 Td (2.3 Capacity \(v1 design targets\)) Tj ET
+BT /F1 9 Tf 50.0 99.0 Td (- ~5 concurrent rooms) Tj ET
+BT /F1 9 Tf 50.0 88.0 Td (- ~100 participants per room) Tj ET
+BT /F1 8 Tf 50.0 28 Td (QuizArena Architecture Brief  |  Page 1) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Length 3928 >>
+stream
+BT /F1 9 Tf 50.0 731.0 Td (- <= ~1 second P95 realtime latency for critical events) Tj ET
+BT /F1 9 Tf 50.0 720.0 Td (- <= ~100 questions per quiz) Tj ET
+BT /F1 9 Tf 50.0 709.0 Td (- One hosting room per host at a time \(Setup / Lobby / Active / Paused / SectionBreak\)) Tj ET
+50.0 697.0 m 562.0 697.0 l S
+BT /F2 13 Tf 50.0 662.0 Td (3. High-Level System Architecture) Tj ET
+BT /F1 8 Tf 50.0 644.0 Td (+-------------------------------------------------------------+) Tj ET
+BT /F1 9 Tf 50.0 633.0 Td (Browser) Tj ET
+BT /F1 9 Tf 50.0 622.0 Td (Host UI | Participant UI | Display UI \(one React SPA\)) Tj ET
+BT /F1 8 Tf 50.0 612.0 Td (+-----+-------------+------------------+----------------------+) Tj ET
+BT /F1 8 Tf 50.0 602.0 Td (| HTTPS | HTTPS | HTTPS / WSS) Tj ET
+BT /F1 8 Tf 50.0 592.0 Td (? ? ?) Tj ET
+BT /F1 8 Tf 50.0 582.0 Td (+--------------+ +------------------------------------------+) Tj ET
+BT /F1 9 Tf 50.0 571.0 Td (Vercel | | Render \(Docker\)) Tj ET
+BT /F1 9 Tf 50.0 560.0 Td (Static SPA | | FastAPI: REST /api/v1/* + WebSocket /ws) Tj ET
+BT /F1 8 Tf 50.0 550.0 Td (+--------------+ +-------------------+----------------------+) Tj ET
+BT /F1 8 Tf 50.0 540.0 Td (| SSL) Tj ET
+BT /F1 8 Tf 50.0 530.0 Td (?) Tj ET
+BT /F1 8 Tf 50.0 520.0 Td (+---------------+) Tj ET
+BT /F1 8 Tf 50.0 510.0 Td (| Neon Postgres |) Tj ET
+BT /F1 8 Tf 50.0 500.0 Td (+---------------+) Tj ET
+BT /F1 9 Tf 50.0 481.0 Td (Data flow principles) Tj ET
+BT /F1 9 Tf 50.0 462.0 Td (1. Server is the source of truth for room state, question state, timers, scores.) Tj ET
+BT /F1 9 Tf 50.0 451.0 Td (2. Clients submit actions \(REST or WebSocket\) and render events.) Tj ET
+BT /F1 9 Tf 50.0 440.0 Td (3. React Query caches REST data \(quiz library, room lists, dashboard\).) Tj ET
+BT /F1 9 Tf 50.0 429.0 Td (4. WebSocket + local reducers own the live hot path \(question, timer, submissions, presence\).) Tj ET
+BT /F1 9 Tf 50.0 418.0 Td (5. After host REST mutations, the frontend updates caches immediately so controls do not require a page refresh.) Tj ET
+50.0 406.0 m 562.0 406.0 l S
+BT /F2 13 Tf 50.0 371.0 Td (4. Technology Stack) Tj ET
+BT /F1 9 Tf 50.0 352.0 Td (Layer | Technologies) Tj ET
+BT /F1 9 Tf 50.0 341.0 Td (Frontend | React 19, TypeScript, Vite, TanStack Query, Axios, React Router, Tailwind CSS, Zod, Vitest) Tj ET
+BT /F1 9 Tf 50.0 330.0 Td (Backend | FastAPI, Uvicorn/Gunicorn, SQLAlchemy 2, Alembic, Pydantic, python-jose \(JWT\), bcrypt) Tj ET
+BT /F1 9 Tf 50.0 319.0 Td (Realtime | Native WebSockets \(/ws\) - not Socket.IO) Tj ET
+BT /F1 9 Tf 50.0 308.0 Td (Database | PostgreSQL \(Neon\) / SQLite \(dev & tests\)) Tj ET
+BT /F1 9 Tf 50.0 297.0 Td (Media | Local disk on Render \(/app/storage\); pluggable storage backend) Tj ET
+BT /F1 9 Tf 50.0 286.0 Td (Deploy | Neon + Render + Vercel; Docker for backend) Tj ET
+50.0 274.0 m 562.0 274.0 l S
+BT /F2 13 Tf 50.0 239.0 Td (5. Repository Layout) Tj ET
+BT /F1 8 Tf 50.0 221.0 Td (QuizArena/) Tj ET
+BT /F1 8 Tf 50.0 211.0 Td (+-- frontend/ React SPA \(host + participant + display\)) Tj ET
+BT /F1 8 Tf 50.0 201.0 Td (+-- backend/) Tj ET
+BT /F1 9 Tf 50.0 190.0 Td (+-- app/) Tj ET
+BT /F1 9 Tf 50.0 179.0 Td (| +-- api/routers/ REST endpoints) Tj ET
+BT /F1 9 Tf 50.0 168.0 Td (| +-- api/websocket/ /ws handler, auth, fan-out) Tj ET
+BT /F1 9 Tf 50.0 157.0 Td (| +-- models/ ORM tables) Tj ET
+BT /F1 9 Tf 50.0 146.0 Td (| +-- services/ Business logic + state machines) Tj ET
+BT /F1 9 Tf 50.0 135.0 Td (| +-- repositories/ Data access) Tj ET
+BT /F1 9 Tf 50.0 124.0 Td (| +-- core/ Security, middleware, rate limits) Tj ET
+BT /F1 9 Tf 50.0 113.0 Td (+-- alembic/versions/ Database migrations) Tj ET
+BT /F1 9 Tf 50.0 102.0 Td (+-- tests/ Unit + integration tests) Tj ET
+BT /F1 8 Tf 50.0 92.0 Td (+-- docs/ Architecture, schema, API, deploy guides) Tj ET
+BT /F1 8 Tf 50.0 82.0 Td (+-- render.yaml Render Blueprint) Tj ET
+BT /F1 8 Tf 50.0 28 Td (QuizArena Architecture Brief  |  Page 2) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Length 3988 >>
+stream
+BT /F1 8 Tf 50.0 732.0 Td (+-- docker-compose*.yml) Tj ET
+50.0 720.0 m 562.0 720.0 l S
+BT /F2 13 Tf 50.0 685.0 Td (6. Database Architecture \(Critical\)) Tj ET
+BT /F2 11 Tf 50.0 664.0 Td (6.1 Design idea: templates vs live snapshots) Tj ET
+BT /F1 9 Tf 50.0 645.0 Td (QuizArena separates reusable content from live session data:) Tj ET
+BT /F1 9 Tf 50.0 626.0 Td (Layer | Tables | Purpose) Tj ET
+BT /F1 9 Tf 50.0 615.0 Td (Template | quizzes, sections, questions, answer_options, quiz_configs | Editable quiz library) Tj ET
+BT /F1 9 Tf 50.0 604.0 Td (Session | live_rooms, session_sections, session_questions, session_options, room_configs | Immutable copy for one) Tj ET
+BT /F1 9 Tf 50.0 593.0 Td (live run) Tj ET
+BT /F1 9 Tf 50.0 582.0 Td (Play | participants, responses, room_bans | Who joined and what they answered) Tj ET
+BT /F1 9 Tf 50.0 571.0 Td (Platform | admins, media_files, platform_settings, security_logs | Hosts, files, branding, audit) Tj ET
+BT /F1 9 Tf 50.0 552.0 Td (When a live room is created, the backend copies the quiz structure into session tables. Later edits to the quiz) Tj ET
+BT /F1 9 Tf 50.0 541.0 Td (template do not change an already-created room. While a room is hosting, the quiz status becomes InUse.) Tj ET
+BT /F2 11 Tf 50.0 520.0 Td (6.2 Entity-relationship overview) Tj ET
+BT /F1 8 Tf 50.0 502.0 Td (admins --owns--? quizzes --? quiz_configs) Tj ET
+BT /F1 8 Tf 50.0 492.0 Td (|) Tj ET
+BT /F1 8 Tf 50.0 482.0 Td (+-- sections --? questions --? answer_options) Tj ET
+BT /F1 8 Tf 50.0 472.0 Td (+-- media_files) Tj ET
+BT /F1 8 Tf 50.0 462.0 Td (+-- live_rooms --? room_configs) Tj ET
+BT /F1 8 Tf 50.0 452.0 Td (|) Tj ET
+BT /F1 8 Tf 50.0 442.0 Td (+-- session_sections --? session_questions --? session_options) Tj ET
+BT /F1 8 Tf 50.0 432.0 Td (+-- participants --? responses) Tj ET
+BT /F1 8 Tf 50.0 422.0 Td (+-- room_bans) Tj ET
+BT /F2 11 Tf 50.0 401.0 Td (6.3 Table reference) Tj ET
+BT /F2 10 Tf 50.0 381.0 Td (admins \(hosts\)) Tj ET
+BT /F1 9 Tf 50.0 370.0 Td (- id, username \(unique\), email \(unique, optional\), name, password_hash, role \(admin\), timestamps) Tj ET
+BT /F1 9 Tf 50.0 359.0 Td (- Owns quizzes via quizzes.owner_id) Tj ET
+BT /F2 10 Tf 50.0 339.0 Td (quizzes) Tj ET
+BT /F1 9 Tf 50.0 328.0 Td (- id, owner_id, title, description, status, optional branding media) Tj ET
+BT /F1 9 Tf 50.0 317.0 Td (- Status values: Draft | Ready | InUse | Archived | Deleted) Tj ET
+BT /F2 10 Tf 50.0 297.0 Td (quiz_configs \(1:1 with quiz\)) Tj ET
+BT /F1 9 Tf 50.0 286.0 Td (- Question advance mode: manual | automatic) Tj ET
+BT /F1 9 Tf 50.0 275.0 Td (- Answer reveal: after_each | session_end) Tj ET
+BT /F1 9 Tf 50.0 264.0 Td (- Time bonus / streak bonus flags and point values) Tj ET
+BT /F1 9 Tf 50.0 253.0 Td (- Shuffle options / sections flags) Tj ET
+BT /F2 10 Tf 50.0 233.0 Td (sections / questions / answer_options) Tj ET
+BT /F1 9 Tf 50.0 222.0 Td (- Ordered sections under a quiz) Tj ET
+BT /F1 9 Tf 50.0 211.0 Td (- Questions: type Text | Image | Audio | Buzzer, prompt, explanation, points, time limit, multi-correct flag,) Tj ET
+BT /F1 9 Tf 50.0 200.0 Td (optional media) Tj ET
+BT /F1 9 Tf 50.0 189.0 Td (- Options: text, is_correct, sort order) Tj ET
+BT /F2 10 Tf 50.0 169.0 Td (live_rooms) Tj ET
+BT /F1 9 Tf 50.0 158.0 Td (- Links to quiz; holds room lifecycle state) Tj ET
+BT /F1 9 Tf 50.0 147.0 Td (- room_code \(6 characters, unique\) for join) Tj ET
+BT /F1 9 Tf 50.0 136.0 Td (- secret_token \(64 chars\) for display URL) Tj ET
+BT /F1 9 Tf 50.0 125.0 Td (- quiz_title_snapshot, current_question_index) Tj ET
+BT /F1 9 Tf 50.0 114.0 Td (- Timestamps: started / paused / completed / closed) Tj ET
+BT /F1 9 Tf 50.0 103.0 Td (- pause_accumulated_ms for fair timers) Tj ET
+BT /F1 9 Tf 50.0 92.0 Td (- States: Setup | Lobby | Active | Paused | SectionBreak | Completed | Closed) Tj ET
+BT /F1 9 Tf 50.0 81.0 Td (- Lobby sub-state while in Lobby: LobbyOpen | LobbyClosed) Tj ET
+BT /F1 8 Tf 50.0 28 Td (QuizArena Architecture Brief  |  Page 3) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Length 3401 >>
+stream
+BT /F2 10 Tf 50.0 730.0 Td (room_configs) Tj ET
+BT /F1 9 Tf 50.0 719.0 Td (- Snapshot of quiz config at room creation \(session scoring rules\)) Tj ET
+BT /F2 10 Tf 50.0 699.0 Td (session_sections / session_questions / session_options) Tj ET
+BT /F1 9 Tf 50.0 688.0 Td (- Frozen copy of content for this room) Tj ET
+BT /F1 9 Tf 50.0 677.0 Td (- Session question state: Pending | Open | BuzzerOpen | BuzzerLocked | Closed | Revealed | Scored) Tj ET
+BT /F1 9 Tf 50.0 666.0 Td (- opened_at used for server-authoritative timers) Tj ET
+BT /F2 10 Tf 50.0 646.0 Td (participants) Tj ET
+BT /F1 9 Tf 50.0 635.0 Td (- Per room: display name + email \(unique together in a room\)) Tj ET
+BT /F1 9 Tf 50.0 624.0 Td (- session_token \(unique\) for auth) Tj ET
+BT /F1 9 Tf 50.0 613.0 Td (- State, connection status, score, streak, rank, answer counters) Tj ET
+BT /F2 10 Tf 50.0 593.0 Td (responses) Tj ET
+BT /F1 9 Tf 50.0 582.0 Td (- One row per \(participant, session question\)) Tj ET
+BT /F1 9 Tf 50.0 571.0 Td (- Selected option IDs \(JSON\), correctness, unanswered flag) Tj ET
+BT /F1 9 Tf 50.0 560.0 Td (- Base / time / streak / total points, submit time, response time ms, scored_at) Tj ET
+BT /F2 10 Tf 50.0 540.0 Td (room_bans) Tj ET
+BT /F1 9 Tf 50.0 529.0 Td (- Email banned from rejoining a room) Tj ET
+BT /F2 10 Tf 50.0 509.0 Td (media_files) Tj ET
+BT /F1 9 Tf 50.0 498.0 Td (- Storage key, MIME type, size, category, optional quiz link) Tj ET
+BT /F2 10 Tf 50.0 478.0 Td (platform_settings) Tj ET
+BT /F1 9 Tf 50.0 467.0 Td (- Platform name / logo) Tj ET
+BT /F2 10 Tf 50.0 447.0 Td (security_logs) Tj ET
+BT /F1 9 Tf 50.0 436.0 Td (- Login success / logout / login failed \(audit\)) Tj ET
+BT /F2 11 Tf 50.0 415.0 Td (6.4 Migrations) Tj ET
+BT /F1 9 Tf 50.0 396.0 Td (Migrations run automatically on Render container start \(alembic upgrade head\).) Tj ET
+BT /F1 9 Tf 50.0 377.0 Td (Migration | Purpose) Tj ET
+BT /F1 9 Tf 50.0 366.0 Td (Initial schema | Core tables) Tj ET
+BT /F1 9 Tf 50.0 355.0 Td (Response submit fields | response_time_ms, status) Tj ET
+BT /F1 9 Tf 50.0 344.0 Td (Scoring fields | scored_at, participant counters) Tj ET
+BT /F1 9 Tf 50.0 333.0 Td (Quiz builder | Explanation + builder support) Tj ET
+BT /F1 9 Tf 50.0 322.0 Td (opened_at | Authoritative question timers) Tj ET
+BT /F1 9 Tf 50.0 311.0 Td (Pause columns | Pause/resume timing) Tj ET
+BT /F1 9 Tf 50.0 300.0 Td (Host accounts | Admin email/name + quizzes.owner_id) Tj ET
+50.0 288.0 m 562.0 288.0 l S
+BT /F2 13 Tf 50.0 253.0 Td (7. Room & Quiz Lifecycle \(State Machines\)) Tj ET
+BT /F2 11 Tf 50.0 232.0 Td (7.1 Quiz template lifecycle) Tj ET
+BT /F1 8 Tf 50.0 214.0 Td (Draft --validate--? Ready --create room--? InUse) Tj ET
+BT /F1 8 Tf 50.0 204.0 Td (? |) Tj ET
+BT /F1 8 Tf 50.0 194.0 Td (+-- restore ?-- Archived Deleted \(soft\)) Tj ET
+BT /F2 11 Tf 50.0 173.0 Td (7.2 Live room lifecycle) Tj ET
+BT /F1 8 Tf 50.0 155.0 Td (Setup) Tj ET
+BT /F1 8 Tf 50.0 145.0 Td (| open lobby) Tj ET
+BT /F1 8 Tf 50.0 135.0 Td (?) Tj ET
+BT /F1 8 Tf 50.0 125.0 Td (Lobby --start--? Active ?--resume-- Paused) Tj ET
+BT /F1 8 Tf 50.0 115.0 Td (| | ? |) Tj ET
+BT /F1 8 Tf 50.0 105.0 Td (| | +-- pause ------+) Tj ET
+BT /F1 8 Tf 50.0 95.0 Td (| +-- section_break --? SectionBreak --continue--? Active) Tj ET
+BT /F1 8 Tf 50.0 85.0 Td (| +-- end --? Completed --close--? Closed) Tj ET
+BT /F1 8 Tf 50.0 28 Td (QuizArena Architecture Brief  |  Page 4) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Length 3367 >>
+stream
+BT /F1 8 Tf 50.0 732.0 Td (+-- close -------------------------------? Closed) Tj ET
+BT /F1 9 Tf 50.0 713.0 Td (Host UI implications) Tj ET
+BT /F1 9 Tf 50.0 694.0 Td (- Open Lobby only in Setup) Tj ET
+BT /F1 9 Tf 50.0 683.0 Td (- Start Quiz only in Lobby) Tj ET
+BT /F1 9 Tf 50.0 672.0 Td (- Pause only in Active; Resume only in Paused) Tj ET
+BT /F1 9 Tf 50.0 661.0 Td (- End Quiz in Active / Paused / SectionBreak) Tj ET
+BT /F1 9 Tf 50.0 650.0 Td (- Close Room in Completed \(or Lobby in some list actions\)) Tj ET
+BT /F2 11 Tf 50.0 629.0 Td (7.3 Question lifecycle \(inside Active\)) Tj ET
+BT /F1 8 Tf 50.0 611.0 Td (Pending --present--? Open --close--? Closed --reveal--? Revealed --score--? Scored) Tj ET
+BT /F1 8 Tf 50.0 601.0 Td (|) Tj ET
+BT /F1 8 Tf 50.0 591.0 Td (+-- \(or Closed --mark_scored--? Scored\)) Tj ET
+BT /F1 9 Tf 50.0 572.0 Td (Typical automatic path: Open -> \(timer ends or all answered\) -> Closed -> Revealed -> Scored -> next question /) Tj ET
+BT /F1 9 Tf 50.0 561.0 Td (section break / quiz complete.) Tj ET
+50.0 549.0 m 562.0 549.0 l S
+BT /F2 13 Tf 50.0 514.0 Td (8. Authentication & Authorization) Tj ET
+BT /F2 11 Tf 50.0 493.0 Td (8.1 Host \(JWT\)) Tj ET
+BT /F1 9 Tf 50.0 474.0 Td (- Register / login with username or email + password) Tj ET
+BT /F1 9 Tf 50.0 463.0 Td (- Passwords hashed with bcrypt \(policy: strong password rules\)) Tj ET
+BT /F1 9 Tf 50.0 452.0 Td (- JWT HS256, Bearer header, typical 8-hour expiry) Tj ET
+BT /F1 9 Tf 50.0 441.0 Td (- Claims include admin id and role) Tj ET
+BT /F1 9 Tf 50.0 430.0 Td (- Used for all /api/v1 host routes and admin WebSocket connections) Tj ET
+BT /F2 11 Tf 50.0 409.0 Td (8.2 Participant \(session token\)) Tj ET
+BT /F1 9 Tf 50.0 390.0 Td (- Created on POST /api/v1/join with room code + display name + email) Tj ET
+BT /F1 9 Tf 50.0 379.0 Td (- High-entropy token stored on participants.session_token) Tj ET
+BT /F1 9 Tf 50.0 368.0 Td (- Used for participant REST \(/participants/me, reconnect, leave\) and WebSocket) Tj ET
+BT /F1 9 Tf 50.0 357.0 Td (- Room-scoped; no global user account) Tj ET
+BT /F2 11 Tf 50.0 336.0 Td (8.3 Display \(secret URL\)) Tj ET
+BT /F1 9 Tf 50.0 317.0 Td (- secret_token generated at room creation) Tj ET
+BT /F1 9 Tf 50.0 306.0 Td (- URL: /display/{secretToken}) Tj ET
+BT /F1 9 Tf 50.0 295.0 Td (- WebSocket: role=display&token=...) Tj ET
+BT /F1 9 Tf 50.0 284.0 Td (- Receive-only - cannot submit answers or control the room) Tj ET
+BT /F2 11 Tf 50.0 263.0 Td (8.4 Authorization rules \(summary\)) Tj ET
+BT /F1 9 Tf 50.0 244.0 Td (- Hosts only see/manage their own quizzes and rooms \(owner_id\)) Tj ET
+BT /F1 9 Tf 50.0 233.0 Td (- Participants can only act for their own participant id / room) Tj ET
+BT /F1 9 Tf 50.0 222.0 Td (- Display cannot send control events) Tj ET
+BT /F1 9 Tf 50.0 211.0 Td (- Emails are not exposed on public leaderboards) Tj ET
+50.0 199.0 m 562.0 199.0 l S
+BT /F2 13 Tf 50.0 164.0 Td (9. REST API Surface) Tj ET
+BT /F1 9 Tf 50.0 145.0 Td (Base path: /api/v1) Tj ET
+BT /F1 9 Tf 50.0 126.0 Td (Standard success envelope: { data, meta: { requestId } }) Tj ET
+BT /F1 9 Tf 50.0 115.0 Td (Errors: { error: { code, message, details }, meta }) Tj ET
+BT /F1 9 Tf 50.0 96.0 Td (Area | Examples) Tj ET
+BT /F1 9 Tf 50.0 85.0 Td (Health | /live, /ready, /health, /metrics) Tj ET
+BT /F1 8 Tf 50.0 28 Td (QuizArena Architecture Brief  |  Page 5) Tj ET
+endstream
+endobj
+10 0 obj
+<< /Length 3992 >>
+stream
+BT /F1 9 Tf 50.0 731.0 Td (Auth | /admin/login, /register, /me, /logout, /change-password) Tj ET
+BT /F1 9 Tf 50.0 720.0 Td (Quizzes | CRUD, validate, archive, restore) Tj ET
+BT /F1 9 Tf 50.0 709.0 Td (Sections / questions / options | Nested CRUD under quiz) Tj ET
+BT /F1 9 Tf 50.0 698.0 Td (Media | Upload, list, stream, attach, delete) Tj ET
+BT /F1 9 Tf 50.0 687.0 Td (Live rooms | Create, list, get, config patch, open-lobby, start, pause, resume, end, close, delete, participants,) Tj ET
+BT /F1 9 Tf 50.0 676.0 Td (results, CSV export) Tj ET
+BT /F1 9 Tf 50.0 665.0 Td (Join | POST /join) Tj ET
+BT /F1 9 Tf 50.0 654.0 Td (Participants | /participants/me, reconnect, leave) Tj ET
+BT /F1 9 Tf 50.0 643.0 Td (Dashboard | GET /dashboard/summary) Tj ET
+BT /F1 9 Tf 50.0 624.0 Td (WebSocket lives at /ws \(not under /api/v1\).) Tj ET
+50.0 612.0 m 562.0 612.0 l S
+BT /F2 13 Tf 50.0 577.0 Td (10. Realtime / WebSocket Architecture) Tj ET
+BT /F2 11 Tf 50.0 556.0 Td (10.1 Connection model) Tj ET
+BT /F1 9 Tf 50.0 537.0 Td (- Endpoint: /ws?role=admin|participant|display&token=...&roomId=... \(roomId required for admin\)) Tj ET
+BT /F1 9 Tf 50.0 526.0 Td (- On connect: authenticate -> connection:ack -> resync snapshot of current room) Tj ET
+BT /F1 9 Tf 50.0 515.0 Td (- In-memory connection pools per room \(one admin, one display, many participants\)) Tj ET
+BT /F1 9 Tf 50.0 504.0 Td (- v1 constraint: single Render instance \(fan-out is process-local\)) Tj ET
+BT /F2 11 Tf 50.0 483.0 Td (10.2 Important server events) Tj ET
+BT /F1 9 Tf 50.0 464.0 Td (Category | Events) Tj ET
+BT /F1 9 Tf 50.0 453.0 Td (Room | lobbyOpened, sessionStarted, paused, resumed, completed, closed, state_changed) Tj ET
+BT /F1 9 Tf 50.0 442.0 Td (Questions | section:started/break/continued, question:started/closed/reveal, quiz:completed) Tj ET
+BT /F1 9 Tf 50.0 431.0 Td (Answers | answer:accepted, rejected, received, submission_count) Tj ET
+BT /F1 9 Tf 50.0 420.0 Td (Scoring | question:scored, leaderboard:updated, score:personal) Tj ET
+BT /F1 9 Tf 50.0 409.0 Td (Presence | participant:joined, reconnected, disconnected) Tj ET
+BT /F2 11 Tf 50.0 388.0 Td (10.3 Important client events) Tj ET
+BT /F1 9 Tf 50.0 369.0 Td (Role | Events) Tj ET
+BT /F1 9 Tf 50.0 358.0 Td (Host | open_lobby, start_session, pause, resume, end, skip, start/close/reveal question, next, end_quiz) Tj ET
+BT /F1 9 Tf 50.0 347.0 Td (Participant | answer:submit) Tj ET
+BT /F1 9 Tf 50.0 336.0 Td (Display | none \(receive-only\)) Tj ET
+BT /F2 11 Tf 50.0 315.0 Td (10.4 Timers) Tj ET
+BT /F1 9 Tf 50.0 296.0 Td (- Server sets absolute timerEndsAt when a question opens) Tj ET
+BT /F1 9 Tf 50.0 285.0 Td (- Clients countdown locally) Tj ET
+BT /F1 9 Tf 50.0 274.0 Td (- Pause freezes remaining time; resume publishes a new end time) Tj ET
+BT /F1 9 Tf 50.0 263.0 Td (- Automatic mode: scheduler closes -> reveals -> dwells -> advances) Tj ET
+BT /F2 11 Tf 50.0 242.0 Td (10.5 Frontend sync \(why refresh used to be needed\)) Tj ET
+BT /F1 9 Tf 50.0 223.0 Td (Historically, host UI sometimes preferred a stale WebSocket room snapshot over a successful REST response \(e.g.) Tj ET
+BT /F1 9 Tf 50.0 212.0 Td (Open Lobby succeeded in DB but Start Quiz stayed disabled until refresh\).) Tj ET
+BT /F1 9 Tf 50.0 193.0 Td (Current approach) Tj ET
+BT /F1 9 Tf 50.0 174.0 Td (1. Prefer the freshest lifecycle state between live WS and React Query) Tj ET
+BT /F1 9 Tf 50.0 163.0 Td (2. After every room mutation: setQueryData + invalidate related queries \(list, detail, participants, results,) Tj ET
+BT /F1 9 Tf 50.0 152.0 Td (dashboard\)) Tj ET
+BT /F1 9 Tf 50.0 141.0 Td (3. Broadcast lobby open / close / end / close over WebSocket so all clients update) Tj ET
+BT /F1 9 Tf 50.0 130.0 Td (4. Participant completion forces Completed and navigates to results/podium without refresh) Tj ET
+50.0 118.0 m 562.0 118.0 l S
+BT /F2 13 Tf 50.0 83.0 Td (11. Scoring, Leaderboard & Auto-Progression) Tj ET
+BT /F1 8 Tf 50.0 28 Td (QuizArena Architecture Brief  |  Page 6) Tj ET
+endstream
+endobj
+11 0 obj
+<< /Length 3320 >>
+stream
+BT /F2 11 Tf 50.0 729.0 Td (11.1 Scoring rules) Tj ET
+BT /F1 9 Tf 50.0 710.0 Td (- Scoring happens after reveal, never while the question is Open) Tj ET
+BT /F1 9 Tf 50.0 699.0 Td (- Idempotent \(re-scoring does not double-count\)) Tj ET
+BT /F1 9 Tf 50.0 688.0 Td (- Correctness: selected option set must exactly match correct set \(multi-select is all-or-nothing\)) Tj ET
+BT /F1 9 Tf 50.0 677.0 Td (- Points = base points \(if correct\) + optional time bonus + optional streak bonus) Tj ET
+BT /F1 9 Tf 50.0 666.0 Td (- Missing answers become unanswered records) Tj ET
+BT /F2 11 Tf 50.0 645.0 Td (11.2 Leaderboard) Tj ET
+BT /F1 9 Tf 50.0 626.0 Td (- Competition ranking across participants) Tj ET
+BT /F1 9 Tf 50.0 615.0 Td (- Broadcast as leaderboard:updated) Tj ET
+BT /F1 9 Tf 50.0 604.0 Td (- Final podium \(top 3\) included on quiz completion and available on reconnect resync) Tj ET
+BT /F2 11 Tf 50.0 583.0 Td (11.3 Auto-progression) Tj ET
+BT /F1 9 Tf 50.0 564.0 Td (- One background pipeline per room) Tj ET
+BT /F1 9 Tf 50.0 553.0 Td (- On question start \(automatic mode\): wait until timer end \(or all answered\) -> close -> reveal -> short dwell ->) Tj ET
+BT /F1 9 Tf 50.0 542.0 Td (next) Tj ET
+BT /F1 9 Tf 50.0 531.0 Td (- Cancelled on pause/end; resumed on resume) Tj ET
+50.0 519.0 m 562.0 519.0 l S
+BT /F2 13 Tf 50.0 484.0 Td (12. Frontend Architecture) Tj ET
+BT /F2 11 Tf 50.0 463.0 Td (12.1 Route map \(conceptual\)) Tj ET
+BT /F1 9 Tf 50.0 444.0 Td (Experience | Routes \(examples\)) Tj ET
+BT /F1 9 Tf 50.0 433.0 Td (Public landing | /) Tj ET
+BT /F1 9 Tf 50.0 422.0 Td (Host auth | /host/login, /host/signup) Tj ET
+BT /F1 9 Tf 50.0 411.0 Td (Host app | /admin/dashboard, quizzes, live rooms, room monitor, results) Tj ET
+BT /F1 9 Tf 50.0 400.0 Td (Participant | /join, lobby, quiz play, results) Tj ET
+BT /F1 9 Tf 50.0 389.0 Td (Display | /display/:secretToken) Tj ET
+BT /F2 11 Tf 50.0 368.0 Td (12.2 State ownership) Tj ET
+BT /F1 9 Tf 50.0 349.0 Td (Data | Owner) Tj ET
+BT /F1 9 Tf 50.0 338.0 Td (Quiz library, dashboard stats, room list/detail | TanStack Query) Tj ET
+BT /F1 9 Tf 50.0 327.0 Td (Live question / timer / submissions / presence | WebSocket reducers) Tj ET
+BT /F1 9 Tf 50.0 316.0 Td (Participant identity | sessionStorage + context) Tj ET
+BT /F1 9 Tf 50.0 305.0 Td (Host JWT | auth token storage) Tj ET
+BT /F2 11 Tf 50.0 284.0 Td (12.3 Key frontend modules) Tj ET
+BT /F1 9 Tf 50.0 265.0 Td (- useLiveRoomMutations + syncLiveRoomCaches - keep REST caches fresh) Tj ET
+BT /F1 9 Tf 50.0 254.0 Td (- useAdminWebSocket / useParticipantWebSocket / display reducer - live session) Tj ET
+BT /F1 9 Tf 50.0 243.0 Td (- preferFreshestRoom / canRest - host control enablement) Tj ET
+50.0 231.0 m 562.0 231.0 l S
+BT /F2 13 Tf 50.0 196.0 Td (13. Deployment Architecture) Tj ET
+BT /F2 11 Tf 50.0 175.0 Td (13.1 Topology) Tj ET
+BT /F1 9 Tf 50.0 156.0 Td (Layer | Platform | Role) Tj ET
+BT /F1 9 Tf 50.0 145.0 Td (Database | Neon | Managed PostgreSQL) Tj ET
+BT /F1 9 Tf 50.0 134.0 Td (Backend | Render \(Docker\) | REST + WebSockets, always-on plan) Tj ET
+BT /F1 9 Tf 50.0 123.0 Td (Frontend | Vercel | Static SPA) Tj ET
+BT /F1 9 Tf 50.0 104.0 Td (Important: Free Render instances sleep and drop WebSockets - use Starter or higher.) Tj ET
+BT /F1 8 Tf 50.0 28 Td (QuizArena Architecture Brief  |  Page 7) Tj ET
+endstream
+endobj
+12 0 obj
+<< /Length 3276 >>
+stream
+BT /F2 11 Tf 50.0 729.0 Td (13.2 Critical environment variables) Tj ET
+BT /F1 9 Tf 50.0 710.0 Td (Backend: DATABASE_URL, JWT_SECRET_KEY, PUBLIC_APP_URL, CORS_ORIGINS, TRUSTED_HOSTS, admin seed vars, storage path) Tj ET
+BT /F1 9 Tf 50.0 691.0 Td (Frontend: VITE_API_BASE_URL, VITE_WS_BASE_URL) Tj ET
+BT /F2 11 Tf 50.0 670.0 Td (13.3 Operational notes) Tj ET
+BT /F1 9 Tf 50.0 651.0 Td (- Migrations run on container start) Tj ET
+BT /F1 9 Tf 50.0 640.0 Td (- Media stored on Render persistent disk at /app/storage) Tj ET
+BT /F1 9 Tf 50.0 629.0 Td (- Health check: /api/v1/ready) Tj ET
+BT /F1 9 Tf 50.0 618.0 Td (- Single instance for WebSocket fan-out in v1) Tj ET
+50.0 606.0 m 562.0 606.0 l S
+BT /F2 13 Tf 50.0 571.0 Td (14. Security Overview) Tj ET
+BT /F1 9 Tf 50.0 552.0 Td (Area | Approach) Tj ET
+BT /F1 9 Tf 50.0 541.0 Td (Transport | HTTPS / WSS) Tj ET
+BT /F1 9 Tf 50.0 530.0 Td (Host passwords | bcrypt + complexity policy) Tj ET
+BT /F1 9 Tf 50.0 519.0 Td (Host sessions | JWT Bearer \(not cookies\)) Tj ET
+BT /F1 9 Tf 50.0 508.0 Td (Participant / display | High-entropy room-scoped tokens) Tj ET
+BT /F1 9 Tf 50.0 497.0 Td (Input validation | Pydantic \(API\) + Zod \(UI\)) Tj ET
+BT /F1 9 Tf 50.0 486.0 Td (SQL | Parameterized ORM queries) Tj ET
+BT /F1 9 Tf 50.0 475.0 Td (Uploads | MIME/size checks; opaque storage keys) Tj ET
+BT /F1 9 Tf 50.0 464.0 Td (Rate limits | Login & join throttles) Tj ET
+BT /F1 9 Tf 50.0 453.0 Td (Headers | CORS allowlist, TrustedHost, CSP/HSTS/nosniff) Tj ET
+BT /F1 9 Tf 50.0 442.0 Td (Audit | Security logs for login events) Tj ET
+BT /F1 9 Tf 50.0 431.0 Td (Secrets | Environment only; never logged) Tj ET
+BT /F1 9 Tf 50.0 412.0 Td (Known v1 limits \(honest for management\):) Tj ET
+BT /F1 9 Tf 50.0 393.0 Td (- WebSocket state is in-process -> horizontal scale needs sticky sessions or a shared pub/sub later) Tj ET
+BT /F1 9 Tf 50.0 382.0 Td (- Display URL is a bearer secret \(anyone with the link can watch\)) Tj ET
+BT /F1 9 Tf 50.0 371.0 Td (- Rate limits are in-memory per instance) Tj ET
+50.0 359.0 m 562.0 359.0 l S
+BT /F2 13 Tf 50.0 324.0 Td (15. Testing Strategy) Tj ET
+BT /F2 11 Tf 50.0 303.0 Td (Backend \(pytest\)) Tj ET
+BT /F1 9 Tf 50.0 284.0 Td (- Unit: security, dashboard aggregates, bootstrap admin, settings) Tj ET
+BT /F1 9 Tf 50.0 273.0 Td (- Integration: auth, quiz builder, live rooms, join, answer submit, scoring, execution, auto-progression,) Tj ET
+BT /F1 9 Tf 50.0 262.0 Td (WebSockets, full realtime lifecycle) Tj ET
+BT /F2 11 Tf 50.0 241.0 Td (Frontend \(Vitest\)) Tj ET
+BT /F1 9 Tf 50.0 222.0 Td (- Live reducers \(participant / display\)) Tj ET
+BT /F1 9 Tf 50.0 211.0 Td (- Room lifecycle helpers \(button enablement / freshest state\)) Tj ET
+BT /F1 9 Tf 50.0 200.0 Td (- Join / session / UI smoke tests) Tj ET
+BT /F2 11 Tf 50.0 179.0 Td (Manual smoke \(post-deploy\)) Tj ET
+BT /F1 9 Tf 50.0 160.0 Td (Login -> build quiz -> create room -> open lobby -> join from phone -> start -> answer -> pause/resume ->) Tj ET
+BT /F1 9 Tf 50.0 149.0 Td (complete -> podium -> export) Tj ET
+50.0 137.0 m 562.0 137.0 l S
+BT /F2 13 Tf 50.0 102.0 Td (16. End-to-End Story \(How to Demo\)) Tj ET
+BT /F1 9 Tf 50.0 83.0 Td (1. Host registers and logs in) Tj ET
+BT /F1 8 Tf 50.0 28 Td (QuizArena Architecture Brief  |  Page 8) Tj ET
+endstream
+endobj
+13 0 obj
+<< /Length 3585 >>
+stream
+BT /F1 9 Tf 50.0 731.0 Td (2. Creates quiz with one section and several questions) Tj ET
+BT /F1 9 Tf 50.0 720.0 Td (3. Validates quiz -> Ready) Tj ET
+BT /F1 9 Tf 50.0 709.0 Td (4. Creates live room -> Setup) Tj ET
+BT /F1 9 Tf 50.0 698.0 Td (5. Opens lobby -> Lobby \(Start Quiz enables immediately\)) Tj ET
+BT /F1 9 Tf 50.0 687.0 Td (6. Participant joins with room code; host count increments live) Tj ET
+BT /F1 9 Tf 50.0 676.0 Td (7. Host starts quiz -> Question 1 appears for participant + display; timer runs) Tj ET
+BT /F1 9 Tf 50.0 665.0 Td (8. Participant submits -> submission count increments; after scoring, leaderboard updates) Tj ET
+BT /F1 9 Tf 50.0 654.0 Td (9. Quiz completes -> participant sees podium/results; host End Quiz disabled because room is Completed) Tj ET
+BT /F1 9 Tf 50.0 643.0 Td (10. Host closes room; quiz returns toward Ready for reuse) Tj ET
+BT /F1 9 Tf 50.0 624.0 Td (No page refresh is required for controls, counts, leaderboard, or podium when the realtime path is healthy.) Tj ET
+50.0 612.0 m 562.0 612.0 l S
+BT /F2 13 Tf 50.0 577.0 Td (17. Glossary) Tj ET
+BT /F1 9 Tf 50.0 558.0 Td (Term | Meaning) Tj ET
+BT /F1 9 Tf 50.0 547.0 Td (Host | Authenticated quiz operator \(admin account\)) Tj ET
+BT /F1 9 Tf 50.0 536.0 Td (Live room | One running instance of a quiz session) Tj ET
+BT /F1 9 Tf 50.0 525.0 Td (Snapshot | Frozen copy of quiz content for a room) Tj ET
+BT /F1 9 Tf 50.0 514.0 Td (Resync | WebSocket snapshot sent on connect/reconnect) Tj ET
+BT /F1 9 Tf 50.0 503.0 Td (Podium | Top-3 final standing) Tj ET
+BT /F1 9 Tf 50.0 492.0 Td (Display | Read-only presentation client) Tj ET
+BT /F1 9 Tf 50.0 481.0 Td (InUse | Quiz locked while a hosting room exists) Tj ET
+50.0 469.0 m 562.0 469.0 l S
+BT /F2 13 Tf 50.0 434.0 Td (18. Appendix - Key Document Paths) Tj ET
+BT /F1 9 Tf 50.0 415.0 Td (Topic | Path) Tj ET
+BT /F1 9 Tf 50.0 404.0 Td (Product / SRS | docs/PROJECT_SPEC.md) Tj ET
+BT /F1 9 Tf 50.0 393.0 Td (System architecture | docs/SYSTEM_ARCHITECTURE.md) Tj ET
+BT /F1 9 Tf 50.0 382.0 Td (Database schema | docs/DATABASE_SCHEMA.md) Tj ET
+BT /F1 9 Tf 50.0 371.0 Td (API | docs/API.md, docs/API_SPEC.md) Tj ET
+BT /F1 9 Tf 50.0 360.0 Td (WebSocket events | docs/SOCKET_EVENTS.md) Tj ET
+BT /F1 9 Tf 50.0 349.0 Td (Deploy guide | docs/DEPLOY_RENDER_VERCEL.md) Tj ET
+BT /F1 9 Tf 50.0 338.0 Td (Env vars | docs/EnvironmentVariables.md) Tj ET
+50.0 326.0 m 562.0 326.0 l S
+BT /F2 13 Tf 50.0 291.0 Td (19. One-Slide Talking Points for Your Manager) Tj ET
+BT /F1 9 Tf 50.0 272.0 Td (1. What: Live quiz platform - host builds content, players join by code, big screen syncs.) Tj ET
+BT /F1 9 Tf 50.0 261.0 Td (2. How built: One FastAPI backend + one React app; Postgres; WebSockets for live sync.) Tj ET
+BT /F1 9 Tf 50.0 250.0 Td (3. Fairness: Server owns timers and scores; clients only display and submit.) Tj ET
+BT /F1 9 Tf 50.0 239.0 Td (4. Data model: Editable quiz templates + immutable session snapshots per live room.) Tj ET
+BT /F1 9 Tf 50.0 228.0 Td (5. Scale \(v1\): Single always-on API instance; suitable for classroom / event sized load.) Tj ET
+BT /F1 9 Tf 50.0 217.0 Td (6. Deploy: Neon DB, Render API/WS, Vercel frontend.) Tj ET
+BT /F1 9 Tf 50.0 206.0 Td (7. Security: JWT hosts, room tokens for players, bcrypt, rate limits, CORS, audit logs.) Tj ET
+BT /F1 9 Tf 50.0 195.0 Td (8. Status: End-to-end live flow works without refresh when deployed with current main branch.) Tj ET
+50.0 183.0 m 562.0 183.0 l S
+BT /F1 9 Tf 50.0 158.0 Td (*End of architecture brief.*) Tj ET
+BT /F1 8 Tf 50.0 28 Td (QuizArena Architecture Brief  |  Page 9) Tj ET
+endstream
+endobj
+14 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+15 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 6 0 R >>
+endobj
+16 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 7 0 R >>
+endobj
+17 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 8 0 R >>
+endobj
+18 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 9 0 R >>
+endobj
+19 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 10 0 R >>
+endobj
+20 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 11 0 R >>
+endobj
+21 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 12 0 R >>
+endobj
+22 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 13 0 R >>
+endobj
+xref
+0 23
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000172 00000 n 
+0000000242 00000 n 
+0000000317 00000 n 
+0000004448 00000 n 
+0000008428 00000 n 
+0000012468 00000 n 
+0000015921 00000 n 
+0000019340 00000 n 
+0000023385 00000 n 
+0000026758 00000 n 
+0000030087 00000 n 
+0000033725 00000 n 
+0000033862 00000 n 
+0000033999 00000 n 
+0000034136 00000 n 
+0000034273 00000 n 
+0000034410 00000 n 
+0000034548 00000 n 
+0000034686 00000 n 
+0000034824 00000 n 
+trailer
+<< /Size 23 /Root 1 0 R >>
+startxref
+34962
+%%EOF

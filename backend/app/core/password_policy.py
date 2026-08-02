@@ -4,7 +4,7 @@ import re
 
 from app.core.exceptions import ValidationError
 
-_MIN_LENGTH = 12
+_MIN_LENGTH = 8
 _UPPER = re.compile(r"[A-Z]")
 _LOWER = re.compile(r"[a-z]")
 _DIGIT = re.compile(r"[0-9]")
@@ -14,7 +14,7 @@ _SPECIAL = re.compile(r"[^A-Za-z0-9]")
 def validate_password_policy(password: str) -> None:
     """Enforce FR-005 strong password requirements.
 
-    Minimum 12 characters with uppercase, lowercase, numeric, and special character.
+    Minimum 8 characters with uppercase, lowercase, numeric, and special character.
     """
     errors: list[dict[str, str]] = []
     if len(password) < _MIN_LENGTH:

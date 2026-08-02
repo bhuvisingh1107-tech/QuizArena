@@ -1338,7 +1338,7 @@ All REST error responses follow a consistent envelope:
 | Measure | Implementation |
 |---------|---------------|
 | **Password storage** | bcrypt or argon2 one-way hashing; never store plaintext |
-| **Password policy** | Minimum 12 characters with complexity requirements (FR-005) |
+| **Password policy** | Minimum 8 characters with complexity requirements (FR-005) |
 | **JWT signing** | HS256 or RS256 with secret stored in environment variable |
 | **JWT expiry** | ~8 hours; no refresh token in v1; client redirects to login on expiry |
 | **Session token entropy** | Cryptographically random, sufficient length to prevent guessing |

@@ -244,7 +244,7 @@ Requirements are identified by `FR-xxx` identifiers and grouped by functional do
 | **FR-002** | The system shall reject all unauthenticated requests to administrator-only operations. |
 | **FR-003** | The system shall issue JWT tokens valid for the duration of an administrator work session (approximately 8 hours) with no refresh token mechanism in v1. |
 | **FR-004** | The system shall invalidate the JWT token upon administrator logout. |
-| **FR-005** | The system shall enforce a strong password policy for the administrator account: minimum 12 characters with uppercase, lowercase, numeric, and special character requirements. |
+| **FR-005** | The system shall enforce a strong password policy for the administrator account: minimum 8 characters with uppercase, lowercase, numeric, and special character requirements. |
 | **FR-006** | The system shall store administrator credentials using industry-standard one-way password hashing; plaintext passwords shall never be stored or transmitted after initial setup. |
 | **FR-007** | Participants shall not require accounts; access to live rooms shall be gated by a valid room code, QR-derived join token, or secret Presentation Screen link as applicable. |
 | **FR-008** | The system shall log security events including successful login, logout, and failed authentication attempts. |

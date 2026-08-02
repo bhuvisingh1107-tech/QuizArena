@@ -19,18 +19,13 @@ import {
 } from '@/lib/admin-theme'
 import { clearToken, getExpiresAt } from '@/lib/auth-token'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
+import { PASSWORD_POLICY_HINT, strongPasswordSchema } from '@/schemas/password'
 import type { AdminTheme } from '@/types/api'
 
 const passwordSchema = z
   .object({
     currentPassword: z.string().min(1, 'Current password is required'),
-    newPassword: z
-      .string()
-      .min(12, 'New password must be at least 12 characters')
-      .regex(/[A-Z]/, 'Include an uppercase letter')
-      .regex(/[a-z]/, 'Include a lowercase letter')
-      .regex(/[0-9]/, 'Include a number')
-      .regex(/[^A-Za-z0-9]/, 'Include a special character'),
+    newPassword: strongPasswordSchema,
     confirmPassword: z.string().min(1, 'Confirm your new password'),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
@@ -120,9 +115,7 @@ export function SettingsPage() {
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle>Change password</CardTitle>
-          <CardDescription>
-            Use at least 12 characters with upper, lower, number, and special character
-          </CardDescription>
+          <CardDescription>{PASSWORD_POLICY_HINT}</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit} noValidate>

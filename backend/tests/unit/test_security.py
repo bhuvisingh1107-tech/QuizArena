@@ -32,6 +32,17 @@ def test_password_policy_rejects_weak() -> None:
     assert exc.value.code == "PASSWORD_POLICY_VIOLATION"
 
 
+def test_password_policy_rejects_under_eight_chars() -> None:
+    with pytest.raises(ValidationError) as exc:
+        validate_password_policy("Ab1!xyz")  # 7 chars, otherwise complex
+    assert exc.value.code == "PASSWORD_POLICY_VIOLATION"
+    assert any("at least 8 characters" in d.get("message", "").lower() for d in exc.value.details)
+
+
+def test_password_policy_accepts_eight_char_minimum() -> None:
+    validate_password_policy("Abcd1!xy")
+
+
 def test_password_policy_accepts_strong() -> None:
     validate_password_policy("AdminPassw0rd!")
 
