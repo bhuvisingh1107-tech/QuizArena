@@ -55,6 +55,7 @@ class ResyncPayload(BaseModel):
     question: dict[str, Any] | None = None
     submission: dict[str, Any] | None = None
     leaderboard: list[dict[str, Any]] | None = None
+    podium: dict[str, Any] | None = None
     participant_count: int | None = Field(default=None, serialization_alias="participantCount")
     timer: dict[str, Any] | None = None
 

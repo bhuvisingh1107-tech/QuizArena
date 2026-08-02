@@ -9,6 +9,6 @@ export function useRoomParticipants(roomId: string | undefined, enabled = true) 
     queryKey: queryKeys.liveRooms.participants(roomId ?? ''),
     queryFn: () => apiGet<AdminParticipantList>(`/live-rooms/${roomId}/participants`),
     enabled: Boolean(roomId) && enabled,
-    refetchInterval: 15_000,
+    refetchInterval: 5_000,
   })
 }

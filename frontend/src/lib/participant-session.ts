@@ -6,6 +6,7 @@ export interface ParticipantSession {
   email: string
   quizTitle: string
   participantId: string
+  roomState?: import('@/types/api').RoomState
 }
 
 const KEYS = {
@@ -16,6 +17,7 @@ const KEYS = {
   email: 'qa_participant_email',
   quizTitle: 'qa_participant_quiz_title',
   participantId: 'qa_participant_id',
+  roomState: 'qa_participant_room_state',
 } as const
 
 function read(key: string): string | null {
@@ -94,6 +96,15 @@ export function setParticipantId(participantId: string): void {
   write(KEYS.participantId, participantId)
 }
 
+export function getRoomState(): import('@/types/api').RoomState | null {
+  const value = read(KEYS.roomState)
+  return (value as import('@/types/api').RoomState | null) ?? null
+}
+
+export function setRoomState(roomState: import('@/types/api').RoomState | null): void {
+  write(KEYS.roomState, roomState)
+}
+
 export function getParticipantSession(): ParticipantSession | null {
   const sessionToken = getSessionToken()
   const roomCode = getRoomCode()
@@ -102,6 +113,7 @@ export function getParticipantSession(): ParticipantSession | null {
   const email = getEmail()
   const quizTitle = getQuizTitle()
   const participantId = getParticipantId()
+  const roomState = getRoomState() ?? undefined
 
   if (
     !sessionToken ||
@@ -123,6 +135,7 @@ export function getParticipantSession(): ParticipantSession | null {
     email,
     quizTitle,
     participantId,
+    roomState,
   }
 }
 
@@ -134,6 +147,7 @@ export function setParticipantSession(session: ParticipantSession): void {
   setEmail(session.email)
   setQuizTitle(session.quizTitle)
   setParticipantId(session.participantId)
+  setRoomState(session.roomState ?? null)
 }
 
 export function clearParticipantSession(): void {
@@ -144,6 +158,7 @@ export function clearParticipantSession(): void {
   write(KEYS.email, null)
   write(KEYS.quizTitle, null)
   write(KEYS.participantId, null)
+  write(KEYS.roomState, null)
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('qa:participant-session-cleared'))
   }

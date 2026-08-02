@@ -168,17 +168,22 @@ async def _send_handshake(
     submission: dict | None = None
     question_snapshot: dict | None = None
     leaderboard: list | None = None
+    podium: dict | None = None
     participant_count: int | None = None
     timer_payload: dict | None = None
 
     from app.api.websocket.dispatcher import count_active_participants
+    from app.models.enums import RoomState
     from app.services.leaderboard_service import LeaderboardService
 
     participant_count = count_active_participants(session, room.id)
 
     # Shared live snapshot for admin, display, and participant reconnects.
     execution = QuizExecutionService(session).get_execution_state(room.id)
-    if execution.question is not None:
+    if execution.question is not None and room.state not in {
+        RoomState.COMPLETED,
+        RoomState.CLOSED,
+    }:
         reveal = execution.question.state.value in {"Revealed", "Scored"}
         question_snapshot = QuizExecutionService(session)._question_payload(
             room,
@@ -206,6 +211,7 @@ async def _send_handshake(
 
     board = LeaderboardService(session).snapshot(room.id)
     leaderboard = board.get("entries")
+    podium = board.get("podium") if room.state in {RoomState.COMPLETED, RoomState.CLOSED} else None
     session.commit()
 
     if connection.role == ClientRole.PARTICIPANT and participant is not None:
@@ -226,6 +232,7 @@ async def _send_handshake(
         question=question_snapshot,
         submission=submission,
         leaderboard=leaderboard,
+        podium=podium,
         participant_count=participant_count,
         timer=timer_payload,
     )

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import AppSettings, CurrentAdmin, RequestId, get_db
 from app.api.websocket.connection_manager import connection_manager
 from app.api.websocket.events import ServerEventType
-from app.models.enums import RoomState
+from app.models.enums import LobbySubState, RoomState
 from app.models.live_room import LiveRoom
 from app.schemas.common import DataResponse, Meta
 from app.schemas.live_room import (
@@ -196,13 +196,15 @@ def update_room_config(
     status_code=status.HTTP_200_OK,
     summary="Open lobby (Setup → Lobby)",
 )
-def open_lobby(
+async def open_lobby(
     room_id: UUID,
     admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
+    db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
     room = service.open_lobby(room_id, owner_id=admin.id)
+    await _broadcast_lifecycle(room, ServerEventType.ROOM_LOBBY_OPENED, db)
     return _envelope(_room_response(room, service), request_id)
 
 
@@ -212,13 +214,20 @@ def open_lobby(
     status_code=status.HTTP_200_OK,
     summary="Toggle lobby open/closed",
 )
-def toggle_lobby(
+async def toggle_lobby(
     room_id: UUID,
     admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
+    db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
     room = service.toggle_lobby(room_id, owner_id=admin.id)
+    event = (
+        ServerEventType.ROOM_LOBBY_OPENED
+        if room.lobby_sub_state == LobbySubState.OPEN
+        else ServerEventType.ROOM_LOBBY_CLOSED
+    )
+    await _broadcast_lifecycle(room, event, db)
     return _envelope(_room_response(room, service), request_id)
 
 
@@ -316,11 +325,23 @@ async def end_session(
     request_id: RequestId,
     db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
+    """End via execution service so clients get quiz:completed + podium + leaderboard."""
+    from app.core.exceptions import QuizArenaError
+    from app.api.websocket.broadcast_helpers import broadcast_execution_events
     from app.services.timer_service import auto_progression
 
     auto_progression.cancel_room(room_id)
-    room = service.end(room_id, owner_id=admin.id)
-    await _broadcast_lifecycle(room, ServerEventType.ROOM_COMPLETED, db)
+    # Ownership check before mutating execution.
+    service.get(room_id, owner_id=admin.id)
+    try:
+        result = QuizExecutionService(db).end_quiz(room_id)
+        await broadcast_execution_events(room_id, result.events)
+        room = result.room
+    except QuizArenaError:
+        # Fallback for rooms already mid-transition: still force Completed + notify.
+        room = service.end(room_id, owner_id=admin.id)
+        await _broadcast_lifecycle(room, ServerEventType.ROOM_COMPLETED, db)
+
     return _envelope(_room_response(room, service), request_id)
 
 
@@ -330,13 +351,15 @@ async def end_session(
     status_code=status.HTTP_200_OK,
     summary="Close room (Lobby/Completed → Closed)",
 )
-def close_room(
+async def close_room(
     room_id: UUID,
     admin: CurrentAdmin,
     service: LiveRoomServiceDep,
     request_id: RequestId,
+    db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
     room = service.close(room_id, owner_id=admin.id)
+    await _broadcast_lifecycle(room, ServerEventType.ROOM_CLOSED, db)
     return _envelope(_room_response(room, service), request_id)
 
 

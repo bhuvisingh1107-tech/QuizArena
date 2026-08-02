@@ -40,6 +40,7 @@ function sessionFromJoin(response: JoinResponse): ParticipantSession {
     email: response.participant.email,
     quizTitle: response.room.quizTitle,
     participantId: response.participant.id,
+    roomState: response.room.state,
   }
 }
 

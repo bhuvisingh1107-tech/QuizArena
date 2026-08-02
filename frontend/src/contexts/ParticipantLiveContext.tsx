@@ -21,6 +21,16 @@ export function ParticipantLiveProvider({ children }: { children: ReactNode }) {
     enabled: hasSession,
     sessionToken: session?.sessionToken ?? null,
     onAuthFailed,
+    sessionSeed: session
+      ? {
+          participantId: session.participantId,
+          displayName: session.displayName,
+          roomId: session.roomId,
+          roomState: session.roomState,
+          quizTitle: session.quizTitle,
+          roomCode: session.roomCode,
+        }
+      : null,
   })
 
   return (

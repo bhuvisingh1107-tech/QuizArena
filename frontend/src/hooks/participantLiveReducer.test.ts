@@ -264,6 +264,128 @@ describe('participantLiveReducer', () => {
     expect(next.question?.explanation).toBe('Paris is the capital')
     expect(next.options.find((o) => o.id === 'a')?.isCorrect).toBe(true)
   })
+
+  it('forces Completed and clears waiting UI on quiz:completed', () => {
+    const midQuiz = participantLiveReducer(initialParticipantLiveState, {
+      type: 'EVENT',
+      message: {
+        type: 'question:started',
+        timestamp: new Date().toISOString(),
+        payload: {
+          questionIndex: 0,
+          question: {
+            id: 'q1',
+            promptText: 'Q?',
+            state: 'Scored',
+            options: [{ id: 'a', text: 'A', sortOrder: 0 }],
+          },
+        },
+      },
+    })
+    const withSelf = {
+      ...midQuiz,
+      self: { id: 'p1', displayName: 'Alex', totalScore: 10, streak: 1 },
+      showLeaderboardInterstitial: true,
+    }
+
+    const completed = participantLiveReducer(withSelf, {
+      type: 'EVENT',
+      message: {
+        type: 'quiz:completed',
+        timestamp: new Date().toISOString(),
+        payload: {
+          state: 'Completed',
+          podium: {
+            entries: [
+              { rank: 1, participantId: 'p1', displayName: 'Alex', score: 40 },
+            ],
+          },
+          leaderboard: [
+            { rank: 1, participantId: 'p1', displayName: 'Alex', score: 40, streak: 2 },
+          ],
+        },
+      },
+    })
+
+    expect(completed.room?.state).toBe('Completed')
+    expect(completed.resultsReady).toBe(true)
+    expect(completed.showLeaderboardInterstitial).toBe(false)
+    expect(completed.question).toBeNull()
+    expect(completed.podium?.entries).toHaveLength(1)
+    expect(completed.leaderboard[0]?.score).toBe(40)
+    expect(completed.yourRank).toBe(1)
+  })
+
+  it('does not reopen interstitial after Completed on leaderboard:updated', () => {
+    const completed = {
+      ...initialParticipantLiveState,
+      resultsReady: true,
+      room: {
+        id: 'r1',
+        roomCode: 'ABC',
+        state: 'Completed' as const,
+        quizTitle: 'Quiz',
+      },
+      question: {
+        id: 'q1',
+        index: 0,
+        promptText: 'Q?',
+        state: 'Scored' as const,
+        options: [],
+        timeLimitSeconds: null,
+        timerEndsAt: null,
+        sectionId: null,
+        sectionName: null,
+        totalQuestions: 1,
+      },
+      self: { id: 'p1', displayName: 'Alex', totalScore: 10, streak: 1 },
+    }
+
+    const next = participantLiveReducer(completed, {
+      type: 'EVENT',
+      message: {
+        type: 'leaderboard:updated',
+        timestamp: new Date().toISOString(),
+        payload: {
+          entries: [
+            { rank: 1, participantId: 'p1', displayName: 'Alex', score: 40, streak: 2 },
+          ],
+        },
+      },
+    })
+
+    expect(next.showLeaderboardInterstitial).toBe(false)
+    expect(next.leaderboard).toHaveLength(1)
+  })
+
+  it('reads timer.endsAt from resync', () => {
+    const endsAt = new Date(Date.now() + 20_000).toISOString()
+    const next = participantLiveReducer(initialParticipantLiveState, {
+      type: 'EVENT',
+      message: {
+        type: 'resync',
+        timestamp: new Date().toISOString(),
+        payload: {
+          room: { id: 'r1', roomCode: 'ABC', state: 'Active', quizTitle: 'Quiz' },
+          participant: { id: 'p1', displayName: 'Alex', totalScore: 0, streak: 0 },
+          question: {
+            questionIndex: 0,
+            question: {
+              id: 'q1',
+              promptText: 'Q?',
+              state: 'Open',
+              timeLimitSeconds: 30,
+              options: [{ id: 'a', text: 'A', sortOrder: 0 }],
+            },
+          },
+          timer: { endsAt },
+        },
+      },
+    })
+
+    expect(next.question?.timerEndsAt).toBe(endsAt)
+    expect(next.self?.id).toBe('p1')
+  })
 })
 
 describe('reconnect backoff helpers', () => {

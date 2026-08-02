@@ -18,9 +18,13 @@ export function QuizPage() {
   const live = useParticipantLive()
 
   useEffect(() => {
+    if (live.resultsReady || live.room?.state === 'Completed' || live.room?.state === 'Closed') {
+      navigate('/results', { replace: true })
+      return
+    }
     if (!live.suggestedRoute || live.suggestedRoute === '/quiz') return
     navigate(live.suggestedRoute, { replace: true })
-  }, [live.suggestedRoute, navigate])
+  }, [live.suggestedRoute, live.resultsReady, live.room?.state, navigate])
 
   const question = live.question
   const phase = deriveQuizPhase(live)
@@ -36,6 +40,22 @@ export function QuizPage() {
   const totalScore = live.yourScore || live.self?.totalScore || 0
   const selfId = live.self?.id ?? session?.participantId ?? null
 
+  if (phase === 'completed') {
+    return (
+      <ParticipantShell
+        connectionStatus={live.connectionStatus}
+        isOffline={live.isOffline}
+        lastError={live.lastError}
+        onRetryConnection={() => live.reconnect()}
+        subtitle={live.room?.quizTitle || session?.quizTitle}
+      >
+        <EmptyState
+          title="Quiz complete"
+          description="Loading final results…"
+        />
+      </ParticipantShell>
+    )
+  }
   return (
     <ParticipantShell
       connectionStatus={live.connectionStatus}

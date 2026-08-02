@@ -23,6 +23,7 @@ export interface AdminLiveState {
   connectionStatus: WsConnectionStatus
   room: LiveRoom | null
   participants: Record<string, LiveParticipant>
+  participantCount: number
   currentQuestion: LiveQuestionSnapshot | null
   submissionCount: number
   leaderboard: LeaderboardEntry[]
@@ -35,12 +36,14 @@ type LiveAction =
   | { type: 'ERROR'; message: string }
   | { type: 'CLEAR_ERROR' }
   | { type: 'RESET' }
+  | { type: 'APPLY_ROOM'; room: LiveRoom }
   | { type: 'EVENT'; message: WsMessage }
 
 const initialState: AdminLiveState = {
   connectionStatus: 'disconnected',
   room: null,
   participants: {},
+  participantCount: 0,
   currentQuestion: null,
   submissionCount: 0,
   leaderboard: [],
@@ -100,6 +103,31 @@ function mergeRoom(existing: LiveRoom | null, patch: Record<string, unknown>): L
   } as LiveRoom
 }
 
+function parseLeaderboard(data: Record<string, unknown>): LeaderboardEntry[] | null {
+  if (Array.isArray(data.entries)) return data.entries as LeaderboardEntry[]
+  if (Array.isArray(data.leaderboard)) return data.leaderboard as LeaderboardEntry[]
+  return null
+}
+
+function parsePodiumEntries(data: Record<string, unknown>): Podium['entries'] | null {
+  const podiumPayload = data.podium ? asRecord(data.podium) : data
+  if (Array.isArray(podiumPayload.entries)) return podiumPayload.entries as Podium['entries']
+  if (Array.isArray(data.entries)) return data.entries as Podium['entries']
+  return null
+}
+
+function applyTimerEndsAt(
+  question: LiveQuestionSnapshot | null,
+  data: Record<string, unknown>,
+): LiveQuestionSnapshot | null {
+  if (!question) return question
+  const timerEndsAt =
+    (data.timerEndsAt as string | undefined) ??
+    (asRecord(data.room).timerEndsAt as string | undefined)
+  if (typeof timerEndsAt !== 'string') return question
+  return { ...question, timerEndsAt }
+}
+
 function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState {
   switch (action.type) {
     case 'STATUS':
@@ -111,6 +139,28 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
       return { ...state, lastError: null }
     case 'RESET':
       return { ...initialState }
+    case 'APPLY_ROOM': {
+      // REST mutation success — never regress behind a more advanced live state.
+      if (!state.room) {
+        return { ...state, room: action.room }
+      }
+      const rank: Record<string, number> = {
+        Setup: 0,
+        Lobby: 1,
+        Active: 2,
+        Paused: 2,
+        SectionBreak: 2,
+        Completed: 3,
+        Closed: 4,
+      }
+      const existingRank = rank[state.room.state] ?? 0
+      const incomingRank = rank[action.room.state] ?? 0
+      if (incomingRank < existingRank) return state
+      return {
+        ...state,
+        room: { ...state.room, ...action.room },
+      }
+    }
     case 'EVENT': {
       const { type, payload } = action.message
       const data = asRecord(payload)
@@ -157,21 +207,26 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
                   null,
               } as LiveQuestionSnapshot)
             : null
-          const leaderboard = Array.isArray(data.leaderboard)
-            ? (data.leaderboard as LeaderboardEntry[])
-            : state.leaderboard
+          const leaderboard = parseLeaderboard(data) ?? state.leaderboard
+          const podiumEntries = parsePodiumEntries(data)
           const submission =
             typeof asRecord(data.submission).count === 'number'
               ? (asRecord(data.submission).count as number)
               : state.submissionCount
+          const participantCount =
+            typeof data.participantCount === 'number'
+              ? data.participantCount
+              : Object.keys(participants).length || state.participantCount
 
           return {
             ...state,
             connectionStatus: 'connected',
             room,
             participants: Object.keys(participants).length ? participants : state.participants,
+            participantCount,
             currentQuestion: question,
             leaderboard,
+            podium: podiumEntries?.length ? { entries: podiumEntries } : state.podium,
             submissionCount: submission,
             lastError: null,
           }
@@ -181,27 +236,68 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
         case 'room:lobbyOpened':
         case 'room:lobbyClosed':
         case 'room:sessionStarted':
-        case 'room:paused':
-        case 'room:resumed':
         case 'room:closed':
           return {
             ...state,
             room: mergeRoom(state.room, data.room ? asRecord(data.room) : data),
           }
 
-        case 'room:completed':
-        case 'quiz:completed': {
-          const podiumPayload = data.podium ?? data
-          const entries = Array.isArray(asRecord(podiumPayload).entries)
-            ? (asRecord(podiumPayload).entries as Podium['entries'])
-            : Array.isArray(data.entries)
-              ? (data.entries as Podium['entries'])
-              : []
+        case 'room:paused':
+        case 'room:resumed':
           return {
             ...state,
             room: mergeRoom(state.room, data.room ? asRecord(data.room) : data),
-            podium: entries.length ? { entries } : state.podium,
+            currentQuestion: applyTimerEndsAt(state.currentQuestion, data),
           }
+
+        case 'room:completed':
+        case 'quiz:completed': {
+          const podiumEntries = parsePodiumEntries(data)
+          const leaderboard = parseLeaderboard(data) ?? state.leaderboard
+          const roomPatch = data.room ? asRecord(data.room) : { ...data, state: 'Completed' }
+          if (!roomPatch.state) roomPatch.state = 'Completed'
+          return {
+            ...state,
+            room: mergeRoom(state.room, roomPatch),
+            podium: podiumEntries?.length ? { entries: podiumEntries } : state.podium,
+            leaderboard,
+            currentQuestion: null,
+          }
+        }
+
+        case 'section:break': {
+          const roomPatch = data.room
+            ? asRecord(data.room)
+            : { ...data, state: 'SectionBreak' }
+          if (!roomPatch.state) roomPatch.state = 'SectionBreak'
+          return {
+            ...state,
+            room: mergeRoom(state.room, roomPatch),
+            leaderboard: parseLeaderboard(data) ?? state.leaderboard,
+          }
+        }
+
+        case 'section:continued':
+        case 'section:started': {
+          const roomPatch = data.room
+            ? asRecord(data.room)
+            : type === 'section:continued'
+              ? { ...data, state: 'Active' }
+              : data
+          return {
+            ...state,
+            room: mergeRoom(state.room, roomPatch),
+          }
+        }
+
+        case 'participant:count': {
+          const count =
+            typeof data.participantCount === 'number'
+              ? data.participantCount
+              : typeof data.count === 'number'
+                ? data.count
+                : state.participantCount
+          return { ...state, participantCount: count }
         }
 
         case 'participant:joined':
@@ -210,9 +306,15 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
             asRecord(data.participant ?? data),
           )
           if (!participant) return state
+          const participants = { ...state.participants, [participant.id]: participant }
+          const count =
+            typeof data.participantCount === 'number'
+              ? data.participantCount
+              : Object.values(participants).filter((p) => p.connected !== false).length
           return {
             ...state,
-            participants: { ...state.participants, [participant.id]: participant },
+            participants,
+            participantCount: count,
           }
         }
 
@@ -221,14 +323,23 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
           const id = String(
             asRecord(data.participant).id ?? data.participantId ?? data.id ?? '',
           )
-          if (!id || !state.participants[id]) return state
+          if (!id || !state.participants[id]) {
+            if (typeof data.participantCount === 'number') {
+              return { ...state, participantCount: data.participantCount }
+            }
+            return state
+          }
           const next = { ...state.participants }
           next[id] = {
             ...next[id],
             connected: false,
             state: type === 'participant:left' ? 'SessionEnded' : 'Disconnected',
           }
-          return { ...state, participants: next }
+          const count =
+            typeof data.participantCount === 'number'
+              ? data.participantCount
+              : Object.values(next).filter((p) => p.connected !== false).length
+          return { ...state, participants: next, participantCount: count }
         }
 
         case 'question:started': {
@@ -249,9 +360,14 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
               index,
               state: (q.state as LiveQuestionSnapshot['state']) ?? 'Open',
               promptText: (q.promptText as string | null | undefined) ?? null,
+              timerEndsAt:
+                (q.timerEndsAt as string | null | undefined) ??
+                (data.timerEndsAt as string | null | undefined) ??
+                null,
             },
             submissionCount: 0,
             room: mergeRoom(state.room, {
+              state: 'Active',
               currentQuestionIndex: index,
             }),
           }
@@ -304,16 +420,16 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
                   : typeof data.submissionCount === 'number'
                     ? data.submissionCount
                     : state.submissionCount,
+            participantCount:
+              typeof data.participantCount === 'number'
+                ? data.participantCount
+                : state.participantCount,
           }
 
         case 'leaderboard:updated':
           return {
             ...state,
-            leaderboard: Array.isArray(data.entries)
-              ? (data.entries as LeaderboardEntry[])
-              : Array.isArray(data.leaderboard)
-                ? (data.leaderboard as LeaderboardEntry[])
-                : state.leaderboard,
+            leaderboard: parseLeaderboard(data) ?? state.leaderboard,
           }
 
         case 'error': {
@@ -569,6 +685,7 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
     send,
     disconnect,
     reconnect,
+    applyRoomSnapshot: (room: LiveRoom) => dispatch({ type: 'APPLY_ROOM', room }),
     clearError: () => dispatch({ type: 'CLEAR_ERROR' }),
   }
 }

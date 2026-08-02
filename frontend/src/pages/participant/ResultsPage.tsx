@@ -29,6 +29,14 @@ export function ResultsPage() {
     }
   }, [live.suggestedRoute, navigate])
 
+  useEffect(() => {
+    if (live.resultsReady || live.room?.state === 'Completed' || live.room?.state === 'Closed') {
+      void meQuery.refetch()
+    }
+    // Refetch personal stats once when the quiz becomes complete.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid refetch identity loops
+  }, [live.resultsReady, live.room?.state])
+
   const profile = meQuery.data?.participant
   const displayName = profile?.displayName || session?.displayName || 'You'
   const rank = profile?.rank ?? live.yourRank

@@ -35,6 +35,7 @@ import { TableCell, TableHead, TableRow } from '@/components/ui/table'
 import { useLiveRoomMutations } from '@/hooks/queries/useLiveRoomMutations'
 import { useLiveRooms } from '@/hooks/queries/useLiveRooms'
 import { useQuizzes } from '@/hooks/queries/useQuizzes'
+import { canRest } from '@/lib/room-lifecycle'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
 import type { LiveRoom, RoomState } from '@/types/api'
 
@@ -49,30 +50,6 @@ const STATE_OPTIONS: Array<RoomState | 'all'> = [
   'Completed',
   'Closed',
 ]
-
-function canRest(
-  state: RoomState,
-  action: 'openLobby' | 'toggle' | 'start' | 'pause' | 'resume' | 'end' | 'close',
-): boolean {
-  switch (action) {
-    case 'openLobby':
-      return state === 'Setup'
-    case 'toggle':
-      return state === 'Lobby'
-    case 'start':
-      return state === 'Lobby'
-    case 'pause':
-      return state === 'Active'
-    case 'resume':
-      return state === 'Paused'
-    case 'end':
-      return state === 'Active' || state === 'Paused' || state === 'SectionBreak'
-    case 'close':
-      return state === 'Lobby' || state === 'Completed'
-    default:
-      return false
-  }
-}
 
 export function LiveRoomsPage() {
   const navigate = useNavigate()

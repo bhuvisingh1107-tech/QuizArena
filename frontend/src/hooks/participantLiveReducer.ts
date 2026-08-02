@@ -60,6 +60,15 @@ export type ParticipantLiveAction =
   | { type: 'SET_OFFLINE'; offline: boolean }
   | { type: 'SELECT_OPTIONS'; optionIds: string[] }
   | { type: 'SUBMIT_START'; optionIds: string[] }
+  | {
+      type: 'SEED_SESSION'
+      participantId: string
+      displayName?: string
+      roomId?: string
+      roomState?: RoomState
+      quizTitle?: string
+      roomCode?: string
+    }
   | { type: 'EVENT'; message: WsMessage }
 
 export const initialParticipantLiveState: ParticipantLiveState = {
@@ -133,12 +142,20 @@ export type QuizPhase =
   | 'scoring'
   | 'feedback'
   | 'leaderboard'
+  | 'completed'
 
 function canInferCorrectnessFromOptions(options: ParticipantLiveOption[]): boolean {
   return options.some((option) => option.isCorrect === true)
 }
 
 export function deriveQuizPhase(state: ParticipantLiveState): QuizPhase {
+  if (
+    state.resultsReady ||
+    state.room?.state === 'Completed' ||
+    state.room?.state === 'Closed'
+  ) {
+    return 'completed'
+  }
   if (state.showLeaderboardInterstitial && state.leaderboard.length > 0) {
     return 'leaderboard'
   }
@@ -290,7 +307,10 @@ function mapQuestion(
         ? nested.timeLimitSeconds
         : (existing?.timeLimitSeconds ?? null),
     timerEndsAt:
-      (nested.timerEndsAt as string | null | undefined) ?? existing?.timerEndsAt ?? null,
+      (nested.timerEndsAt as string | null | undefined) ??
+      (payload.timerEndsAt as string | null | undefined) ??
+      existing?.timerEndsAt ??
+      null,
     basePoints:
       typeof nested.basePoints === 'number' ? nested.basePoints : existing?.basePoints,
     allowMultipleCorrect:
@@ -456,6 +476,37 @@ export function participantLiveReducer(
       }
     case 'SET_OFFLINE':
       return { ...state, isOffline: action.offline }
+    case 'SEED_SESSION': {
+      const self =
+        state.self ??
+        ({
+          id: action.participantId,
+          displayName: action.displayName ?? 'You',
+          totalScore: 0,
+          streak: 0,
+        } as ParticipantSelfSnapshot)
+      const room =
+        state.room ??
+        (action.roomId && action.roomState
+          ? {
+              id: action.roomId,
+              roomCode: action.roomCode ?? '',
+              state: action.roomState,
+              quizTitle: action.quizTitle ?? '',
+            }
+          : state.room)
+      return {
+        ...state,
+        self: state.self
+          ? state.self
+          : { ...self, id: action.participantId },
+        room,
+        resultsReady:
+          action.roomState === 'Completed' ||
+          action.roomState === 'Closed' ||
+          state.resultsReady,
+      }
+    }
     case 'SELECT_OPTIONS': {
       if (
         state.submissionStatus === 'submitting' ||
@@ -532,8 +583,13 @@ export function participantLiveReducer(
               ? openedAt
               : null
           if (question) {
+            const timerFromPayload =
+              (asRecord(data.timer).endsAt as string | undefined) ??
+              (qData?.timerEndsAt as string | undefined) ??
+              (data.timerEndsAt as string | undefined) ??
+              question.timerEndsAt
             question.timerEndsAt = deriveTimerEndsAt(
-              (qData?.timerEndsAt as string | undefined) ?? question.timerEndsAt,
+              timerFromPayload,
               question.timeLimitSeconds,
               resolvedOpenedAt,
             )
@@ -560,6 +616,11 @@ export function participantLiveReducer(
             }
           }
           const leaderboard = parseLeaderboard(data) ?? state.leaderboard
+          const podium = parsePodium(data) ?? state.podium
+          const resultsReady =
+            room?.state === 'Completed' ||
+            room?.state === 'Closed' ||
+            state.resultsReady
           const yourRank =
             typeof self?.rank === 'number' ? self.rank : state.yourRank
           const yourScore = self?.totalScore ?? state.yourScore
@@ -573,10 +634,15 @@ export function participantLiveReducer(
             connectionStatus: 'connected',
             room,
             self,
-            question,
-            options: question?.options ?? [],
-            questionOpenedAt: resolvedOpenedAt,
+            question: resultsReady ? null : question,
+            options: resultsReady ? [] : (question?.options ?? []),
+            questionOpenedAt: resultsReady ? null : resolvedOpenedAt,
             leaderboard,
+            podium,
+            resultsReady,
+            showLeaderboardInterstitial: resultsReady
+              ? false
+              : state.showLeaderboardInterstitial,
             previousLeaderboardRanks: ranksFromLeaderboard(state.leaderboard),
             yourRank,
             yourScore,
@@ -639,7 +705,6 @@ export function participantLiveReducer(
         case 'room:lobbyClosed':
         case 'room:sessionStarted':
         case 'room:closed':
-        case 'section:break':
         case 'section:continued':
         case 'section:started':
           return {
@@ -651,14 +716,64 @@ export function participantLiveReducer(
                 : state.participantCount,
           }
 
-        case 'room:completed':
-        case 'quiz:completed': {
-          const podium = parsePodium(data) ?? state.podium
+        case 'section:break': {
+          const roomPatch = data.room
+            ? asRecord(data.room)
+            : { ...data, state: 'SectionBreak' }
+          if (!roomPatch.state) roomPatch.state = 'SectionBreak'
           return {
             ...state,
-            room: mapRoom(state.room, data.room ? asRecord(data.room) : data),
+            room: mapRoom(state.room, roomPatch),
+            showLeaderboardInterstitial: false,
+            leaderboard: parseLeaderboard(data) ?? state.leaderboard,
+            participantCount:
+              typeof data.participantCount === 'number'
+                ? data.participantCount
+                : state.participantCount,
+          }
+        }
+
+        case 'room:completed':
+        case 'quiz:completed': {
+          const roomPatch = data.room
+            ? asRecord(data.room)
+            : { ...data, state: 'Completed' }
+          if (!roomPatch.state) roomPatch.state = 'Completed'
+          if (!roomPatch.id && !roomPatch.roomId && state.room) {
+            roomPatch.id = state.room.id
+            roomPatch.roomCode = state.room.roomCode
+            roomPatch.quizTitle = state.room.quizTitle
+          }
+          const mapped = mapRoom(state.room, roomPatch)
+          const room = mapped
+            ? { ...mapped, state: 'Completed' as const }
+            : state.room
+              ? { ...state.room, state: 'Completed' as const }
+              : {
+                  id: String(data.roomId ?? roomPatch.roomId ?? 'room'),
+                  roomCode: String(roomPatch.roomCode ?? ''),
+                  state: 'Completed' as const,
+                  quizTitle: String(roomPatch.quizTitle ?? ''),
+                }
+          const leaderboard = parseLeaderboard(data) ?? state.leaderboard
+          const podium = parsePodium(data) ?? state.podium
+          const selfId = state.self?.id
+          const own = selfId
+            ? leaderboard.find((e) => e.participantId === selfId)
+            : undefined
+          return {
+            ...state,
+            room,
             podium,
+            leaderboard,
             resultsReady: true,
+            showLeaderboardInterstitial: false,
+            question: null,
+            options: [],
+            questionOpenedAt: null,
+            yourRank: own?.rank ?? state.yourRank,
+            yourScore: own?.score ?? state.yourScore,
+            previousLeaderboardRanks: ranksFromLeaderboard(state.leaderboard),
           }
         }
 
@@ -666,6 +781,7 @@ export function participantLiveReducer(
           return {
             ...state,
             resultsReady: true,
+            showLeaderboardInterstitial: false,
             podium: parsePodium(data) ?? state.podium,
             leaderboard: parseLeaderboard(data) ?? state.leaderboard,
           }
@@ -773,8 +889,13 @@ export function participantLiveReducer(
           const own = selfId
             ? leaderboard.find((e) => e.participantId === selfId)
             : undefined
+          const terminal =
+            state.resultsReady ||
+            state.room?.state === 'Completed' ||
+            state.room?.state === 'Closed'
           const wasScored =
             state.question?.state === 'Scored' ||
+            state.question?.state === 'Revealed' ||
             state.lastFeedback != null
           return {
             ...state,
@@ -783,7 +904,7 @@ export function participantLiveReducer(
             yourRank: own?.rank ?? state.yourRank,
             yourScore: own?.score ?? state.yourScore,
             showLeaderboardInterstitial:
-              wasScored && leaderboard.length > 0,
+              !terminal && wasScored && leaderboard.length > 0,
             self: state.self
               ? {
                   ...state.self,

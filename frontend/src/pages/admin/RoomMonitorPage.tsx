@@ -35,9 +35,10 @@ import { useLiveRoomMutations } from '@/hooks/queries/useLiveRoomMutations'
 import { useRoomParticipants } from '@/hooks/queries/useRoomParticipants'
 import { useRoomResults } from '@/hooks/queries/useRoomResults'
 import { useAdminWebSocket } from '@/hooks/useAdminWebSocket'
+import { canRest, preferFreshestRoom } from '@/lib/room-lifecycle'
 import { cn } from '@/lib/utils'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
-import type { LiveParticipant, RoomState } from '@/types/api'
+import type { LiveParticipant, LiveRoom } from '@/types/api'
 
 const connectionVariant: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'secondary'> =
   {
@@ -46,30 +47,6 @@ const connectionVariant: Record<string, 'default' | 'success' | 'warning' | 'dan
     disconnected: 'secondary',
     error: 'danger',
   }
-
-function canRest(
-  state: RoomState,
-  action: 'openLobby' | 'start' | 'pause' | 'resume' | 'end' | 'close' | 'skip',
-): boolean {
-  switch (action) {
-    case 'openLobby':
-      return state === 'Setup'
-    case 'start':
-      return state === 'Lobby'
-    case 'pause':
-      return state === 'Active'
-    case 'resume':
-      return state === 'Paused'
-    case 'skip':
-      return state === 'Active' || state === 'Paused' || state === 'SectionBreak'
-    case 'end':
-      return state === 'Active' || state === 'Paused' || state === 'SectionBreak'
-    case 'close':
-      return state === 'Completed'
-    default:
-      return false
-  }
-}
 
 function formatTimer(
   timerEndsAt?: string | null,
@@ -95,6 +72,7 @@ export function RoomMonitorPage() {
     roomId,
     Boolean(roomId) &&
       (live.room?.state === 'Completed' ||
+        live.room?.state === 'Closed' ||
         roomQuery.data?.state === 'Completed' ||
         roomQuery.data?.state === 'Closed'),
   )
@@ -112,16 +90,15 @@ export function RoomMonitorPage() {
   const [skipConfirm, setSkipConfirm] = useState(false)
   const [timerTick, setTimerTick] = useState(0)
 
+  const room = preferFreshestRoom(live.room, roomQuery.data)
   const timerEndsAt = live.currentQuestion?.timerEndsAt
-  const roomPaused = (live.room?.state ?? roomQuery.data?.state) === 'Paused'
+  const roomPaused = room?.state === 'Paused'
 
   useEffect(() => {
     if (!timerEndsAt || roomPaused) return
     const id = setInterval(() => setTimerTick((t) => t + 1), 500)
     return () => clearInterval(id)
   }, [timerEndsAt, roomPaused])
-
-  const room = live.room ?? roomQuery.data ?? null
 
   const participants = useMemo(() => {
     const map = new Map<string, LiveParticipant>()
@@ -151,16 +128,31 @@ export function RoomMonitorPage() {
     return [...map.values()].sort((a, b) => a.displayName.localeCompare(b.displayName))
   }, [participantsQuery.data?.items, live.participants])
 
+  const connectedCount =
+    live.participantCount > 0
+      ? live.participantCount
+      : participants.filter((p) => p.connected !== false).length
+
   const leaderboard =
-    live.leaderboard.length > 0
-      ? live.leaderboard
-      : (resultsQuery.data?.leaderboard ?? []).map((e) => ({
-          rank: e.rank,
-          participantId: e.participantId,
-          displayName: e.displayName,
-          score: e.score,
-          streak: e.streak,
-        }))
+    room?.state === 'Completed' || room?.state === 'Closed'
+      ? live.leaderboard.length > 0
+        ? live.leaderboard
+        : (resultsQuery.data?.leaderboard ?? []).map((e) => ({
+            rank: e.rank,
+            participantId: e.participantId,
+            displayName: e.displayName,
+            score: e.score,
+            streak: e.streak,
+          }))
+      : live.leaderboard.length > 0
+        ? live.leaderboard
+        : (resultsQuery.data?.leaderboard ?? []).map((e) => ({
+            rank: e.rank,
+            participantId: e.participantId,
+            displayName: e.displayName,
+            score: e.score,
+            streak: e.streak,
+          }))
 
   const questionIndex =
     room?.currentQuestionIndex ?? live.currentQuestion?.index ?? null
@@ -178,12 +170,24 @@ export function RoomMonitorPage() {
     }
   }
 
-  const runRest = async (label: string, action: () => Promise<unknown>) => {
+  const runRest = async (label: string, action: () => Promise<LiveRoom | unknown>) => {
     try {
-      await action()
+      const result = await action()
+      if (result && typeof result === 'object' && 'id' in result && 'state' in result) {
+        live.applyRoomSnapshot(result as LiveRoom)
+      }
       toastSuccess(label)
       void roomQuery.refetch()
       void participantsQuery.refetch()
+      if (
+        result &&
+        typeof result === 'object' &&
+        'state' in result &&
+        ((result as LiveRoom).state === 'Completed' ||
+          (result as LiveRoom).state === 'Closed')
+      ) {
+        void resultsQuery.refetch()
+      }
     } catch (error) {
       toastError(error)
     }
@@ -281,7 +285,7 @@ export function RoomMonitorPage() {
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Participants" value={participants.length} />
+        <StatCard label="Participants" value={connectedCount} />
         <StatCard label="Submissions" value={live.submissionCount} description="Current question" />
         <StatCard
           label="Progress"

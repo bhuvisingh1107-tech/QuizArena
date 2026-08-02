@@ -30,6 +30,15 @@ export interface UseParticipantWebSocketOptions {
   /** Prefer React-state token; falls back to sessionStorage. */
   sessionToken?: string | null
   onAuthFailed?: () => void
+  /** Seed self/room from REST session before the first resync. */
+  sessionSeed?: {
+    participantId: string
+    displayName?: string
+    roomId?: string
+    roomState?: import('@/types/api').RoomState
+    quizTitle?: string
+    roomCode?: string
+  } | null
 }
 
 function statusFromReadyState(readyState: number): WsConnectionStatus | null {
@@ -45,6 +54,7 @@ export function useParticipantWebSocket({
   enabled = true,
   sessionToken = null,
   onAuthFailed,
+  sessionSeed = null,
 }: UseParticipantWebSocketOptions = {}) {
   const [state, dispatch] = useReducer(participantLiveReducer, initialParticipantLiveState)
   const handleRef = useRef<WsConnectionHandle | null>(null)
@@ -71,6 +81,26 @@ export function useParticipantWebSocket({
       state.submissionStatus === 'submitted' ||
       state.submissionStatus === 'already_submitted'
   }, [state.submissionStatus])
+
+  useEffect(() => {
+    if (!sessionSeed?.participantId) return
+    dispatch({
+      type: 'SEED_SESSION',
+      participantId: sessionSeed.participantId,
+      displayName: sessionSeed.displayName,
+      roomId: sessionSeed.roomId,
+      roomState: sessionSeed.roomState,
+      quizTitle: sessionSeed.quizTitle,
+      roomCode: sessionSeed.roomCode,
+    })
+  }, [
+    sessionSeed?.participantId,
+    sessionSeed?.displayName,
+    sessionSeed?.roomId,
+    sessionSeed?.roomState,
+    sessionSeed?.quizTitle,
+    sessionSeed?.roomCode,
+  ])
 
   useEffect(() => {
     authFailedRef.current = state.authFailed
@@ -377,7 +407,12 @@ export function useParticipantWebSocket({
     return () => window.clearTimeout(timer)
   }, [enabled, resolvedToken, releaseHandle])
 
-  const suggestedRoute = getParticipantRouteForRoomState(state.room?.state)
+  const suggestedRoute =
+    state.resultsReady ||
+    state.room?.state === 'Completed' ||
+    state.room?.state === 'Closed'
+      ? '/results'
+      : getParticipantRouteForRoomState(state.room?.state)
 
   return {
     ...state,
