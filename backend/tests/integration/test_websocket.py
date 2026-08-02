@@ -343,3 +343,34 @@ def test_participant_presence_to_admin(
             joined_event = _recv_until(admin_ws, ServerEventType.PARTICIPANT_JOINED)
             assert joined_event["payload"]["displayName"] == "Viz"
             assert "email" in joined_event["payload"]
+
+
+def test_admin_participant_display_simultaneous(
+    client: TestClient,
+    admin_token: str,
+    db_session: Session,
+) -> None:
+    """All three roles must remain registered at once after join/connect."""
+    room = _open_room(client, admin_token, db_session, "WS Trio")
+    joined = _join_participant(client, room["roomCode"], "Trio", "trio@example.com")
+
+    with client.websocket_connect(
+        f"/ws?role=admin&token={admin_token}&roomId={room['id']}",
+    ) as admin_ws:
+        _recv_until(admin_ws, ServerEventType.CONNECTION_ACK)
+        _recv_until(admin_ws, ServerEventType.RESYNC)
+        with client.websocket_connect(
+            f"/ws?role=participant&token={joined['sessionToken']}",
+        ) as part_ws:
+            _recv_until(part_ws, ServerEventType.CONNECTION_ACK)
+            _recv_until(part_ws, ServerEventType.RESYNC)
+            with client.websocket_connect(
+                f"/ws?role=display&token={room['secretToken']}",
+            ) as display_ws:
+                _recv_until(display_ws, ServerEventType.CONNECTION_ACK)
+                _recv_until(display_ws, ServerEventType.RESYNC)
+                assert connection_manager.connection_count() == 3
+                snap = connection_manager.snapshot_counts()
+                assert snap["admins"] == 1
+                assert snap["participants"] == 1
+                assert snap["displays"] == 1

@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 
-import { participantGet, participantPost } from '@/lib/participant-api'
+import { participantGet, participantPost, ApiError } from '@/lib/participant-api'
 import {
   clearParticipantSession,
   getParticipantSession,
@@ -72,9 +72,13 @@ export function ParticipantSessionProvider({ children }: { children: ReactNode }
       setParticipantSession(next)
       setSession(next)
       return me
-    } catch {
-      clearParticipantSession()
-      setSession(null)
+    } catch (error) {
+      // Only wipe the session on hard auth failures. Transient network errors
+      // must not disconnect an already-joined participant mid-navigation.
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        clearParticipantSession()
+        setSession(null)
+      }
       return null
     }
   }, [])
@@ -112,18 +116,23 @@ export function ParticipantSessionProvider({ children }: { children: ReactNode }
         setParticipantSession(next)
         setSession(next)
       } catch {
-        // Fall back to /me; if that fails, clear
+        // Fall back to /me; only clear on confirmed auth failure.
         try {
           const me = await participantGet<JoinResponse>('/participants/me')
           if (cancelled) return
           const next = sessionFromJoin(me)
           setParticipantSession(next)
           setSession(next)
-        } catch {
-          if (!cancelled) {
+        } catch (error) {
+          if (cancelled) return
+          if (
+            error instanceof ApiError &&
+            (error.status === 401 || error.status === 403 || error.status === 404)
+          ) {
             clearParticipantSession()
             setSession(null)
           }
+          // Keep stored session on transient errors so WS can still connect.
         }
       } finally {
         if (!cancelled) setIsLoading(false)
@@ -134,6 +143,15 @@ export function ParticipantSessionProvider({ children }: { children: ReactNode }
     return () => {
       cancelled = true
     }
+  }, [])
+
+  // Keep React session in sync when the axios interceptor clears storage (401).
+  useEffect(() => {
+    const onCleared = () => {
+      setSession(null)
+    }
+    window.addEventListener('qa:participant-session-cleared', onCleared)
+    return () => window.removeEventListener('qa:participant-session-cleared', onCleared)
   }, [])
 
   const value = useMemo<ParticipantSessionContextValue>(

@@ -8,7 +8,7 @@ type ParticipantLiveValue = ReturnType<typeof useParticipantWebSocket>
 const ParticipantLiveContext = createContext<ParticipantLiveValue | null>(null)
 
 export function ParticipantLiveProvider({ children }: { children: ReactNode }) {
-  const { hasSession, clearSession } = useParticipantSessionContext()
+  const { hasSession, session, clearSession } = useParticipantSessionContext()
   // Keep a stable callback identity so the WS hook never treats auth cleanup as a
   // reason to rebind its connection effect.
   const clearSessionRef = useRef(clearSession)
@@ -19,6 +19,7 @@ export function ParticipantLiveProvider({ children }: { children: ReactNode }) {
 
   const live = useParticipantWebSocket({
     enabled: hasSession,
+    sessionToken: session?.sessionToken ?? null,
     onAuthFailed,
   })
 

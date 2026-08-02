@@ -144,4 +144,7 @@ export function clearParticipantSession(): void {
   write(KEYS.email, null)
   write(KEYS.quizTitle, null)
   write(KEYS.participantId, null)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('qa:participant-session-cleared'))
+  }
 }

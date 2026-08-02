@@ -1,9 +1,12 @@
 """Settings validation for production and Neon URL normalization."""
 
+import os
+from unittest.mock import patch
+
 import pytest
 from pydantic import ValidationError
 
-from app.config import Settings
+from app.config import Settings, get_settings
 
 
 def test_normalizes_postgres_scheme_to_postgresql() -> None:
@@ -66,3 +69,34 @@ def test_production_requires_trusted_hosts() -> None:
             trusted_hosts=["*"],
             public_app_url="https://app.vercel.app",
         )
+
+
+def test_env_csv_cors_and_trusted_hosts_without_json() -> None:
+    """Render-style CSV env vars must not fail pydantic JSON decoding."""
+    get_settings.cache_clear()
+    env = {
+        "APP_ENV": "production",
+        "DEBUG": "false",
+        "JWT_SECRET_KEY": "a-strong-production-secret-key",
+        "DATABASE_URL": "postgresql://u:p@db.example/quizarena?sslmode=require",
+        "CORS_ORIGINS": "https://app.vercel.app,https://preview.vercel.app",
+        "TRUSTED_HOSTS": "api.example.onrender.com,localhost",
+        "PUBLIC_APP_URL": "https://app.vercel.app",
+    }
+    with patch.dict(os.environ, env, clear=False):
+        settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.cors_origins == [
+        "https://app.vercel.app",
+        "https://preview.vercel.app",
+    ]
+    assert settings.trusted_hosts == ["api.example.onrender.com", "localhost"]
+    get_settings.cache_clear()
+
+
+def test_env_json_array_cors_still_supported() -> None:
+    settings = Settings(
+        cors_origins='["https://a.example","https://b.example/"]',
+        trusted_hosts='["api.example"]',
+    )
+    assert settings.cors_origins == ["https://a.example", "https://b.example"]
+    assert settings.trusted_hosts == ["api.example"]

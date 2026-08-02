@@ -1,10 +1,47 @@
 """Application configuration loaded from environment variables."""
 
+from __future__ import annotations
+
+import json
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+def _parse_string_list(value: object) -> list[str]:
+    """Accept JSON arrays, CSV strings, or already-parsed lists (Render-friendly)."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        items = [str(item).strip() for item in value if str(item).strip()]
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        if stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                items = [str(item).strip() for item in parsed if str(item).strip()]
+            else:
+                items = [item.strip() for item in stripped.split(",") if item.strip()]
+        else:
+            items = [item.strip() for item in stripped.split(",") if item.strip()]
+    else:
+        items = [str(value).strip()] if str(value).strip() else []
+
+    normalized: list[str] = []
+    for item in items:
+        if item == "*":
+            normalized.append(item)
+        else:
+            # Origins are exact-match; strip trailing slashes to avoid silent CORS failures.
+            normalized.append(item.rstrip("/"))
+    return normalized
 
 
 class Settings(BaseSettings):
@@ -44,11 +81,11 @@ class Settings(BaseSettings):
     admin_password_hash: str = ""
     admin_password: str = ""
 
-    # CORS / hosts
-    cors_origins: list[str] = Field(
+    # CORS / hosts — NoDecode so Render CSV values are not JSON-parsed first.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
         default=["http://localhost:5173", "http://127.0.0.1:5173"],
     )
-    trusted_hosts: list[str] = Field(
+    trusted_hosts: Annotated[list[str], NoDecode] = Field(
         default=["*"],
         description="Comma-separated hosts for TrustedHostMiddleware (* disables check)",
     )
@@ -67,19 +104,8 @@ class Settings(BaseSettings):
 
     @field_validator("cors_origins", "trusted_hosts", mode="before")
     @classmethod
-    def parse_csv_list(cls, value: str | list[str]) -> list[str]:
-        if isinstance(value, str):
-            items = [item.strip() for item in value.split(",") if item.strip()]
-        else:
-            items = list(value)
-        # Origins are exact-match; strip trailing slashes to avoid silent CORS failures.
-        normalized: list[str] = []
-        for item in items:
-            if item == "*":
-                normalized.append(item)
-            else:
-                normalized.append(item.rstrip("/"))
-        return normalized
+    def parse_csv_list(cls, value: object) -> list[str]:
+        return _parse_string_list(value)
 
     @field_validator("public_app_url", mode="before")
     @classmethod
@@ -100,7 +126,7 @@ class Settings(BaseSettings):
         return url
 
     @model_validator(mode="after")
-    def validate_production_secrets(self) -> "Settings":
+    def validate_production_secrets(self) -> Settings:
         if self.app_env == "production":
             if self.jwt_secret_key in {"", "change-me-in-production", "changeme"}:
                 raise ValueError(

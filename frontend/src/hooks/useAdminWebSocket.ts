@@ -2,6 +2,12 @@ import { useCallback, useEffect, useReducer, useRef } from 'react'
 
 import { getToken } from '@/lib/auth-token'
 import { getWsBaseUrl } from '@/lib/env'
+import {
+  acquireWebSocket,
+  makeWsKey,
+  type WsConnectionHandle,
+} from '@/lib/ws-connection'
+import { wsDebug } from '@/lib/ws-debug'
 import type {
   LeaderboardEntry,
   LiveParticipant,
@@ -352,7 +358,7 @@ export interface UseAdminWebSocketOptions {
 
 export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketOptions) {
   const [state, dispatch] = useReducer(liveReducer, initialState)
-  const wsRef = useRef<WebSocket | null>(null)
+  const handleRef = useRef<WsConnectionHandle | null>(null)
   const reconnectAttempt = useRef(0)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const intentionalClose = useRef(false)
@@ -370,170 +376,145 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
     }
   }, [])
 
-  const detachSocket = useCallback((ws: WebSocket | null) => {
-    if (!ws) return
-    ws.onopen = null
-    ws.onmessage = null
-    ws.onerror = null
-    ws.onclose = null
+  const releaseHandle = useCallback((immediate: boolean) => {
+    const handle = handleRef.current
+    handleRef.current = null
+    handle?.release({ immediate })
   }, [])
 
-  const connect = useCallback(() => {
-    const currentRoomId = roomIdRef.current
-    const isEnabled = enabledRef.current
-    if (!isEnabled || !currentRoomId || intentionalClose.current) return
-
-    const token = getToken()
-    if (!token) {
-      dispatch({ type: 'ERROR', message: 'Missing auth token for WebSocket' })
-      return
-    }
-
-    // Replace any existing socket without letting its onclose schedule reconnect
-    // or clear the new wsRef (StrictMode / manual reconnect race).
-    const previous = wsRef.current
-    if (previous) {
-      detachSocket(previous)
-      try {
-        previous.close()
-      } catch {
-        // ignore
-      }
-      wsRef.current = null
-    }
-
-    const base = getWsBaseUrl()
-    const url = `${base}?role=admin&token=${encodeURIComponent(token)}&roomId=${encodeURIComponent(currentRoomId)}`
-
-    dispatch({ type: 'STATUS', status: 'connecting' })
-    const ws = new WebSocket(url)
-    wsRef.current = ws
-
-    ws.onopen = () => {
-      if (wsRef.current !== ws) return
-      reconnectAttempt.current = 0
-      dispatch({ type: 'STATUS', status: 'connected' })
-    }
-
-    ws.onmessage = (event) => {
-      if (wsRef.current !== ws) return
-      try {
-        const message = JSON.parse(String(event.data)) as WsMessage
-        if (message.type === 'ping') {
-          ws.send(
-            JSON.stringify({
-              type: 'pong',
-              payload: message.payload ?? {},
-              timestamp: new Date().toISOString(),
-            }),
-          )
-        }
-        if (message.type === 'error') {
-          const payload =
-            message.payload && typeof message.payload === 'object'
-              ? (message.payload as Record<string, unknown>)
-              : {}
-          const code = String(payload.code ?? '')
-          if (
-            code === 'AUTH_ERROR' ||
-            code === 'UNAUTHORIZED' ||
-            code === 'FORBIDDEN' ||
-            code === 'TOKEN_EXPIRED'
-          ) {
-            intentionalClose.current = true
-            clearReconnectTimer()
-          }
-        }
-        dispatch({ type: 'EVENT', message })
-      } catch {
-        dispatch({ type: 'ERROR', message: 'Failed to parse WebSocket message' })
-      }
-    }
-
-    ws.onerror = () => {
-      if (wsRef.current !== ws) return
-      dispatch({ type: 'STATUS', status: 'error' })
-    }
-
-    ws.onclose = () => {
-      // Ignore stale sockets replaced by a newer connection or cleanup.
-      if (wsRef.current !== ws) return
-      wsRef.current = null
-      if (intentionalClose.current) {
-        dispatch({ type: 'STATUS', status: 'disconnected' })
-        return
-      }
-      dispatch({ type: 'STATUS', status: 'disconnected' })
-      const attempt = reconnectAttempt.current
-      const delay = Math.min(30_000, 1000 * 2 ** attempt)
-      reconnectAttempt.current = attempt + 1
-      clearReconnectTimer()
-      reconnectTimer.current = setTimeout(() => {
-        connectRef.current?.()
-      }, delay)
-    }
-  }, [clearReconnectTimer, detachSocket])
-
-  connectRef.current = connect
-
   const send = useCallback((type: string, payload: Record<string, unknown> = {}) => {
-    const ws = wsRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      dispatch({ type: 'ERROR', message: 'WebSocket is not connected' })
-      return false
-    }
+    const handle = handleRef.current
     const message: WsMessage = {
       type,
       payload,
       timestamp: new Date().toISOString(),
     }
-    ws.send(JSON.stringify(message))
+    if (!handle?.send(JSON.stringify(message))) {
+      dispatch({ type: 'ERROR', message: 'WebSocket is not connected' })
+      return false
+    }
     return true
   }, [])
 
   const disconnect = useCallback(() => {
     intentionalClose.current = true
     clearReconnectTimer()
-    const ws = wsRef.current
-    if (ws) {
-      detachSocket(ws)
-      try {
-        ws.close()
-      } catch {
-        // ignore
-      }
-      wsRef.current = null
-    }
+    releaseHandle(true)
     dispatch({ type: 'STATUS', status: 'disconnected' })
-  }, [clearReconnectTimer, detachSocket])
+    wsDebug('admin', 'cleanup', { reason: 'disconnect()' })
+  }, [clearReconnectTimer, releaseHandle])
 
   const reconnect = useCallback(() => {
     intentionalClose.current = false
     reconnectAttempt.current = 0
     clearReconnectTimer()
+    releaseHandle(true)
     dispatch({ type: 'CLEAR_ERROR' })
-    connect()
-  }, [clearReconnectTimer, connect])
+    wsDebug('admin', 'reconnect', { reason: 'manual' })
+    connectRef.current?.()
+  }, [clearReconnectTimer, releaseHandle])
 
   useEffect(() => {
     if (!enabled || !roomId) {
       intentionalClose.current = true
       clearReconnectTimer()
-      const ws = wsRef.current
-      if (ws) {
-        detachSocket(ws)
-        try {
-          ws.close()
-        } catch {
-          // ignore
-        }
-        wsRef.current = null
-      }
+      releaseHandle(true)
       dispatch({ type: 'RESET' })
+      wsDebug('admin', 'skip', { reason: 'disabled', roomId })
       return
     }
 
     intentionalClose.current = false
+
+    const connect = () => {
+      const currentRoomId = roomIdRef.current
+      if (!enabledRef.current || !currentRoomId || intentionalClose.current) {
+        wsDebug('admin', 'skip', { reason: 'guard' })
+        return
+      }
+
+      const token = getToken()
+      if (!token) {
+        dispatch({ type: 'ERROR', message: 'Missing auth token for WebSocket' })
+        return
+      }
+
+      releaseHandle(false)
+
+      const base = getWsBaseUrl()
+      const url = `${base}?role=admin&token=${encodeURIComponent(token)}&roomId=${encodeURIComponent(currentRoomId)}`
+      const key = makeWsKey('admin', { token, roomId: currentRoomId })
+
+      dispatch({ type: 'STATUS', status: 'connecting' })
+
+      const handle = acquireWebSocket('admin', key, url, {
+        onOpen: () => {
+          if (handleRef.current !== handle) return
+          reconnectAttempt.current = 0
+          dispatch({ type: 'STATUS', status: 'connected' })
+        },
+        onMessage: (event, ws) => {
+          if (handleRef.current !== handle) return
+          try {
+            const message = JSON.parse(String(event.data)) as WsMessage
+            if (message.type === 'ping') {
+              ws.send(
+                JSON.stringify({
+                  type: 'pong',
+                  payload: message.payload ?? {},
+                  timestamp: new Date().toISOString(),
+                }),
+              )
+            }
+            if (message.type === 'error') {
+              const payload =
+                message.payload && typeof message.payload === 'object'
+                  ? (message.payload as Record<string, unknown>)
+                  : {}
+              const code = String(payload.code ?? '')
+              if (
+                code === 'AUTH_ERROR' ||
+                code === 'UNAUTHORIZED' ||
+                code === 'FORBIDDEN' ||
+                code === 'TOKEN_EXPIRED'
+              ) {
+                intentionalClose.current = true
+                clearReconnectTimer()
+                wsDebug('admin', 'auth', { code })
+              }
+            }
+            dispatch({ type: 'EVENT', message })
+          } catch {
+            dispatch({ type: 'ERROR', message: 'Failed to parse WebSocket message' })
+          }
+        },
+        onError: () => {
+          if (handleRef.current !== handle) return
+          dispatch({ type: 'STATUS', status: 'error' })
+        },
+        onClose: () => {
+          if (handleRef.current !== handle) return
+          handleRef.current = null
+          if (intentionalClose.current) {
+            dispatch({ type: 'STATUS', status: 'disconnected' })
+            return
+          }
+          dispatch({ type: 'STATUS', status: 'disconnected' })
+          const attempt = reconnectAttempt.current
+          const delay = Math.min(30_000, 1000 * 2 ** attempt)
+          reconnectAttempt.current = attempt + 1
+          clearReconnectTimer()
+          wsDebug('admin', 'reconnect', { attempt, delay })
+          reconnectTimer.current = setTimeout(() => {
+            connectRef.current?.()
+          }, delay)
+        },
+      })
+
+      handleRef.current = handle
+    }
+
+    connectRef.current = connect
     connect()
 
     const onOnline = () => {
@@ -541,6 +522,7 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
       intentionalClose.current = false
       reconnectAttempt.current = 0
       clearReconnectTimer()
+      wsDebug('admin', 'reconnect', { reason: 'online' })
       connectRef.current?.()
     }
     window.addEventListener('online', onOnline)
@@ -548,21 +530,19 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
     return () => {
       window.removeEventListener('online', onOnline)
       intentionalClose.current = true
+      connectRef.current = null
       clearReconnectTimer()
-      const socket = wsRef.current
-      if (socket) {
-        detachSocket(socket)
-        try {
-          socket.close()
-        } catch {
-          // ignore
-        }
-        wsRef.current = null
-      }
+      releaseHandle(false)
+      wsDebug('admin', 'cleanup', { reason: 'effect-cleanup' })
     }
-    // Only re-bind when room/enabled identity changes — not when connect() identity churns.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- connect/detach are stable via refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bind on room/enabled only
   }, [roomId, enabled])
+
+  useEffect(() => {
+    if (enabled && roomId) return
+    const timer = window.setTimeout(() => releaseHandle(true), 200)
+    return () => window.clearTimeout(timer)
+  }, [enabled, roomId, releaseHandle])
 
   return {
     ...state,

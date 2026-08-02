@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 
 import { JoinForm } from '@/components/participant/JoinForm'
@@ -6,12 +6,17 @@ import { ParticipantShell } from '@/components/participant/ParticipantShell'
 import { LoadingState } from '@/components/shared/LoadingState'
 import { getParticipantRouteForRoomState } from '@/hooks/participantLiveReducer'
 import { useParticipantSession } from '@/hooks/queries/useParticipantSession'
+import { getParticipantSession } from '@/lib/participant-session'
 
 export function JoinPage() {
   const { hasSession, isLoading, refreshSession } = useParticipantSession()
   const [redirectTo, setRedirectTo] = useState<string | null>(null)
+  // Distinguish cold restore from a fresh join so we don't unmount JoinForm
+  // (and race navigate) when persistJoin flips hasSession mid-submit.
+  const hadSessionOnMount = useRef(Boolean(getParticipantSession()))
 
   useEffect(() => {
+    if (!hadSessionOnMount.current) return
     if (!hasSession || isLoading) return
 
     let cancelled = false
@@ -19,7 +24,11 @@ export function JoinPage() {
     void (async () => {
       const me = await refreshSession()
       if (cancelled) return
-      const route = getParticipantRouteForRoomState(me?.room.state) ?? '/lobby'
+      if (!me) {
+        // refreshSession already cleared invalid sessions; stay on join form.
+        return
+      }
+      const route = getParticipantRouteForRoomState(me.room.state) ?? '/lobby'
       setRedirectTo(route)
     })()
 
@@ -28,7 +37,17 @@ export function JoinPage() {
     }
   }, [hasSession, isLoading, refreshSession])
 
-  if (isLoading || (hasSession && !redirectTo)) {
+  if (isLoading) {
+    return (
+      <ParticipantShell subtitle="Join a live quiz">
+        <div className="flex flex-1 items-center justify-center">
+          <LoadingState label="Restoring session…" />
+        </div>
+      </ParticipantShell>
+    )
+  }
+
+  if (hadSessionOnMount.current && hasSession && !redirectTo) {
     return (
       <ParticipantShell subtitle="Join a live quiz">
         <div className="flex flex-1 items-center justify-center">

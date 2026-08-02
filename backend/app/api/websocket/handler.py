@@ -261,17 +261,13 @@ async def _cleanup_connection(session: Session, connection: WSConnection) -> Non
         logger.exception("Failed to persist participant disconnect")
         return
 
+    # Presence: socket drop is a disconnect, not an explicit leave.
+    # Emitting participant:left here made hosts treat brief StrictMode /
+    # reconnect blips as permanent departures and confused lobby counts.
     await notify_participant_presence(
         connection_manager,
         room_id=connection.room_id,
         event_type=ServerEventType.PARTICIPANT_DISCONNECTED,
-        participant=participant,
-        session=session,
-    )
-    await notify_participant_presence(
-        connection_manager,
-        room_id=connection.room_id,
-        event_type=ServerEventType.PARTICIPANT_LEFT,
         participant=participant,
         session=session,
     )
