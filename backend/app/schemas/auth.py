@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Self
 from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -56,7 +57,7 @@ class RegisterRequest(BaseModel):
         return cleaned
 
     @model_validator(mode="after")
-    def passwords_match(self) -> RegisterRequest:
+    def passwords_match(self) -> Self:
         if self.confirm_password is not None and self.confirm_password != self.password:
             raise ValueError("Passwords do not match")
         return self
