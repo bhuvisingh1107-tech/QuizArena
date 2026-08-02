@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown hooks."""
+    from app.api.deps import get_session_factory
+    from app.services.auth_service import AuthService
     from app.services.timer_service import auto_progression
 
     settings = get_settings()
@@ -25,6 +27,14 @@ async def lifespan(app: FastAPI):
         "Starting QuizArena API",
         extra={"app_env": settings.app_env, "debug": settings.debug},
     )
+
+    # Production-safe admin bootstrap: create only when the table is empty.
+    session = get_session_factory(settings)()
+    try:
+        AuthService(session, settings).ensure_bootstrap_admin()
+    finally:
+        session.close()
+
     await auto_progression.start()
     if settings.app_env != "test":
         await heartbeat_monitor.start()

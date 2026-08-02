@@ -1,5 +1,7 @@
 """Administrator authentication routes (API_SPEC.md §7)."""
 
+import logging
+
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
 
@@ -20,6 +22,8 @@ from app.schemas.auth import (
     RegisterRequest,
 )
 from app.schemas.common import DataResponse, Meta
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -47,8 +51,11 @@ def login(
     context: RequestContextDep,
 ) -> JSONResponse:
     """Issue host JWT; log security event (API_SPEC.md §3.1 / §7)."""
+    logger.info("login: enter request_id=%s", request_id)
     login_rate_limiter.check(_client_key(request))
+    logger.info("login: rate_limit ok request_id=%s", request_id)
     result = auth_service.login(body.username, body.password, context=context)
+    logger.info("login: auth_service.login returned request_id=%s", request_id)
     payload = DataResponse[LoginResponseData](
         data=LoginResponseData(
             access_token=result.access_token,
@@ -56,10 +63,12 @@ def login(
         ),
         meta=Meta(request_id=request_id),
     )
-    return JSONResponse(
+    response = JSONResponse(
         status_code=status.HTTP_200_OK,
         content=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
     )
+    logger.info("login: exit 200 request_id=%s", request_id)
+    return response
 
 
 @router.post(
