@@ -126,6 +126,7 @@ export function useDisplayWebSocket({
       const base = getWsBaseUrl()
       const url = `${base}?role=display&token=${encodeURIComponent(token)}`
       const key = makeWsKey('display', { token })
+      wsDebug('display', 'connect', { tokenLength: token.length })
 
       dispatch({ type: 'STATUS', status: 'connecting' })
 

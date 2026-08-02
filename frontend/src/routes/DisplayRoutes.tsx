@@ -4,8 +4,11 @@ import { DisplayShell } from '@/components/display/DisplayShell'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { DisplayPage } from '@/pages/display/DisplayPage'
 
-function DisplayPageRoute() {
-  const { secretToken } = useParams<{ secretToken: string }>()
+export function DisplayPageRoute() {
+  const params = useParams<{ secretToken?: string; '*': string }>()
+  // Prefer :secretToken; fall back to splat when mounted under /display/*.
+  const fromSplat = params['*']?.split('/').filter(Boolean)[0]
+  const secretToken = params.secretToken ?? fromSplat
   return <DisplayPage secretToken={secretToken} />
 }
 

@@ -50,7 +50,11 @@ class LiveRoomService:
         return f"{self._app_url.rstrip('/')}/join/{room_code}"
 
     def display_url(self, secret_token: str) -> str:
-        return f"{self._app_url.rstrip('/')}/display/{secret_token}"
+        from urllib.parse import quote
+
+        # Encode path segment so tokens remain intact in copied links.
+        safe = quote(secret_token.strip(), safe="")
+        return f"{self._app_url.rstrip('/')}/display/{safe}"
 
     def qr_target(self, room_code: str) -> str:
         return self.join_url(room_code)
@@ -409,8 +413,12 @@ class LiveRoomService:
         )
 
     def _generate_unique_secret_token(self) -> str:
+        """Generate a path-safe presentation token (hex, 64 chars).
+
+        Hex avoids URL-encoding edge cases in ``/display/{token}`` and query strings.
+        """
         for _ in range(_MAX_CODE_ATTEMPTS):
-            token = secrets.token_urlsafe(32)[:64]
+            token = secrets.token_hex(32)
             if not self._rooms.secret_token_exists(token):
                 return token
         raise ConflictError(

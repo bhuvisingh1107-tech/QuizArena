@@ -173,7 +173,11 @@ def serve_media(
     if not allowed:
         from app.models.live_room import LiveRoom
 
-        room = db.query(LiveRoom).filter(LiveRoom.secret_token == raw_token).first()
+        room = db.query(LiveRoom).filter(LiveRoom.secret_token == raw_token.strip()).first()
+        if room is None:
+            from urllib.parse import unquote
+
+            room = db.query(LiveRoom).filter(LiveRoom.secret_token == unquote(raw_token).strip()).first()
         if room is not None:
             in_room = (
                 db.query(SessionQuestion)

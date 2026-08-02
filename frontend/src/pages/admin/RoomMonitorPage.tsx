@@ -36,6 +36,7 @@ import { useRoomParticipants } from '@/hooks/queries/useRoomParticipants'
 import { useRoomResults } from '@/hooks/queries/useRoomResults'
 import { useAdminWebSocket } from '@/hooks/useAdminWebSocket'
 import { canRest, preferFreshestRoom } from '@/lib/room-lifecycle'
+import { getDisplayPageUrl } from '@/lib/display-url'
 import { cn } from '@/lib/utils'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
 import type { LiveParticipant, LiveRoom } from '@/types/api'
@@ -160,6 +161,15 @@ export function RoomMonitorPage() {
   const sectionLabel =
     (live.currentQuestion as { sectionName?: string } | null)?.sectionName ??
     null
+
+  const displayPageUrl = useMemo(() => {
+    if (!room?.secretToken?.trim()) return room?.displayUrl ?? ''
+    try {
+      return getDisplayPageUrl(room.secretToken)
+    } catch {
+      return room.displayUrl
+    }
+  }, [room?.secretToken, room?.displayUrl])
 
   const copy = async (label: string, value: string) => {
     try {
@@ -328,13 +338,13 @@ export function RoomMonitorPage() {
             <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm">
               <div className="min-w-0">
                 <p className="text-xs text-[var(--muted-foreground)]">Display</p>
-                <p className="truncate">{room.displayUrl}</p>
+                <p className="truncate">{displayPageUrl}</p>
               </div>
               <Button
                 size="icon"
                 variant="ghost"
                 aria-label="Copy display link"
-                onClick={() => void copy('Display URL', room.displayUrl)}
+                onClick={() => void copy('Display URL', displayPageUrl)}
               >
                 <Copy className="h-4 w-4" />
               </Button>

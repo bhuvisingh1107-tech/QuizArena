@@ -15,6 +15,9 @@ const AdminRoutes = lazy(() =>
 const DisplayRoutes = lazy(() =>
   import('@/routes/DisplayRoutes').then((module) => ({ default: module.DisplayRoutes })),
 )
+const DisplayPageRoute = lazy(() =>
+  import('@/routes/DisplayRoutes').then((module) => ({ default: module.DisplayPageRoute })),
+)
 const ParticipantRoutes = lazy(() =>
   import('@/routes/ParticipantRoutes').then((module) => ({ default: module.ParticipantRoutes })),
 )
@@ -46,6 +49,7 @@ export function App() {
               <Route path="/admin/login" element={<Navigate to="/host/login" replace />} />
               <Route path="/dashboard" element={<Navigate to="/admin/dashboard" replace />} />
               <Route path="/admin/*" element={<AdminRoutes />} />
+              <Route path="/display/:secretToken" element={<DisplayPageRoute />} />
               <Route path="/display/*" element={<DisplayRoutes />} />
               <Route path="/*" element={<ParticipantRoutes />} />
             </Routes>

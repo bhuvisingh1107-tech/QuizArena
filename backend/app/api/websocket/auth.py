@@ -122,11 +122,25 @@ def _auth_participant(session: Session, *, token: str) -> AuthenticatedSocket:
 
 
 def _auth_display(session: Session, *, token: str) -> AuthenticatedSocket:
-    room = session.scalar(
-        select(LiveRoom)
-        .options(selectinload(LiveRoom.config))
-        .where(LiveRoom.secret_token == token),
-    )
+    from urllib.parse import unquote
+
+    # Path/query clients may send encoded or padded values; normalize before lookup.
+    candidates: list[str] = []
+    for raw in (token, unquote(token)):
+        normalized = raw.strip()
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+
+    room: LiveRoom | None = None
+    for candidate in candidates:
+        room = session.scalar(
+            select(LiveRoom)
+            .options(selectinload(LiveRoom.config))
+            .where(LiveRoom.secret_token == candidate),
+        )
+        if room is not None:
+            break
+
     if room is None:
         raise AuthenticationError("AUTH_ERROR", "Invalid presentation secret token")
     _ensure_room_connectable(room)

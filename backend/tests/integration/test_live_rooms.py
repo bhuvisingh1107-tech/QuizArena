@@ -84,6 +84,9 @@ def test_create_room(
     assert data["questionCount"] == 1
     assert data["config"] is not None
     assert data["joinUrl"].endswith(f"/join/{data['roomCode']}")
+    assert data["secretToken"]
+    assert len(data["secretToken"]) == 64
+    assert data["displayUrl"].rstrip("/").endswith(f"/display/{data['secretToken']}")
     assert data["codesExpired"] is False
 
     quiz = client.get(f"/api/v1/quizzes/{quiz_id}", headers=_auth(admin_token))
