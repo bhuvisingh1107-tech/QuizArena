@@ -103,6 +103,7 @@ function mergeRoom(existing: LiveRoom | null, patch: Record<string, unknown>): L
 function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState {
   switch (action.type) {
     case 'STATUS':
+      if (state.connectionStatus === action.status) return state
       return { ...state, connectionStatus: action.status }
     case 'ERROR':
       return { ...state, lastError: action.message, connectionStatus: 'error' }
@@ -455,6 +456,10 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
         },
         onMessage: (event, ws) => {
           if (handleRef.current !== handle) return
+          // Heal stale disconnected banners without re-rendering on every frame.
+          if (handle.readyState() === WebSocket.OPEN) {
+            dispatch({ type: 'STATUS', status: 'connected' })
+          }
           try {
             const message = JSON.parse(String(event.data)) as WsMessage
             if (message.type === 'ping') {
@@ -512,10 +517,24 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
       })
 
       handleRef.current = handle
+      if (handle.readyState() === WebSocket.OPEN) {
+        reconnectAttempt.current = 0
+        dispatch({ type: 'STATUS', status: 'connected' })
+      } else if (handle.readyState() === WebSocket.CONNECTING) {
+        dispatch({ type: 'STATUS', status: 'connecting' })
+      }
     }
 
     connectRef.current = connect
     connect()
+
+    const syncTimer = window.setInterval(() => {
+      const handle = handleRef.current
+      if (!handle || !enabledRef.current || intentionalClose.current) return
+      if (handle.readyState() === WebSocket.OPEN) {
+        dispatch({ type: 'STATUS', status: 'connected' })
+      }
+    }, 1000)
 
     const onOnline = () => {
       if (!enabledRef.current || !roomIdRef.current) return
@@ -529,7 +548,8 @@ export function useAdminWebSocket({ roomId, enabled = true }: UseAdminWebSocketO
 
     return () => {
       window.removeEventListener('online', onOnline)
-      intentionalClose.current = true
+      window.clearInterval(syncTimer)
+      // Soft StrictMode cleanup — keep intentionalClose false so remount can report connected.
       connectRef.current = null
       clearReconnectTimer()
       releaseHandle(false)

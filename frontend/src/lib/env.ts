@@ -18,18 +18,19 @@ export function getApiBaseUrl(): string {
 }
 
 /**
- * WebSocket endpoint. Defaults to same-origin `/ws` when unset.
- * Local direct: `VITE_WS_BASE_URL=ws://localhost:8000/ws`
- * Vercel → Render: `VITE_WS_BASE_URL=wss://<render-host>/ws` (build-time, must be wss)
+ * WebSocket endpoint.
+ *
+ * Always prefer `VITE_WS_BASE_URL`. Never fall back to `window.location.host` —
+ * that produces `ws://localhost:5173/ws` under Vite and is not the API.
+ *
+ * Local: `VITE_WS_BASE_URL=ws://localhost:8000/ws`
+ * Production: `VITE_WS_BASE_URL=wss://<render-host>/ws`
  */
 export function getWsBaseUrl(): string {
   const env = import.meta.env.VITE_WS_BASE_URL
   if (env && env.trim() !== '') {
     return trimTrailingSlash(env)
   }
-  if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    return `${protocol}://${window.location.host}/ws`
-  }
+  // Dev default when env is unset: backend port, never the Vite origin.
   return 'ws://localhost:8000/ws'
 }

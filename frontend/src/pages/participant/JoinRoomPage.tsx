@@ -7,7 +7,10 @@ export function JoinRoomPage() {
   const { roomCode: roomCodeParam = '' } = useParams()
 
   return (
-    <ParticipantShell subtitle={`Room ${roomCodeParam.toUpperCase() || '—'}`}>
+    <ParticipantShell
+      subtitle={`Room ${roomCodeParam.toUpperCase() || '—'}`}
+      showConnectionBanner={false}
+    >
       <div className="flex flex-1 flex-col justify-center">
         <div className="mb-8 text-center">
           <h1 className="font-display text-3xl font-bold text-[#f0f4fa]">Join the lobby</h1>

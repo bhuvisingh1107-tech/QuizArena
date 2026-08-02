@@ -7,6 +7,8 @@ import type { WsConnectionStatus } from '@/hooks/participantLiveReducer'
 interface ParticipantShellProps {
   children: ReactNode
   connectionStatus?: WsConnectionStatus
+  /** When false, hide the connection banner (join / pre-session screens). */
+  showConnectionBanner?: boolean
   isOffline?: boolean
   lastError?: string | null
   onRetryConnection?: () => void
@@ -18,6 +20,7 @@ interface ParticipantShellProps {
 export function ParticipantShell({
   children,
   connectionStatus = 'disconnected',
+  showConnectionBanner = true,
   isOffline = false,
   lastError = null,
   onRetryConnection,
@@ -45,12 +48,14 @@ export function ParticipantShell({
         </div>
       </header>
 
-      <ConnectionBanner
-        connectionStatus={connectionStatus}
-        isOffline={isOffline}
-        errorMessage={lastError}
-        onRetry={onRetryConnection}
-      />
+      {showConnectionBanner ? (
+        <ConnectionBanner
+          connectionStatus={connectionStatus}
+          isOffline={isOffline}
+          errorMessage={lastError}
+          onRetry={onRetryConnection}
+        />
+      ) : null}
 
       <main
         className={cn(

@@ -39,7 +39,7 @@ export function JoinPage() {
 
   if (isLoading) {
     return (
-      <ParticipantShell subtitle="Join a live quiz">
+      <ParticipantShell subtitle="Join a live quiz" showConnectionBanner={false}>
         <div className="flex flex-1 items-center justify-center">
           <LoadingState label="Restoring session…" />
         </div>
@@ -49,7 +49,7 @@ export function JoinPage() {
 
   if (hadSessionOnMount.current && hasSession && !redirectTo) {
     return (
-      <ParticipantShell subtitle="Join a live quiz">
+      <ParticipantShell subtitle="Join a live quiz" showConnectionBanner={false}>
         <div className="flex flex-1 items-center justify-center">
           <LoadingState label="Restoring session…" />
         </div>
@@ -62,7 +62,7 @@ export function JoinPage() {
   }
 
   return (
-    <ParticipantShell subtitle="Join a live quiz">
+    <ParticipantShell subtitle="Join a live quiz" showConnectionBanner={false}>
       <div className="flex flex-1 flex-col justify-center">
         <div className="mb-8 text-center">
           <h1 className="font-display text-3xl font-bold text-[#f0f4fa]">Join a quiz</h1>

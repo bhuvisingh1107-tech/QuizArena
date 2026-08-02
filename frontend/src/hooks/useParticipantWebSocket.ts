@@ -32,6 +32,15 @@ export interface UseParticipantWebSocketOptions {
   onAuthFailed?: () => void
 }
 
+function statusFromReadyState(readyState: number): WsConnectionStatus | null {
+  if (readyState === WebSocket.OPEN) return 'connected'
+  if (readyState === WebSocket.CONNECTING) return 'connecting'
+  if (readyState === WebSocket.CLOSING || readyState === WebSocket.CLOSED) {
+    return 'disconnected'
+  }
+  return null
+}
+
 export function useParticipantWebSocket({
   enabled = true,
   sessionToken = null,
@@ -49,10 +58,12 @@ export function useParticipantWebSocket({
   const authFailedHandledRef = useRef(false)
   const enabledRef = useRef(enabled)
   const tokenRef = useRef(sessionToken)
+  const statusRef = useRef<WsConnectionStatus>(state.connectionStatus)
 
   enabledRef.current = enabled
   tokenRef.current = sessionToken
   onAuthFailedRef.current = onAuthFailed
+  statusRef.current = state.connectionStatus
 
   useEffect(() => {
     submittingRef.current =
@@ -87,6 +98,26 @@ export function useParticipantWebSocket({
     handle?.release({ immediate })
   }, [])
 
+  const setStatus = useCallback((status: WsConnectionStatus) => {
+    if (statusRef.current === status) return
+    statusRef.current = status
+    dispatch({ type: 'STATUS', status })
+  }, [])
+
+  /** Prefer the live socket readyState over stale reducer status. */
+  const syncStatusFromSocket = useCallback(
+    (handle: WsConnectionHandle | null = handleRef.current) => {
+      if (!handle || authFailedRef.current) return
+      const next = statusFromReadyState(handle.readyState())
+      if (!next) return
+      if (next === 'connected') {
+        reconnectAttempt.current = 0
+      }
+      setStatus(next)
+    },
+    [setStatus],
+  )
+
   const handleAuthFailure = useCallback(
     (message?: string) => {
       if (authFailedRef.current) return
@@ -110,11 +141,12 @@ export function useParticipantWebSocket({
       timestamp: new Date().toISOString(),
     }
     if (!handle?.send(JSON.stringify(message))) {
+      syncStatusFromSocket(handle)
       dispatch({ type: 'ERROR', message: 'WebSocket is not connected' })
       return false
     }
     return true
-  }, [])
+  }, [syncStatusFromSocket])
 
   const sendAnswer = useCallback(
     (optionIds: string[]) => {
@@ -153,9 +185,9 @@ export function useParticipantWebSocket({
     intentionalClose.current = true
     clearReconnectTimer()
     releaseHandle(true)
-    dispatch({ type: 'STATUS', status: 'disconnected' satisfies WsConnectionStatus })
+    setStatus('disconnected')
     wsDebug('participant', 'cleanup', { reason: 'disconnect()' })
-  }, [clearReconnectTimer, releaseHandle])
+  }, [clearReconnectTimer, releaseHandle, setStatus])
 
   const reconnect = useCallback(() => {
     if (!enabledRef.current || authFailedRef.current) return
@@ -224,23 +256,33 @@ export function useParticipantWebSocket({
         return
       }
 
-      // Drop prior retainer without grace so we don't keep two retainers on one key.
       releaseHandle(false)
 
       const base = getWsBaseUrl()
+      if (base.includes(':5173')) {
+        // eslint-disable-next-line no-console -- misconfiguration guard
+        console.error(
+          '[ws:participant] Refusing Vite-origin WebSocket URL. Set VITE_WS_BASE_URL to the API host.',
+          base,
+        )
+      }
       const url = `${base}?role=participant&token=${encodeURIComponent(token)}`
       const key = makeWsKey('participant', { token })
 
-      dispatch({ type: 'STATUS', status: 'connecting' })
+      setStatus('connecting')
 
       const handle = acquireWebSocket('participant', key, url, {
         onOpen: () => {
           if (handleRef.current !== handle) return
           reconnectAttempt.current = 0
-          dispatch({ type: 'STATUS', status: 'connected' })
+          setStatus('connected')
         },
         onMessage: (event, ws) => {
           if (handleRef.current !== handle) return
+          // Messages prove the socket is live — heal stale "Disconnected" banners.
+          if (statusRef.current !== 'connected') {
+            setStatus('connected')
+          }
           try {
             const message = JSON.parse(String(event.data)) as WsMessage
             if (message.type === 'ping') {
@@ -272,18 +314,23 @@ export function useParticipantWebSocket({
         },
         onError: () => {
           if (handleRef.current !== handle) return
-          dispatch({ type: 'STATUS', status: 'error' })
+          // onerror often precedes onclose; reflect readyState instead of forcing error
+          // while CONNECTING/OPEN still briefly races.
+          syncStatusFromSocket(handle)
+          if (handle.readyState() !== WebSocket.OPEN) {
+            setStatus('error')
+          }
         },
         onClose: () => {
           if (handleRef.current !== handle) return
           handleRef.current = null
           if (intentionalClose.current || authFailedRef.current) {
             if (!authFailedRef.current) {
-              dispatch({ type: 'STATUS', status: 'disconnected' })
+              setStatus('disconnected')
             }
             return
           }
-          dispatch({ type: 'STATUS', status: 'disconnected' })
+          setStatus('disconnected')
           const attempt = reconnectAttempt.current
           const delay = computeReconnectDelay(attempt)
           reconnectAttempt.current = attempt + 1
@@ -296,24 +343,32 @@ export function useParticipantWebSocket({
       })
 
       handleRef.current = handle
+      // Immediately mirror the real socket — fixes StrictMode reuse where onopen
+      // already fired before this retainer subscribed.
+      syncStatusFromSocket(handle)
     }
 
     connectRef.current = connect
     connect()
 
+    // Keep React status aligned with readyState (heals missed onopen races).
+    const syncTimer = window.setInterval(() => {
+      if (!enabledRef.current || authFailedRef.current || intentionalClose.current) return
+      syncStatusFromSocket()
+    }, 1000)
+
     return () => {
-      // Soft release — StrictMode remount re-acquires within grace window.
-      intentionalClose.current = true
+      // Soft release for StrictMode — do NOT flip intentionalClose or the remount
+      // will treat a still-open pooled socket as an intentional disconnect.
       connectRef.current = null
       clearReconnectTimer()
+      window.clearInterval(syncTimer)
       releaseHandle(false)
       wsDebug('participant', 'cleanup', { reason: 'effect-cleanup' })
     }
-    // Token identity is part of the connection key; rebind when it changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers via refs
   }, [enabled, resolvedToken])
 
-  // Leaving the room / disabling must hard-close after the soft cleanup above settles.
   useEffect(() => {
     if (enabled && resolvedToken) return
     const timer = window.setTimeout(() => {

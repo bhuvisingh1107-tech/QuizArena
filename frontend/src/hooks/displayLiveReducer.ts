@@ -564,6 +564,7 @@ export function displayLiveReducer(
 ): DisplayLiveState {
   switch (action.type) {
     case 'STATUS':
+      if (state.connectionStatus === action.status) return state
       return { ...state, connectionStatus: action.status }
     case 'ERROR':
       return {

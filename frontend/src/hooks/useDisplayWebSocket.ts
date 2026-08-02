@@ -137,6 +137,9 @@ export function useDisplayWebSocket({
         },
         onMessage: (event, ws) => {
           if (handleRef.current !== handle) return
+          if (handle.readyState() === WebSocket.OPEN) {
+            dispatch({ type: 'STATUS', status: 'connected' })
+          }
           try {
             const message = JSON.parse(String(event.data)) as WsMessage
             if (message.type === 'ping') {
@@ -199,15 +202,31 @@ export function useDisplayWebSocket({
       })
 
       handleRef.current = handle
+      if (handle.readyState() === WebSocket.OPEN) {
+        reconnectAttempt.current = 0
+        dispatch({ type: 'STATUS', status: 'connected' })
+      } else if (handle.readyState() === WebSocket.CONNECTING) {
+        dispatch({ type: 'STATUS', status: 'connecting' })
+      }
     }
 
     connectRef.current = connect
     connect()
 
+    const syncTimer = window.setInterval(() => {
+      const handle = handleRef.current
+      if (!handle || !enabledRef.current || intentionalClose.current || authFailedRef.current) {
+        return
+      }
+      if (handle.readyState() === WebSocket.OPEN) {
+        dispatch({ type: 'STATUS', status: 'connected' })
+      }
+    }, 1000)
+
     return () => {
-      intentionalClose.current = true
       connectRef.current = null
       clearReconnectTimer()
+      window.clearInterval(syncTimer)
       releaseHandle(false)
       wsDebug('display', 'cleanup', { reason: 'effect-cleanup' })
     }

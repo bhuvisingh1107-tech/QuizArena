@@ -436,6 +436,7 @@ export function participantLiveReducer(
 ): ParticipantLiveState {
   switch (action.type) {
     case 'STATUS':
+      if (state.connectionStatus === action.status) return state
       return { ...state, connectionStatus: action.status }
     case 'ERROR':
       return { ...state, lastError: action.message, connectionStatus: 'error' }

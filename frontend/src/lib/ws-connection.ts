@@ -171,6 +171,12 @@ export function acquireWebSocket(
       retainers: entry.retainers,
       readyState: entry.ws.readyState,
     })
+    // eslint-disable-next-line no-console -- required connection diagnostics
+    console.info(
+      `[ws:${role}] reusing`,
+      entry.url.replace(/token=[^&]+/i, 'token=***'),
+      `readyState=${entry.ws.readyState}`,
+    )
     // Late subscriber: if already open, notify immediately.
     if (entry.ws.readyState === WebSocket.OPEN) {
       queueMicrotask(() => {
@@ -184,7 +190,12 @@ export function acquireWebSocket(
       // Stale / wrong URL — dispose without notifying old handlers as unexpected.
       closeEntry(entry, 'replace')
     }
-    wsDebug(role, 'create', { key, url: url.replace(/token=[^&]+/i, 'token=***') })
+    const redacted = url.replace(/token=[^&]+/i, 'token=***')
+    wsDebug(role, 'create', { key, url: redacted })
+    // Always log the exact dial URL (token redacted) so misconfigured
+    // VITE_WS_BASE_URL / Vite-origin fallbacks are obvious in the console.
+    // eslint-disable-next-line no-console -- required connection diagnostics
+    console.info(`[ws:${role}] connecting`, redacted)
     const ws = new WebSocket(url)
     entry = {
       key,
