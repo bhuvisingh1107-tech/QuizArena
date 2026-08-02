@@ -104,6 +104,7 @@ class LiveRoomRepository:
     def get_by_id(self, room_id: UUID, *, owner_id: UUID | None = None) -> LiveRoom | None:
         stmt = (
             select(LiveRoom)
+            .execution_options(populate_existing=True)
             .options(
                 selectinload(LiveRoom.config),
                 selectinload(LiveRoom.session_sections),

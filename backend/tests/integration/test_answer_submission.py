@@ -526,3 +526,61 @@ def test_persistence_fields(
     db_session.expire_all()
     room_row = QuizExecutionService(db_session).get_execution_state(UUID(room["id"])).room
     assert room_row.state == RoomState.ACTIVE
+
+
+def test_submit_after_start_quiz_while_participant_already_connected(
+    client: TestClient,
+    admin_token: str,
+    db_session: Session,
+) -> None:
+    """Regression: participant WS must not keep stale Lobby after host Start Quiz.
+
+    Connect while room is Lobby, then host opens the quiz. Question 1 and submit
+    must use the same committed Active state.
+    """
+    quiz_id = _ready_quiz(client, admin_token, db_session, "Stale Lobby Submit")
+    room = client.post(
+        "/api/v1/live-rooms",
+        headers=_auth(admin_token),
+        json={"quizId": quiz_id},
+    ).json()["data"]
+    client.post(f"/api/v1/live-rooms/{room['id']}/open-lobby", headers=_auth(admin_token))
+    joined = _join(client, room["roomCode"], "Casey", "casey@example.com")
+
+    with client.websocket_connect(
+        f"/ws?role=participant&token={joined['sessionToken']}",
+    ) as pws:
+        _recv_until(pws, ServerEventType.CONNECTION_ACK)
+        resync = _recv_until(pws, ServerEventType.RESYNC)
+        assert resync["payload"]["room"]["state"] == "Lobby"
+
+        started = client.post(
+            f"/api/v1/live-rooms/{room['id']}/start",
+            headers=_auth(admin_token),
+        )
+        assert started.status_code == 200, started.text
+        assert started.json()["data"]["state"] == "Active"
+
+        question_event = _recv_until(pws, ServerEventType.QUESTION_STARTED)
+        question = question_event["payload"]["question"]
+        assert question["state"] == "Open"
+        option_ids = [o["id"] for o in question["options"]]
+        assert option_ids
+
+        pws.send_json(
+            {"type": "answer:submit", "payload": {"optionIds": [option_ids[0]]}},
+        )
+        accepted = _recv_until(pws, ServerEventType.ANSWER_ACCEPTED)
+        assert accepted["payload"]["status"] == "submitted"
+
+    db_session.expire_all()
+    room_row = QuizExecutionService(db_session).get_execution_state(UUID(room["id"])).room
+    assert room_row.state == RoomState.ACTIVE
+    responses = list(
+        db_session.scalars(
+            select(Response).where(Response.participant_id == UUID(joined["participant"]["id"]))
+        ).all()
+    )
+    assert len(responses) == 1
+    assert responses[0].submitted_at is not None
+    assert responses[0].status == "submitted"

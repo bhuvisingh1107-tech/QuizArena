@@ -235,7 +235,17 @@ async def start_session(
     request_id: RequestId,
     db: Annotated[Session, Depends(get_db)],
 ) -> JSONResponse:
+    # Persist Lobby → Active before any question broadcast so submit validation
+    # and timers share the same committed room state.
     room = service.start(room_id, owner_id=admin.id)
+    if room.state != RoomState.ACTIVE:
+        from app.core.exceptions import ValidationError
+
+        raise ValidationError(
+            "ROOM_NOT_ACTIVE",
+            f"Start Quiz failed to activate room (current: '{room.state.value}')",
+        )
+
     await _broadcast_lifecycle(room, ServerEventType.ROOM_SESSION_STARTED, db)
 
     # Open first question immediately — host only needs Start Quiz.

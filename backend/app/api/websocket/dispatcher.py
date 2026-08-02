@@ -41,6 +41,12 @@ class EventDispatcher:
         self._responses = ResponseService(session)
 
     async def dispatch(self, connection: WSConnection, raw: dict[str, Any]) -> None:
+        # Long-lived WS sessions keep an identity map across the connection.
+        # Host REST actions (e.g. Start Quiz) commit on other sessions, so we
+        # must expire cached rows before every inbound event or submit still
+        # sees stale Lobby while Question 1 is already live.
+        self._session.expire_all()
+
         event_type = raw.get("type")
         if not isinstance(event_type, str) or not event_type:
             await self._manager.send_to_connection(
