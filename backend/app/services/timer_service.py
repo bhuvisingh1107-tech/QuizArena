@@ -43,8 +43,17 @@ class AutoProgressionScheduler:
 
     def cancel_room(self, room_id: UUID) -> None:
         task = self._tasks.pop(room_id, None)
-        if task is not None and not task.done():
-            task.cancel()
+        if task is None or task.done():
+            return
+        # Never cancel the task that is currently executing this call. Completion
+        # used to cancel mid-advance and drop the quiz:completed broadcast.
+        try:
+            current = asyncio.current_task()
+        except RuntimeError:
+            current = None
+        if task is current:
+            return
+        task.cancel()
 
     def schedule_question(
         self,
@@ -188,11 +197,21 @@ class AutoProgressionScheduler:
             return
         await self._broadcast_result(room_id, result)
 
+        completed = any(getattr(e, "type", None) == "quiz:completed" for e in result.events)
+        if completed:
+            # Pipeline finished the quiz — drop the task entry without cancelling
+            # ourselves mid-broadcast (cancel already avoided inside _complete_quiz).
+            self._tasks.pop(room_id, None)
+            return
+
         if any(e.type == "section:break" for e in result.events):
             await asyncio.sleep(REVEAL_DWELL_SECONDS)
             continued = await asyncio.to_thread(self._sync_continue_section, room_id)
             if continued is not None:
                 await self._broadcast_result(room_id, continued)
+                if any(getattr(e, "type", None) == "quiz:completed" for e in continued.events):
+                    self._tasks.pop(room_id, None)
+                    return
                 self._schedule_from_events(room_id, continued.events)
             return
 

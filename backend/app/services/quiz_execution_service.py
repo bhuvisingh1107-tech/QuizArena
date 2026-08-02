@@ -484,12 +484,13 @@ class QuizExecutionService:
             if not self._rooms.has_active_rooms_for_quiz(room.quiz_id, exclude_room_id=room.id):
                 quiz.status = QuizStatus.READY
         room = self._commit(room)
-        try:
-            from app.services.timer_service import auto_progression
-
-            auto_progression.cancel_room(room.id)
-        except Exception:
-            pass
+        # Do NOT cancel auto-progression here. Completion is often invoked from
+        # inside the room's auto-advance task (via to_thread). Cancelling that
+        # task would raise CancelledError before quiz:completed is broadcast,
+        # leaving clients stuck on the post-score waiting interstitial while the
+        # DB is already Completed. Callers that end from outside the pipeline
+        # (REST /end, WS end) cancel beforehand; after advance, the pipeline
+        # simply finishes without scheduling another question.
         return ExecutionResult(room=room, events=events)
 
     def _require_room(self, room_id: UUID) -> LiveRoom:

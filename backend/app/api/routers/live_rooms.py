@@ -357,9 +357,35 @@ async def end_session(
         await broadcast_execution_events(room_id, result.events)
         room = result.room
     except QuizArenaError:
-        # Fallback for rooms already mid-transition: still force Completed + notify.
-        room = service.end(room_id, owner_id=admin.id)
-        await _broadcast_lifecycle(room, ServerEventType.ROOM_COMPLETED, db)
+        # Room may already be Completed (auto-advance won the race). Still notify
+        # clients with the full completion payload so nobody stays on "waiting".
+        room = service.get(room_id, owner_id=admin.id)
+        if room.state != RoomState.COMPLETED:
+            room = service.end(room_id, owner_id=admin.id)
+        if room.state == RoomState.COMPLETED:
+            from app.services.display_stats_service import DisplayStatsService
+            from app.services.leaderboard_service import LeaderboardService
+
+            board = LeaderboardService(db).snapshot(room.id)
+            highlights = DisplayStatsService(db).session_highlights(room.id)
+            payload = QuizExecutionService._completion_payload(room, board, highlights)
+            await connection_manager.broadcast_to_room(
+                room.id,
+                ServerEventType.QUIZ_COMPLETED,
+                payload,
+            )
+            await connection_manager.broadcast_to_room(
+                room.id,
+                ServerEventType.ROOM_COMPLETED,
+                payload,
+            )
+            await connection_manager.broadcast_to_room(
+                room.id,
+                ServerEventType.LEADERBOARD_UPDATED,
+                board,
+            )
+        else:
+            await _broadcast_lifecycle(room, ServerEventType.ROOM_COMPLETED, db)
 
     return _envelope(_room_response(room, service), request_id)
 

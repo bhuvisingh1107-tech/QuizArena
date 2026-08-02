@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   computeAccuracyPercent,
   computeReconnectDelay,
+  deriveQuizPhase,
   getParticipantRouteForRoomState,
   initialParticipantLiveState,
   participantLiveReducer,
@@ -314,6 +315,50 @@ describe('participantLiveReducer', () => {
     expect(completed.podium?.entries).toHaveLength(1)
     expect(completed.leaderboard[0]?.score).toBe(40)
     expect(completed.yourRank).toBe(1)
+  })
+
+  it('treats room:state_changed Completed as terminal (clears waiting interstitial)', () => {
+    const waiting = {
+      ...initialParticipantLiveState,
+      showLeaderboardInterstitial: true,
+      leaderboard: [
+        { rank: 1, participantId: 'p1', displayName: 'Alex', score: 10, streak: 1 },
+      ],
+      room: {
+        id: 'r1',
+        roomCode: 'ABC',
+        state: 'Active' as const,
+        quizTitle: 'Quiz',
+      },
+      question: {
+        id: 'q1',
+        index: 0,
+        promptText: 'Q?',
+        state: 'Scored' as const,
+        options: [],
+        timeLimitSeconds: null,
+        timerEndsAt: null,
+        sectionId: null,
+        sectionName: null,
+        totalQuestions: 1,
+      },
+      self: { id: 'p1', displayName: 'Alex', totalScore: 10, streak: 1 },
+    }
+
+    const next = participantLiveReducer(waiting, {
+      type: 'EVENT',
+      message: {
+        type: 'room:state_changed',
+        timestamp: new Date().toISOString(),
+        payload: { roomId: 'r1', state: 'Completed' },
+      },
+    })
+
+    expect(next.room?.state).toBe('Completed')
+    expect(next.resultsReady).toBe(true)
+    expect(next.showLeaderboardInterstitial).toBe(false)
+    expect(next.question).toBeNull()
+    expect(deriveQuizPhase(next)).toBe('completed')
   })
 
   it('does not reopen interstitial after Completed on leaderboard:updated', () => {

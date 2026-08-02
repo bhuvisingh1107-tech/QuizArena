@@ -450,6 +450,53 @@ function parsePodium(data: Record<string, unknown>): Podium | null {
   return entries.length ? { entries } : null
 }
 
+function applyTerminalRoom(
+  state: ParticipantLiveState,
+  data: Record<string, unknown>,
+  terminalState: 'Completed' | 'Closed',
+): ParticipantLiveState {
+  const roomPatch = data.room ? asRecord(data.room) : { ...data, state: terminalState }
+  if (!roomPatch.state) roomPatch.state = terminalState
+  if (!roomPatch.id && !roomPatch.roomId && state.room) {
+    roomPatch.id = state.room.id
+    roomPatch.roomCode = state.room.roomCode
+    roomPatch.quizTitle = state.room.quizTitle
+  }
+  const mapped = mapRoom(state.room, roomPatch)
+  const room = mapped
+    ? { ...mapped, state: terminalState }
+    : state.room
+      ? { ...state.room, state: terminalState }
+      : {
+          id: String(data.roomId ?? roomPatch.roomId ?? 'room'),
+          roomCode: String(roomPatch.roomCode ?? ''),
+          state: terminalState,
+          quizTitle: String(roomPatch.quizTitle ?? ''),
+        }
+  const leaderboard = parseLeaderboard(data) ?? state.leaderboard
+  const podium = parsePodium(data) ?? state.podium
+  const selfId = state.self?.id
+  const own = selfId ? leaderboard.find((e) => e.participantId === selfId) : undefined
+  return {
+    ...state,
+    room,
+    podium,
+    leaderboard,
+    resultsReady: true,
+    showLeaderboardInterstitial: false,
+    question: null,
+    options: [],
+    questionOpenedAt: null,
+    yourRank: own?.rank ?? state.yourRank,
+    yourScore: own?.score ?? state.yourScore,
+    previousLeaderboardRanks: ranksFromLeaderboard(state.leaderboard),
+    participantCount:
+      typeof data.participantCount === 'number'
+        ? data.participantCount
+        : state.participantCount,
+  }
+}
+
 export function participantLiveReducer(
   state: ParticipantLiveState,
   action: ParticipantLiveAction,
@@ -704,17 +751,29 @@ export function participantLiveReducer(
         case 'room:lobbyOpened':
         case 'room:lobbyClosed':
         case 'room:sessionStarted':
-        case 'room:closed':
         case 'section:continued':
-        case 'section:started':
+        case 'section:started': {
+          const patch = data.room ? asRecord(data.room) : data
+          const nextState = String(patch.state ?? '')
+          if (nextState === 'Completed' || nextState === 'Closed') {
+            return applyTerminalRoom(
+              state,
+              patch,
+              nextState === 'Closed' ? 'Closed' : 'Completed',
+            )
+          }
           return {
             ...state,
-            room: mapRoom(state.room, data.room ? asRecord(data.room) : data),
+            room: mapRoom(state.room, patch),
             participantCount:
               typeof data.participantCount === 'number'
                 ? data.participantCount
                 : state.participantCount,
           }
+        }
+
+        case 'room:closed':
+          return applyTerminalRoom(state, data, 'Closed')
 
         case 'section:break': {
           const roomPatch = data.room
@@ -734,48 +793,8 @@ export function participantLiveReducer(
         }
 
         case 'room:completed':
-        case 'quiz:completed': {
-          const roomPatch = data.room
-            ? asRecord(data.room)
-            : { ...data, state: 'Completed' }
-          if (!roomPatch.state) roomPatch.state = 'Completed'
-          if (!roomPatch.id && !roomPatch.roomId && state.room) {
-            roomPatch.id = state.room.id
-            roomPatch.roomCode = state.room.roomCode
-            roomPatch.quizTitle = state.room.quizTitle
-          }
-          const mapped = mapRoom(state.room, roomPatch)
-          const room = mapped
-            ? { ...mapped, state: 'Completed' as const }
-            : state.room
-              ? { ...state.room, state: 'Completed' as const }
-              : {
-                  id: String(data.roomId ?? roomPatch.roomId ?? 'room'),
-                  roomCode: String(roomPatch.roomCode ?? ''),
-                  state: 'Completed' as const,
-                  quizTitle: String(roomPatch.quizTitle ?? ''),
-                }
-          const leaderboard = parseLeaderboard(data) ?? state.leaderboard
-          const podium = parsePodium(data) ?? state.podium
-          const selfId = state.self?.id
-          const own = selfId
-            ? leaderboard.find((e) => e.participantId === selfId)
-            : undefined
-          return {
-            ...state,
-            room,
-            podium,
-            leaderboard,
-            resultsReady: true,
-            showLeaderboardInterstitial: false,
-            question: null,
-            options: [],
-            questionOpenedAt: null,
-            yourRank: own?.rank ?? state.yourRank,
-            yourScore: own?.score ?? state.yourScore,
-            previousLeaderboardRanks: ranksFromLeaderboard(state.leaderboard),
-          }
-        }
+        case 'quiz:completed':
+          return applyTerminalRoom(state, data, 'Completed')
 
         case 'results:ready':
           return {

@@ -14,10 +14,11 @@ import {
   useParticipantMeQuery,
   useParticipantSession,
 } from '@/hooks/queries/useParticipantSession'
+import { setRoomState } from '@/lib/participant-session'
 
 export function ResultsPage() {
   const navigate = useNavigate()
-  const { session } = useParticipantSession()
+  const { session, refreshSession } = useParticipantSession()
   const meQuery = useParticipantMeQuery(Boolean(session?.sessionToken))
   const leaveMutation = useParticipantLeaveMutation()
   const live = useParticipantLive()
@@ -30,11 +31,16 @@ export function ResultsPage() {
   }, [live.suggestedRoute, navigate])
 
   useEffect(() => {
-    if (live.resultsReady || live.room?.state === 'Completed' || live.room?.state === 'Closed') {
-      void meQuery.refetch()
+    if (!(live.resultsReady || live.room?.state === 'Completed' || live.room?.state === 'Closed')) {
+      return
     }
-    // Refetch personal stats once when the quiz becomes complete.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid refetch identity loops
+    setRoomState(live.room?.state === 'Closed' ? 'Closed' : 'Completed')
+    void meQuery.refetch()
+    // Pull REST profile when WS standings were thin/missing.
+    if (!live.podium?.entries?.length || live.leaderboard.length === 0) {
+      void refreshSession()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per terminal transition
   }, [live.resultsReady, live.room?.state])
 
   const profile = meQuery.data?.participant

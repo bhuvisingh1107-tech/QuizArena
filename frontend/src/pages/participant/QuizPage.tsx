@@ -219,7 +219,7 @@ export function QuizPage() {
               title="Your rank"
             />
             <p className="text-center text-sm text-[var(--muted-foreground)]">
-              Waiting for the next question…
+              Standings update — the host will continue or finish the quiz…
             </p>
           </div>
         ) : null}
