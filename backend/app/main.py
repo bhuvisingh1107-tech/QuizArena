@@ -29,9 +29,12 @@ async def lifespan(app: FastAPI):
     )
 
     # Production-safe admin bootstrap: create only when the table is empty.
+    # Must never block API startup (invalid ADMIN_PASSWORD, missing creds, etc.).
     session = get_session_factory(settings)()
     try:
         AuthService(session, settings).ensure_bootstrap_admin()
+    except Exception:
+        logger.exception("Admin bootstrap failed; continuing startup")
     finally:
         session.close()
 

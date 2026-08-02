@@ -118,11 +118,55 @@ def test_bootstrap_repeated_startup_is_idempotent(
     assert caplog.text.count("Admin already exists.") == 2
 
 
-def test_bootstrap_requires_password_when_empty(empty_session: Session) -> None:
+def test_bootstrap_requires_password_when_empty(
+    empty_session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     service = AuthService(
         empty_session,
         _settings(admin_password="", admin_password_hash=""),
     )
-    with pytest.raises(RuntimeError, match="ADMIN_PASSWORD"):
-        service.ensure_bootstrap_admin()
+    with caplog.at_level("WARNING"):
+        created = service.ensure_bootstrap_admin()
+    assert created is False
     assert _admin_count(empty_session) == 0
+    assert "Bootstrap admin skipped" in caplog.text
+
+
+def test_bootstrap_invalid_password_does_not_raise(
+    empty_session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Weak ADMIN_PASSWORD must not crash startup when no admin exists."""
+    service = AuthService(
+        empty_session,
+        _settings(admin_password="weak"),
+    )
+    with caplog.at_level("WARNING"):
+        created = service.ensure_bootstrap_admin()
+    assert created is False
+    assert _admin_count(empty_session) == 0
+    assert "Bootstrap admin skipped" in caplog.text
+    assert "Password does not meet complexity requirements" in caplog.text
+
+
+def test_bootstrap_skips_password_check_when_admin_exists(
+    empty_session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    AdminRepository(empty_session).create(
+        username="existing",
+        password_hash=hash_password("OriginalPassw0rd!"),
+        name="Existing Host",
+    )
+    empty_session.commit()
+
+    service = AuthService(
+        empty_session,
+        _settings(admin_password="weak"),
+    )
+    with caplog.at_level("INFO"):
+        created = service.ensure_bootstrap_admin()
+    assert created is False
+    assert "Admin already exists." in caplog.text
+    assert "Bootstrap admin skipped" not in caplog.text

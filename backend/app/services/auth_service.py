@@ -54,43 +54,58 @@ class AuthService:
 
         Uses ``ADMIN_USERNAME`` / ``ADMIN_PASSWORD`` from settings.
         Never updates an existing password. Safe to call on every startup.
+        Never raises — bootstrap failure is logged so the API can still boot.
 
         Returns:
-            True if a new admin was created, False if one already existed.
+            True if a new admin was created, False otherwise.
         """
-        if self._admins.exists_any():
-            logger.info("Admin already exists.")
-            return False
-
-        username = (self._settings.admin_username or "admin").strip() or "admin"
-        plaintext = (self._settings.admin_password or "").strip()
-        password_hash = (self._settings.admin_password_hash or "").strip()
-
-        if plaintext:
-            validate_password_policy(plaintext)
-            password_hash = hash_password(plaintext)
-        elif not password_hash:
-            raise RuntimeError(
-                "No admin exists and ADMIN_PASSWORD is not set. "
-                "Set ADMIN_USERNAME and ADMIN_PASSWORD (or ADMIN_PASSWORD_HASH) "
-                "so startup can create the initial admin.",
-            )
-
         try:
-            self._admins.create(
-                username=username,
-                password_hash=password_hash,
-                name="Host",
-            )
-            self._session.commit()
-        except IntegrityError:
-            # Concurrent worker won the race — treat as already bootstrapped.
-            self._session.rollback()
-            logger.info("Admin already exists.")
-            return False
+            if self._admins.exists_any():
+                logger.info("Admin already exists.")
+                return False
 
-        logger.info("Created initial admin.")
-        return True
+            username = (self._settings.admin_username or "admin").strip() or "admin"
+            plaintext = (self._settings.admin_password or "").strip()
+            password_hash = (self._settings.admin_password_hash or "").strip()
+
+            if plaintext:
+                # Validates Settings.admin_password (ADMIN_PASSWORD env).
+                validate_password_policy(plaintext)
+                password_hash = hash_password(plaintext)
+            elif not password_hash:
+                logger.warning(
+                    "Bootstrap admin skipped: no admin exists and ADMIN_PASSWORD "
+                    "(or ADMIN_PASSWORD_HASH) is not set.",
+                )
+                return False
+
+            try:
+                self._admins.create(
+                    username=username,
+                    password_hash=password_hash,
+                    name="Host",
+                )
+                self._session.commit()
+            except IntegrityError:
+                # Concurrent worker won the race — treat as already bootstrapped.
+                self._session.rollback()
+                logger.info("Admin already exists.")
+                return False
+
+            logger.info("Created initial admin.")
+            return True
+        except ValidationError as exc:
+            self._session.rollback()
+            logger.warning(
+                "Bootstrap admin skipped: %s",
+                exc.message,
+                extra={"code": exc.code, "details": exc.details},
+            )
+            return False
+        except Exception:
+            self._session.rollback()
+            logger.exception("Bootstrap admin skipped due to unexpected error")
+            return False
 
     def register(
         self,
