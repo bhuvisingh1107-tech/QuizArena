@@ -22,6 +22,12 @@ _HOSTING_STATES = (
 )
 
 
+def _as_int(value: object) -> int:
+    if value is None:
+        return 0
+    return int(value)
+
+
 class DashboardService:
     """Read-only dashboard summary for the host home screen."""
 
@@ -29,16 +35,19 @@ class DashboardService:
         self._session = session
 
     def summary(self, *, owner_id: UUID) -> DashboardSummaryData:
-        quiz_counts = dict(
-            self._session.execute(
-                select(Quiz.status, func.count())
-                .where(Quiz.status != QuizStatus.DELETED, Quiz.owner_id == owner_id)
-                .group_by(Quiz.status)
-            ).all()
-        )
+        """Return zero-filled counts for a host, including brand-new empty accounts."""
+        quiz_counts: dict[QuizStatus, int] = {}
+        rows = self._session.execute(
+            select(Quiz.status, func.count())
+            .where(Quiz.status != QuizStatus.DELETED, Quiz.owner_id == owner_id)
+            .group_by(Quiz.status),
+        ).all()
+        for status, count in rows:
+            key = status if isinstance(status, QuizStatus) else QuizStatus(str(status))
+            quiz_counts[key] = _as_int(count)
 
         def _quiz(status: QuizStatus) -> int:
-            return int(quiz_counts.get(status, 0))
+            return quiz_counts.get(status, 0)
 
         quizzes_draft = _quiz(QuizStatus.DRAFT)
         quizzes_ready = _quiz(QuizStatus.READY)
@@ -46,23 +55,21 @@ class DashboardService:
         quizzes_archived = _quiz(QuizStatus.ARCHIVED)
         quizzes_total = quizzes_draft + quizzes_ready + quizzes_in_use + quizzes_archived
 
-        rooms_active = int(
+        rooms_active = _as_int(
             self._session.scalar(
-                select(func.count())
+                select(func.coalesce(func.count(), 0))
                 .select_from(LiveRoom)
                 .join(Quiz, Quiz.id == LiveRoom.quiz_id)
-                .where(LiveRoom.state.in_(_HOSTING_STATES), Quiz.owner_id == owner_id)
-            )
-            or 0
+                .where(LiveRoom.state.in_(_HOSTING_STATES), Quiz.owner_id == owner_id),
+            ),
         )
-        rooms_completed = int(
+        rooms_completed = _as_int(
             self._session.scalar(
-                select(func.count())
+                select(func.coalesce(func.count(), 0))
                 .select_from(LiveRoom)
                 .join(Quiz, Quiz.id == LiveRoom.quiz_id)
-                .where(LiveRoom.state == RoomState.COMPLETED, Quiz.owner_id == owner_id)
-            )
-            or 0
+                .where(LiveRoom.state == RoomState.COMPLETED, Quiz.owner_id == owner_id),
+            ),
         )
 
         start_of_utc_today = datetime.now(UTC).replace(
@@ -71,18 +78,17 @@ class DashboardService:
             second=0,
             microsecond=0,
         )
-        participants_today = int(
+        participants_today = _as_int(
             self._session.scalar(
-                select(func.count())
+                select(func.coalesce(func.count(), 0))
                 .select_from(Participant)
-                .join(LiveRoom, LiveRoom.id == Participant.room_id)
+                .join(LiveRoom, LiveRoom.id == Participant.live_room_id)
                 .join(Quiz, Quiz.id == LiveRoom.quiz_id)
                 .where(
                     Participant.joined_at >= start_of_utc_today,
                     Quiz.owner_id == owner_id,
-                )
-            )
-            or 0
+                ),
+            ),
         )
 
         return DashboardSummaryData(
