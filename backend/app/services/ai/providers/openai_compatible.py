@@ -100,14 +100,15 @@ class OpenAICompatibleProvider(AiProvider):
                 headers=self._headers,
                 json=payload,
             )
-        # Some Ollama builds reject response_format; retry once without it.
+        # Some Ollama / Gemini-compat builds reject response_format; retry once without it.
         if (
             response.status_code >= 400
             and "response_format" in payload
-            and self._runtime.provider == "ollama"
+            and self._runtime.provider in {"ollama", "gemini"}
         ):
             logger.warning(
-                "Ollama rejected response_format; retrying without json_object mode"
+                "%s rejected response_format; retrying without json_object mode",
+                self._runtime.provider,
             )
             retry_payload = {k: v for k, v in payload.items() if k != "response_format"}
             with httpx.Client(timeout=120.0) as client:
@@ -117,16 +118,27 @@ class OpenAICompatibleProvider(AiProvider):
                     json=retry_payload,
                 )
         if response.status_code >= 400:
+            body = response.text[:2000]
+            url = f"{self._base}/chat/completions"
             logger.error(
-                "LLM request failed status=%s body=%s",
+                "LLM request failed status=%s url=%s model=%s body=%s",
                 response.status_code,
-                response.text[:500],
+                url,
+                payload.get("model"),
+                body,
             )
             raise ValidationError(
                 "AI_PROVIDER_ERROR",
                 "The AI provider rejected the request. Check AI_API_KEY, AI_API_BASE_URL, "
                 "and AI_CHAT_MODEL.",
-                details=[{"status": response.status_code}],
+                details=[
+                    {
+                        "status": response.status_code,
+                        "url": url,
+                        "model": payload.get("model"),
+                        "body": body,
+                    },
+                ],
             )
         return response.json()
 

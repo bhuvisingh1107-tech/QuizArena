@@ -35,8 +35,30 @@ def test_resolve_gemini_preset() -> None:
     )
     assert "generativelanguage.googleapis.com" in runtime.base_url
     assert "aiplatform.googleapis.com" not in runtime.base_url  # not Vertex
+    assert runtime.transport == "gemini"
     assert runtime.chat_model == "gemini-2.5-flash"
     assert runtime.embedding_model == "gemini-embedding-001"
+
+
+def test_get_provider_gemini_uses_native_client() -> None:
+    from app.services.ai.providers.gemini import GeminiProvider
+
+    provider = get_ai_provider(
+        Settings(
+            ai_provider="gemini",
+            ai_api_key="AQtest",
+            ai_chat_model="gemini-2.5-flash",
+            app_env="development",
+        ),
+    )
+    assert isinstance(provider, GeminiProvider)
+    assert provider._generate_url() == (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "gemini-2.5-flash:generateContent"
+    )
+    assert provider._headers.get("x-goog-api-key") == "AQtest"
+    assert "Authorization" not in provider._headers
+
 
 
 def test_resolve_ollama_allows_empty_key() -> None:

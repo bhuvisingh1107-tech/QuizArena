@@ -107,6 +107,16 @@ def get_ai_provider(settings: Settings) -> AiProvider:
         )
         return AnthropicProvider(effective)
 
+    if runtime.transport == "gemini":
+        from app.services.ai.providers.gemini import GeminiProvider
+
+        logger.info(
+            "AI provider selected=gemini transport=generateContent model=%s base=%s",
+            runtime.chat_model,
+            runtime.base_url,
+        )
+        return GeminiProvider(effective)
+
     from app.services.ai.providers.openai_compatible import OpenAICompatibleProvider
 
     logger.info(

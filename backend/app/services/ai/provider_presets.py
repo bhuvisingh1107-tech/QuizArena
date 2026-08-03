@@ -33,7 +33,7 @@ DEFAULT_OPENAI_BASE = "https://api.openai.com/v1"
 class ProviderPreset:
     """Defaults applied when ``AI_PROVIDER`` is a named alias."""
 
-    transport: Literal["openai_compatible", "anthropic"]
+    transport: Literal["openai_compatible", "anthropic", "gemini"]
     base_url: str
     default_chat_model: str
     default_embedding_model: str
@@ -66,10 +66,11 @@ PROVIDER_PRESETS: dict[str, ProviderPreset] = {
         },
     ),
     "gemini": ProviderPreset(
-        transport="openai_compatible",
+        transport="gemini",
         # Google AI Studio (Gemini API) — NOT Vertex AI.
-        # Docs: https://ai.google.dev/gemini-api/docs/openai
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        # Native REST: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+        # Auth: x-goog-api-key (AI Studio API key). Docs: https://ai.google.dev/gemini-api/docs
+        base_url="https://generativelanguage.googleapis.com/v1beta",
         default_chat_model="gemini-2.5-flash",
         default_embedding_model="gemini-embedding-001",
         requires_api_key=True,
@@ -109,7 +110,7 @@ class ResolvedAiRuntime:
     """Effective provider wiring after applying presets + env overrides."""
 
     provider: str
-    transport: Literal["openai_compatible", "anthropic", "mock"]
+    transport: Literal["openai_compatible", "anthropic", "gemini", "mock"]
     base_url: str
     chat_model: str
     embedding_model: str

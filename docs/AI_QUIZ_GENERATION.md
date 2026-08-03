@@ -51,7 +51,7 @@ Supported `AI_PROVIDER` values:
 |----------|-----------|---------|-------------|
 | `openai` | OpenAI Chat Completions | Required | Production default |
 | `openrouter` | OpenAI-compatible | Required | Multi-model gateway |
-| `gemini` | Google AI Studio OpenAI-compatible API | Required | Free Gemini API (`generativelanguage.googleapis.com`, not Vertex) |
+| `gemini` | Google AI Studio native `generateContent` + `x-goog-api-key` | Required | Free Gemini API (`generativelanguage.googleapis.com`, not Vertex) |
 | `anthropic` | Anthropic Messages API | Required | Claude |
 | `ollama` | OpenAI-compatible (local) | Optional | Local development |
 | `openai_compatible` | OpenAI-compatible | Required | Azure / custom gateways |
@@ -134,7 +134,10 @@ AI_CHAT_MODEL=llama3.2
 
 ### Google AI Studio (Gemini free API)
 
-Uses `https://generativelanguage.googleapis.com/v1beta/openai` (AI Studio), **not** Vertex AI.
+Uses native REST (not the OpenAI-compat shim, not Vertex):
+
+`POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`  
+Header: `x-goog-api-key: <AI_API_KEY>`
 
 ```env
 AI_PROVIDER=gemini
@@ -143,7 +146,7 @@ AI_CHAT_MODEL=gemini-2.5-flash
 AI_EMBEDDING_MODEL=gemini-embedding-001
 ```
 
-Do **not** set `AI_API_BASE_URL` unless you intentionally override the preset (leave it unset on Render).
+Leave `AI_API_BASE_URL` unset (defaults to `https://generativelanguage.googleapis.com/v1beta`).
 
 ### Optional extractors (production)
 
