@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Loader2, RefreshCw, Save, Trash2 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { ExternalLink, Loader2, RefreshCw, Save, Trash2 } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/button'
@@ -8,23 +9,40 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { queryKeys } from '@/hooks/queries/keys'
 import { useAiGenerationMutations, useAiJobQuery } from '@/hooks/queries/useAiGeneration'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
-import type { AiGeneratedQuestion, AiOption } from '@/types/ai-generation'
+import type { AiGeneratedQuestion, AiJobStatus, AiOption } from '@/types/ai-generation'
 import { cn } from '@/lib/utils'
 
 const ACTIVE = new Set(['queued', 'uploading', 'extracting', 'analyzing', 'generating'])
+
+const STATUS_LABEL: Record<AiJobStatus, string> = {
+  queued: 'Queued',
+  uploading: 'Uploading',
+  extracting: 'Extracting',
+  analyzing: 'Analyzing',
+  generating: 'Generating',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+}
 
 export function AiReviewPage() {
   const { jobId = '' } = useParams()
   const navigate = useNavigate()
   const mutations = useAiGenerationMutations()
+  const queryClient = useQueryClient()
   const { data: job, isLoading, error, refetch } = useAiJobQuery(jobId, { poll: true })
+  const notifiedComplete = useRef(false)
 
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null)
 
   const allQuestions = useMemo(
-    () => job?.sections.flatMap((s) => s.questions.map((q) => ({ sectionId: s.id, sectionName: s.name, question: q }))) ?? [],
+    () =>
+      job?.sections.flatMap((s) =>
+        s.questions.map((q) => ({ sectionId: s.id, sectionName: s.name, question: q })),
+      ) ?? [],
     [job],
   )
 
@@ -34,12 +52,26 @@ export function AiReviewPage() {
     }
   }, [allQuestions, selectedQuestionId])
 
+  useEffect(() => {
+    if (job?.status === 'completed' && !notifiedComplete.current) {
+      notifiedComplete.current = true
+      void queryClient.invalidateQueries({ queryKey: queryKeys.quizzes.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.summary })
+      if (job.resultQuizId) {
+        toastSuccess('Quiz saved to My Quizzes')
+      }
+    }
+    if (job && ACTIVE.has(job.status)) {
+      notifiedComplete.current = false
+    }
+  }, [job?.status, job?.resultQuizId, queryClient])
+
   const selected = allQuestions.find((q) => q.question.id === selectedQuestionId)
 
   const onSave = async () => {
     try {
       const result = await mutations.save.mutateAsync(jobId)
-      toastSuccess('Quiz saved as draft')
+      toastSuccess('Quiz updated in My Quizzes')
       navigate(`/admin/quizzes/${result.quizId}?step=2`)
     } catch (err) {
       toastError(err)
@@ -86,8 +118,10 @@ export function AiReviewPage() {
           inProgress
             ? job.progressMessage || 'Generating…'
             : job.status === 'completed'
-              ? 'Review sections and questions before saving.'
-              : job.errorMessage || `Status: ${job.status}`
+              ? job.resultQuizId
+                ? 'Quiz is in My Quizzes. Review or open the builder.'
+                : 'Review sections and questions, then save.'
+              : job.errorMessage || `Status: ${STATUS_LABEL[job.status]}`
         }
         actions={
           <div className="flex flex-wrap gap-2">
@@ -101,6 +135,14 @@ export function AiReviewPage() {
             ) : null}
             {job.status === 'completed' ? (
               <>
+                {job.resultQuizId ? (
+                  <Button asChild variant="accent">
+                    <Link to={`/admin/quizzes/${job.resultQuizId}?step=2`}>
+                      <ExternalLink className="h-4 w-4" />
+                      Open in My Quizzes
+                    </Link>
+                  </Button>
+                ) : null}
                 <Button
                   variant="outline"
                   disabled={mutations.regenerateQuiz.isPending}
@@ -119,7 +161,7 @@ export function AiReviewPage() {
                 </Button>
                 <Button onClick={() => void onSave()} disabled={mutations.save.isPending}>
                   <Save className="h-4 w-4" />
-                  Save quiz
+                  {job.resultQuizId ? 'Re-save quiz' : 'Save quiz'}
                 </Button>
               </>
             ) : null}
@@ -131,7 +173,10 @@ export function AiReviewPage() {
         <Card>
           <CardContent className="space-y-3 pt-6">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-[var(--muted-foreground)]">{job.status}</span>
+              <span className="font-medium text-[var(--heading)]">
+                {STATUS_LABEL[job.status]}
+                {job.progressMessage ? ` · ${job.progressMessage}` : ''}
+              </span>
               <span className="font-medium">{job.progressPercent}%</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-[var(--secondary)]">
@@ -148,7 +193,7 @@ export function AiReviewPage() {
             ) : (
               <p className="flex items-center gap-2 text-sm text-[var(--muted-foreground)]">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                {job.progressMessage || 'Working…'}
+                Working — this page updates automatically.
               </p>
             )}
           </CardContent>

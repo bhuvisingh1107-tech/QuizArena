@@ -62,9 +62,9 @@ On a **single Render dyno**, jobs run in-process. Multi-instance deployments sho
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/ai/generate/document` | Create document job |
-| POST | `/ai/generate/topic` | Create topic job |
-| POST | `/ai/upload` | Multipart upload (`jobId` + `file`) |
+| POST | `/ai/generate/document` | Create document job (**202**) |
+| POST | `/ai/generate/topic` | Create topic job + schedule (**202**) |
+| POST | `/ai/upload` | Multipart upload + schedule (**202**) |
 | GET | `/ai/jobs` | Recent jobs |
 | GET | `/ai/jobs/{id}` | Status + draft |
 | GET | `/ai/generated/{id}` | Alias of job detail |
@@ -73,8 +73,10 @@ On a **single Render dyno**, jobs run in-process. Multi-instance deployments sho
 | DELETE | `/ai/question/{id}` | Delete draft question |
 | POST | `/ai/regenerate/question/{id}` | Regenerate one question |
 | POST | `/ai/regenerate/section/{id}` | Regenerate a section |
-| POST | `/ai/regenerate/quiz/{id}` | Full re-run |
-| POST | `/ai/save` | Persist as Draft quiz |
+| POST | `/ai/regenerate/quiz/{id}` | Full re-run (**202**) |
+| POST | `/ai/save` | Persist as Draft quiz (idempotent) |
+
+Jobs run via FastAPI **BackgroundTasks** (not `asyncio.create_task` from sync threadpool handlers). On completion the quiz is **auto-saved** into My Quizzes as a Draft.
 
 ## Environment
 

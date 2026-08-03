@@ -27,12 +27,12 @@ const KIND_OPTIONS: { value: AiQuestionKind; label: string }[] = [
 ]
 
 const ACCEPT =
-  '.pdf,.ppt,.pptx,.doc,.docx,.png,.jpg,.jpeg,.mp4,.txt,application/pdf,text/plain,image/*,video/mp4'
+  '.pdf,.pptx,.docx,.png,.jpg,.jpeg,.mp4,.txt,application/pdf,text/plain,image/*,video/mp4'
 
 export function AiGeneratePage() {
   const navigate = useNavigate()
   const mutations = useAiGenerationMutations()
-  const history = useAiJobsQuery()
+  const history = useAiJobsQuery({ pollActive: true })
 
   const [mode, setMode] = useState<AiGenerationMode>('topic')
   const [topic, setTopic] = useState('')
@@ -148,7 +148,7 @@ export function AiGeneratePage() {
               >
                 <p className="font-semibold text-[var(--heading)]">Upload material</p>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-                  PDF, PPT, DOCX, images, video, TXT.
+                  PDF, PPTX, DOCX, images, video, TXT.
                 </p>
               </button>
             </div>
@@ -187,7 +187,7 @@ export function AiGeneratePage() {
                 <div>
                   <p className="font-medium text-[var(--heading)]">Drag & drop study material</p>
                   <p className="text-sm text-[var(--muted-foreground)]">
-                    PDF, PPT/PPTX, DOC/DOCX, PNG/JPG, MP4, TXT
+                    PDF, PPTX, DOCX, PNG/JPG, MP4, TXT
                   </p>
                 </div>
                 <Label

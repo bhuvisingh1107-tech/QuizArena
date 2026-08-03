@@ -165,7 +165,7 @@ def _error_envelope(
     )
 
 
-def register_exception_handlers(app: FastAPI) -> None:
+def register_exception_handlers(app: FastAPI, settings: Settings) -> None:
     """Map domain and validation exceptions to the standard error envelope."""
 
     @app.exception_handler(QuizArenaError)
@@ -216,13 +216,17 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
         logger.exception(
-            "Unhandled exception",
+            "Unhandled exception: %s: %s",
+            type(exc).__name__,
+            exc,
             extra={"request_id": request_id},
         )
+        # Never expose Python tracebacks or raw exception text to clients.
         return _error_envelope(
             "INTERNAL_ERROR",
-            "An unexpected error occurred",
+            "An unexpected error occurred. Please try again.",
             request_id,
+            details=[{"requestId": request_id}],
             status_code=500,
         )
 
@@ -237,4 +241,4 @@ def setup_middleware(app: FastAPI, settings: Settings) -> None:
     app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=settings.max_request_body_bytes)
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(RequestIdMiddleware)
-    register_exception_handlers(app)
+    register_exception_handlers(app, settings)

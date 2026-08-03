@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -60,10 +61,17 @@ def render_template(template: str, **values: object) -> str:
 
 
 def get_ai_provider(settings: Settings) -> AiProvider:
+    logger = logging.getLogger(__name__)
     if settings.ai_provider == "openai_compatible":
         from app.services.ai.providers.openai_compatible import OpenAICompatibleProvider
 
+        logger.info(
+            "AI provider selected=openai_compatible model=%s base=%s",
+            settings.ai_chat_model,
+            settings.ai_api_base_url,
+        )
         return OpenAICompatibleProvider(settings)
     from app.services.ai.providers.mock import MockAiProvider
 
+    logger.info("AI provider selected=mock")
     return MockAiProvider(settings)

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ValidationError
-from app.models.enums import AiQuestionKind, QuestionType, QuizStatus
+from app.models.enums import AiJobStatus, AiQuestionKind, QuestionType, QuizStatus
 from app.repositories.ai_generation_repository import AiGenerationRepository
 from app.schemas.answer_option import AnswerOptionCreateRequest
 from app.schemas.question import QuestionCreateRequest
@@ -17,6 +18,8 @@ from app.services.answer_option_service import AnswerOptionService
 from app.services.question_service import QuestionService
 from app.services.quiz_service import QuizService
 from app.services.section_service import SectionService
+
+logger = logging.getLogger(__name__)
 
 
 class AiSaveService:
@@ -29,6 +32,16 @@ class AiSaveService:
         self._options = AnswerOptionService(session)
 
     def save_job_as_quiz(self, job_id: UUID, *, owner_id: UUID) -> UUID:
+        """Create (or return existing) Draft quiz from an AI job. Idempotent."""
+        job = self._jobs.get_job(job_id, owner_id=owner_id)
+        if job is None:
+            raise NotFoundError("NOT_FOUND", "Generation job not found")
+        if job.result_quiz_id is not None:
+            logger.info("AI job %s already saved as quiz %s", job_id, job.result_quiz_id)
+            return job.result_quiz_id
+
+        # Ensure relationship collections are loaded from DB (not a stale empty cache).
+        self._session.expire(job, ["sections"])
         job = self._jobs.get_job(job_id, owner_id=owner_id)
         if job is None:
             raise NotFoundError("NOT_FOUND", "Generation job not found")
@@ -37,7 +50,11 @@ class AiSaveService:
 
         title = (job.title or job.topic or "AI Generated Quiz").strip()[:255]
         quiz = self._quizzes.create(
-            QuizCreateRequest(title=title, description=f"Generated via AI ({job.mode.value})"),
+            QuizCreateRequest(
+                title=title,
+                description=f"Generated via AI ({job.mode.value})"
+                + (f" — {job.topic}" if job.topic else ""),
+            ),
             owner_id=owner_id,
         )
 
@@ -94,8 +111,13 @@ class AiSaveService:
         if total_questions == 0:
             raise ValidationError("VALIDATION_ERROR", "No valid questions to save")
 
-        # Keep as Draft for host review in the existing builder.
         quiz.status = QuizStatus.DRAFT
         job.result_quiz_id = quiz.id
         self._session.commit()
+        logger.info(
+            "AI job %s saved as quiz %s (%s questions)",
+            job_id,
+            quiz.id,
+            total_questions,
+        )
         return quiz.id

@@ -2,34 +2,31 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
-from uuid import UUID
 
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 
 
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _run_job_sync(job_id: str, *, storage_path: str | None = None) -> None:
-    from app.api.deps import get_session_factory
-    from app.config import Settings
-    from app.services.ai.generation_service import AiGenerationService
-
-    session = get_session_factory()()
-    try:
-        settings = Settings(
-            ai_provider="mock",
-            storage_path=storage_path or Settings().storage_path,
-        )
-        AiGenerationService(session, settings).run_job(UUID(job_id))
-    finally:
-        session.close()
+def _wait_job(client: TestClient, token: str, job_id: str, *, timeout: float = 15.0) -> dict:
+    deadline = time.time() + timeout
+    last: dict | None = None
+    while time.time() < deadline:
+        detail = client.get(f"/api/v1/ai/jobs/{job_id}", headers=_auth(token))
+        assert detail.status_code == 200, detail.text
+        last = detail.json()["data"]
+        if last["status"] in {"completed", "failed", "cancelled"}:
+            return last
+        time.sleep(0.1)
+    assert last is not None
+    raise AssertionError(f"Job {job_id} did not finish; last status={last['status']}")
 
 
-def test_topic_generation_review_and_save(
+def test_topic_generation_auto_saves_to_my_quizzes(
     client: TestClient,
     admin_token: str,
     monkeypatch,
@@ -38,55 +35,39 @@ def test_topic_generation_review_and_save(
     from app.config import get_settings
 
     get_settings.cache_clear()
-    monkeypatch.setattr(
-        "app.api.routers.ai_generation.ai_job_worker.enqueue",
-        lambda _job_id: None,
-    )
 
     created = client.post(
         "/api/v1/ai/generate/topic",
         headers=_auth(admin_token),
         json={
-            "topic": "Basic Geometry",
-            "questionCount": 6,
+            "topic": "vector calculus",
+            "questionCount": 12,
             "difficulty": "mixed",
-            "questionKinds": ["mcq", "true_false"],
+            "questionKinds": ["mcq", "true_false", "multiple_correct", "fill_blank"],
             "language": "en",
         },
     )
-    assert created.status_code == 201, created.text
-    job_id = created.json()["data"]["id"]
+    assert created.status_code == 202, created.text
+    body = created.json()["data"]
+    job_id = body["id"]
+    assert body["status"] == "queued"
 
-    _run_job_sync(job_id)
-
-    detail = client.get(f"/api/v1/ai/jobs/{job_id}", headers=_auth(admin_token))
-    assert detail.status_code == 200, detail.text
-    data = detail.json()["data"]
-    assert data["status"] == "completed"
+    data = _wait_job(client, admin_token, job_id)
+    assert data["status"] == "completed", data
+    assert data["progressPercent"] == 100
     assert len(data["sections"]) >= 3
     assert sum(len(s["questions"]) for s in data["sections"]) >= 6
+    assert data["resultQuizId"], "auto-save should create a quiz"
     assert data["sources"]
 
-    first_q = data["sections"][0]["questions"][0]
-    patched = client.patch(
-        f"/api/v1/ai/question/{first_q['id']}",
-        headers=_auth(admin_token),
-        json={"promptText": "Edited geometry question?", "explanation": "Because shapes."},
-    )
-    assert patched.status_code == 200
-    assert patched.json()["data"]["promptText"] == "Edited geometry question?"
-
-    saved = client.post(
-        "/api/v1/ai/save",
-        headers=_auth(admin_token),
-        json={"jobId": job_id},
-    )
-    assert saved.status_code == 200, saved.text
-    quiz_id = saved.json()["data"]["quizId"]
-
-    quiz = client.get(f"/api/v1/quizzes/{quiz_id}", headers=_auth(admin_token))
+    quiz = client.get(f"/api/v1/quizzes/{data['resultQuizId']}", headers=_auth(admin_token))
     assert quiz.status_code == 200
     assert quiz.json()["data"]["status"] == "Draft"
+
+    listing = client.get("/api/v1/quizzes", headers=_auth(admin_token), params={"limit": 50})
+    assert listing.status_code == 200
+    ids = {item["id"] for item in listing.json()["data"]["items"]}
+    assert data["resultQuizId"] in ids
 
 
 def test_document_txt_upload_generation(
@@ -102,17 +83,13 @@ def test_document_txt_upload_generation(
     from app.config import get_settings
 
     get_settings.cache_clear()
-    monkeypatch.setattr(
-        "app.api.routers.ai_generation.ai_job_worker.enqueue",
-        lambda _job_id: None,
-    )
 
     job = client.post(
         "/api/v1/ai/generate/document",
         headers=_auth(admin_token),
         json={"title": "DS Quiz", "questionCount": 3, "questionKinds": ["mcq"]},
     )
-    assert job.status_code == 201, job.text
+    assert job.status_code == 202, job.text
     job_id = job.json()["data"]["id"]
 
     sample = (
@@ -127,13 +104,43 @@ def test_document_txt_upload_generation(
         data={"jobId": job_id},
         files={"file": ("notes.txt", sample, "text/plain")},
     )
-    assert upload.status_code == 200, upload.text
+    assert upload.status_code == 202, upload.text
 
-    _run_job_sync(job_id, storage_path=str(storage))
-
-    detail = client.get(f"/api/v1/ai/jobs/{job_id}", headers=_auth(admin_token))
-    assert detail.status_code == 200
-    data = detail.json()["data"]
-    assert data["status"] == "completed"
+    data = _wait_job(client, admin_token, job_id)
+    assert data["status"] == "completed", data
     assert data["sourceFiles"]
     assert len(data["sections"]) >= 1
+    assert data["resultQuizId"]
+
+
+def test_legacy_ppt_rejected_with_clear_error(
+    client: TestClient,
+    admin_token: str,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("AI_PROVIDER", "mock")
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    monkeypatch.setenv("STORAGE_PATH", str(storage))
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    job = client.post(
+        "/api/v1/ai/generate/document",
+        headers=_auth(admin_token),
+        json={"title": "Legacy", "questionCount": 3},
+    )
+    job_id = job.json()["data"]["id"]
+    upload = client.post(
+        "/api/v1/ai/upload",
+        headers=_auth(admin_token),
+        data={"jobId": job_id},
+        files={"file": ("old.ppt", b"not-a-real-ppt", "application/vnd.ms-powerpoint")},
+    )
+    assert upload.status_code == 422
+    err = upload.json()["error"]
+    assert err["code"] == "UNSUPPORTED_FILE_TYPE"
+    assert "pptx" in err["message"].lower()
+    assert "pip install" not in err["message"].lower()

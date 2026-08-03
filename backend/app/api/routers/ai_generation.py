@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import AppSettings, CurrentAdmin, RequestId, get_db
+from app.core.exceptions import QuizArenaError, ValidationError
 from app.models.ai_generation import AiGeneratedQuestion, AiGeneratedSection, AiGenerationJob
-from app.models.enums import AiDifficulty, AiQuestionKind
 from app.schemas.ai_generation import (
     AiGenerateDocumentRequest,
     AiGenerateTopicRequest,
@@ -26,12 +27,13 @@ from app.schemas.ai_generation import (
     AiSourceReferenceData,
 )
 from app.schemas.common import DataResponse, Meta
-from app.services.ai.extractors import ALLOWED_EXTENSIONS
+from app.services.ai.extractors import ALLOWED_EXTENSIONS, LEGACY_UNSUPPORTED
 from app.services.ai.generation_service import AiGenerationService
 from app.services.ai.job_worker import ai_job_worker
 from app.services.ai.save_service import AiSaveService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def get_ai_service(
@@ -50,6 +52,26 @@ def _envelope(data: Any, request_id: str, *, status_code: int = status.HTTP_200_
         status_code=status_code,
         content=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
     )
+
+
+def _schedule(background_tasks: BackgroundTasks, job_id: UUID, *, request_id: str, context: str) -> None:
+    try:
+        logger.info(
+            "AI schedule requested",
+            extra={"request_id": request_id, "job_id": str(job_id), "context": context},
+        )
+        ai_job_worker.schedule(background_tasks, job_id)
+    except Exception as exc:
+        logger.exception(
+            "AI worker schedule failed",
+            extra={"request_id": request_id, "job_id": str(job_id), "context": context},
+        )
+        raise QuizArenaError(
+            "AI_WORKER_UNAVAILABLE",
+            "Generation job was created but could not be scheduled. Please retry in a moment.",
+            details=[{"jobId": str(job_id), "context": context}],
+            status_code=503,
+        ) from exc
 
 
 def _map_question(question: AiGeneratedQuestion) -> AiGeneratedQuestionData:
@@ -127,10 +149,10 @@ def _map_job(job: AiGenerationJob) -> AiJobData:
 @router.post(
     "/generate/document",
     response_model=DataResponse[AiJobData],
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a document-mode AI generation job",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Create a document-mode AI generation job (awaiting upload)",
 )
-def create_document_job(
+async def create_document_job(
     payload: AiGenerateDocumentRequest,
     admin: CurrentAdmin,
     service: AiServiceDep,
@@ -144,21 +166,29 @@ def create_document_job(
         difficulty=payload.difficulty,
         question_kinds=payload.question_kinds,
     )
-    return _envelope(_map_job(job), request_id, status_code=status.HTTP_201_CREATED)
+    return _envelope(_map_job(job), request_id, status_code=status.HTTP_202_ACCEPTED)
 
 
 @router.post(
     "/generate/topic",
     response_model=DataResponse[AiJobData],
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Create a topic-mode AI generation job and start processing",
 )
-def create_topic_job(
+async def create_topic_job(
     payload: AiGenerateTopicRequest,
     admin: CurrentAdmin,
     service: AiServiceDep,
     request_id: RequestId,
+    settings: AppSettings,
+    background_tasks: BackgroundTasks,
 ) -> JSONResponse:
+    logger.info(
+        "AI generate/topic request received topic=%s provider=%s",
+        payload.topic,
+        settings.ai_provider,
+        extra={"request_id": request_id, "owner_id": str(admin.id)},
+    )
     job = service.create_topic_job(
         owner_id=admin.id,
         topic=payload.topic,
@@ -168,32 +198,33 @@ def create_topic_job(
         difficulty=payload.difficulty,
         question_kinds=payload.question_kinds,
     )
-    ai_job_worker.enqueue(job.id)
+    _schedule(background_tasks, job.id, request_id=request_id, context="generate/topic")
     refreshed = service.get_job(job.id, owner_id=admin.id)
-    return _envelope(_map_job(refreshed), request_id, status_code=status.HTTP_201_CREATED)
+    return _envelope(_map_job(refreshed), request_id, status_code=status.HTTP_202_ACCEPTED)
 
 
 @router.post(
     "/upload",
     response_model=DataResponse[AiJobData],
-    status_code=status.HTTP_200_OK,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Upload study material for a document job and start processing",
 )
 async def upload_source(
     admin: CurrentAdmin,
     service: AiServiceDep,
     request_id: RequestId,
+    background_tasks: BackgroundTasks,
     job_id: Annotated[UUID, Form(alias="jobId")],
     file: UploadFile = File(...),
 ) -> JSONResponse:
     filename = file.filename or "upload.bin"
     suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if suffix in LEGACY_UNSUPPORTED:
+        raise ValidationError("UNSUPPORTED_FILE_TYPE", LEGACY_UNSUPPORTED[suffix])
     if suffix not in ALLOWED_EXTENSIONS:
-        from app.core.exceptions import ValidationError
-
         raise ValidationError(
             "UNSUPPORTED_FILE_TYPE",
-            f"Unsupported file type '{suffix}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+            f"Unsupported file type '{suffix}'. Supported: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
     data = await file.read()
     service.attach_upload(
@@ -203,9 +234,9 @@ async def upload_source(
         content_type=file.content_type or "application/octet-stream",
         data=data,
     )
-    ai_job_worker.enqueue(job_id)
+    _schedule(background_tasks, job_id, request_id=request_id, context="upload")
     job = service.get_job(job_id, owner_id=admin.id)
-    return _envelope(_map_job(job), request_id)
+    return _envelope(_map_job(job), request_id, status_code=status.HTTP_202_ACCEPTED)
 
 
 @router.get(
@@ -337,24 +368,26 @@ def regenerate_section(
 @router.post(
     "/regenerate/quiz/{job_id}",
     response_model=DataResponse[AiJobData],
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Regenerate the entire quiz draft for a job",
 )
-def regenerate_quiz(
+async def regenerate_quiz(
     job_id: UUID,
     admin: CurrentAdmin,
     service: AiServiceDep,
     request_id: RequestId,
+    background_tasks: BackgroundTasks,
 ) -> JSONResponse:
     job = service.queue_full_regeneration(job_id, owner_id=admin.id)
-    ai_job_worker.enqueue(job_id)
+    _schedule(background_tasks, job_id, request_id=request_id, context="regenerate/quiz")
     job = service.get_job(job_id, owner_id=admin.id)
-    return _envelope(_map_job(job), request_id)
+    return _envelope(_map_job(job), request_id, status_code=status.HTTP_202_ACCEPTED)
 
 
 @router.post(
     "/save",
     response_model=DataResponse[AiSaveResultData],
-    summary="Save reviewed AI draft into a Draft quiz",
+    summary="Save reviewed AI draft into a Draft quiz (idempotent)",
 )
 def save_job(
     payload: AiSaveRequest,

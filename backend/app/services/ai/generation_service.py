@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,8 @@ from app.services.ai.provider import ChatMessage, get_ai_provider, render_templa
 from app.services.ai.trusted_sources import trusted_source_seeds
 from app.storage.local import LocalStorageBackend
 
+logger = logging.getLogger(__name__)
+
 
 class AiGenerationService:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
@@ -53,6 +56,12 @@ class AiGenerationService:
         self._storage_root.mkdir(parents=True, exist_ok=True)
         (self._storage_root / "ai-sources").mkdir(parents=True, exist_ok=True)
         self._provider = get_ai_provider(self._settings)
+        logger.info(
+            "AiGenerationService ready provider=%s embedding_model=%s chat_model=%s",
+            self._provider.name,
+            self._settings.ai_embedding_model,
+            self._settings.ai_chat_model,
+        )
 
     # ── Job creation ───────────────────────────────────────────────────────
 
@@ -194,6 +203,13 @@ class AiGenerationService:
         if job.status == AiJobStatus.CANCELLED:
             return job
 
+        logger.info(
+            "AI job %s run start mode=%s provider=%s topic=%s",
+            job_id,
+            job.mode.value,
+            self._provider.name,
+            job.topic,
+        )
         job.started_at = datetime.now(UTC)
         try:
             if job.mode == AiGenerationMode.DOCUMENT:
@@ -201,10 +217,36 @@ class AiGenerationService:
             else:
                 self._run_topic(job)
             job.status = AiJobStatus.COMPLETED
-            job.progress_percent = 100
-            job.progress_message = "Ready for review"
-            job.completed_at = datetime.now(UTC)
+            job.progress_percent = 95
+            job.progress_message = "Saving quiz"
             self._repo.commit()
+
+            # Auto-create Draft quiz so it appears in My Quizzes immediately.
+            try:
+                from app.services.ai.save_service import AiSaveService
+
+                self._session.expire(job, ["sections", "sources", "source_files"])
+                quiz_id = AiSaveService(self._session).save_job_as_quiz(
+                    job.id,
+                    owner_id=job.owner_id,
+                )
+                job = self._repo.get_job(job_id) or job
+                job.result_quiz_id = quiz_id
+                job.progress_percent = 100
+                job.progress_message = "Ready — quiz saved to My Quizzes"
+                job.completed_at = datetime.now(UTC)
+                self._repo.commit()
+                logger.info("AI job %s auto-saved quiz %s", job_id, quiz_id)
+            except Exception:
+                logger.exception("AI job %s auto-save failed; draft remains reviewable", job_id)
+                job = self._repo.get_job(job_id) or job
+                job.status = AiJobStatus.COMPLETED
+                job.progress_percent = 100
+                job.progress_message = "Ready for review (auto-save skipped)"
+                job.completed_at = datetime.now(UTC)
+                self._repo.commit()
+
+            logger.info("AI job %s completed sections=%s", job_id, len(job.sections))
         except Exception as exc:
             self._session.rollback()
             job = self._repo.get_job(job_id) or job
@@ -214,6 +256,7 @@ class AiGenerationService:
             job.progress_message = "Failed"
             job.completed_at = datetime.now(UTC)
             self._repo.commit()
+            logger.exception("AI job %s failed: %s", job_id, job.error_message)
             raise
         return job
 
@@ -340,9 +383,21 @@ class AiGenerationService:
             topic=job.topic or "",
             language=job.language,
         )
-        return self._provider.chat_json(
+        logger.info(
+            "AI job %s topic outline prompt ready provider=%s user_chars=%s",
+            job.id,
+            self._provider.name,
+            len(user),
+        )
+        data = self._provider.chat_json(
             [ChatMessage("system", system), ChatMessage("user", user)],
         )
+        logger.info(
+            "AI job %s topic outline response sections=%s",
+            job.id,
+            len(data.get("sections") or []),
+        )
+        return data
 
     def _generate_questions_for_outline(
         self,
@@ -380,6 +435,7 @@ class AiGenerationService:
                 sort_order=sort_order,
                 concepts_json=list(raw.get("concepts") or []),
             )
+            job.sections.append(section)
             self._repo.add(section)
             self._repo.flush()
 

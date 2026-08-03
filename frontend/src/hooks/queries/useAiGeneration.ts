@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { queryKeys } from '@/hooks/queries/keys'
 import {
   cancelAiJob,
   createDocumentJob,
@@ -21,10 +22,23 @@ export const aiQueryKeys = {
   job: (id: string) => ['ai', 'jobs', id] as const,
 }
 
-export function useAiJobsQuery() {
+const ACTIVE_STATUSES = new Set([
+  'queued',
+  'uploading',
+  'extracting',
+  'analyzing',
+  'generating',
+])
+
+export function useAiJobsQuery(opts?: { pollActive?: boolean }) {
   return useQuery({
     queryKey: aiQueryKeys.jobs,
     queryFn: listAiJobs,
+    refetchInterval: (query) => {
+      if (!opts?.pollActive) return false
+      const items = query.state.data?.items ?? []
+      return items.some((j) => ACTIVE_STATUSES.has(j.status)) ? 2000 : false
+    },
   })
 }
 
@@ -46,52 +60,61 @@ export function useAiJobQuery(jobId: string | undefined, opts?: { poll?: boolean
 export function useAiGenerationMutations() {
   const queryClient = useQueryClient()
 
-  const invalidate = (jobId?: string) => {
+  const invalidateAi = (jobId?: string) => {
     void queryClient.invalidateQueries({ queryKey: ['ai'] })
     if (jobId) void queryClient.invalidateQueries({ queryKey: aiQueryKeys.job(jobId) })
+  }
+
+  const invalidateQuizzes = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.quizzes.all })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.summary })
   }
 
   return {
     createDocument: useMutation({
       mutationFn: (body: AiGenerateDocumentRequest) => createDocumentJob(body),
-      onSuccess: (job) => invalidate(job.id),
+      onSuccess: (job) => invalidateAi(job.id),
     }),
     createTopic: useMutation({
       mutationFn: (body: AiGenerateTopicRequest) => createTopicJob(body),
-      onSuccess: (job) => invalidate(job.id),
+      onSuccess: (job) => invalidateAi(job.id),
     }),
     upload: useMutation({
       mutationFn: ({ jobId, file }: { jobId: string; file: File }) => uploadAiSource(jobId, file),
-      onSuccess: (job) => invalidate(job.id),
+      onSuccess: (job) => invalidateAi(job.id),
     }),
     cancel: useMutation({
       mutationFn: (jobId: string) => cancelAiJob(jobId),
-      onSuccess: (job) => invalidate(job.id),
+      onSuccess: (job) => invalidateAi(job.id),
     }),
     patchQuestion: useMutation({
       mutationFn: ({ questionId, body }: { questionId: string; body: AiQuestionPatch }) =>
         patchAiQuestion(questionId, body),
-      onSuccess: () => invalidate(),
+      onSuccess: () => invalidateAi(),
     }),
     deleteQuestion: useMutation({
       mutationFn: (questionId: string) => deleteAiQuestion(questionId),
-      onSuccess: () => invalidate(),
+      onSuccess: () => invalidateAi(),
     }),
     regenerateQuestion: useMutation({
       mutationFn: (questionId: string) => regenerateAiQuestion(questionId),
-      onSuccess: () => invalidate(),
+      onSuccess: () => invalidateAi(),
     }),
     regenerateSection: useMutation({
       mutationFn: (sectionId: string) => regenerateAiSection(sectionId),
-      onSuccess: () => invalidate(),
+      onSuccess: () => invalidateAi(),
     }),
     regenerateQuiz: useMutation({
       mutationFn: (jobId: string) => regenerateAiQuiz(jobId),
-      onSuccess: (job) => invalidate(job.id),
+      onSuccess: (job) => invalidateAi(job.id),
     }),
     save: useMutation({
       mutationFn: (jobId: string) => saveAiJob(jobId),
-      onSuccess: () => invalidate(),
+      onSuccess: () => {
+        invalidateAi()
+        invalidateQuizzes()
+      },
     }),
+    invalidateQuizzes,
   }
 }

@@ -18,6 +18,10 @@ class MockAiProvider(AiProvider):
         self._settings = settings
 
     def chat_json(self, messages: list[ChatMessage], *, temperature: float = 0.3) -> dict[str, Any]:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info("LLM request provider=mock messages=%s", len(messages))
         user = next((m.content for m in reversed(messages) if m.role == "user"), "")
         system = next((m.content for m in messages if m.role == "system"), "")
 
