@@ -1,0 +1,34 @@
+Generate {{question_count}} questions for section "{{section_name}}".
+
+Difficulty: {{difficulty}}
+Allowed kinds: {{question_kinds}}
+Language: {{language}}
+
+Section summary: {{section_summary}}
+Concepts: {{concepts}}
+
+Return JSON:
+{
+  "questions": [
+    {
+      "kind": "mcq|multiple_correct|true_false|fill_blank",
+      "promptText": "string",
+      "explanation": "string",
+      "difficulty": "easy|medium|hard",
+      "topicLabel": "string",
+      "estimatedTimeSeconds": 20,
+      "sourceLocator": "section or page hint",
+      "options": [
+        {"text": "string", "isCorrect": true|false}
+      ]
+    }
+  ]
+}
+
+MCQ: exactly 4 options, one correct.
+Multiple correct: 4 options, at least two correct.
+True/False: exactly 2 options (True/False).
+Fill blank: 4 options with one correct fill.
+
+Source excerpt:
+{{source_text}}

@@ -49,6 +49,20 @@ Production requires PostgreSQL (`postgresql://user:pass@host:5432/dbname` or Neo
 | `MAX_UPLOAD_BYTES` | `15728640` (15 MiB) | Max single media upload |
 | `MAX_REQUEST_BODY_BYTES` | `20971520` (20 MiB) | Max JSON body size |
 
+## AI quiz generation
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AI_PROVIDER` | `mock` | `mock` (offline/CI) or `openai_compatible` |
+| `AI_API_KEY` | empty | Required when `AI_PROVIDER=openai_compatible` |
+| `AI_API_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base |
+| `AI_CHAT_MODEL` | `gpt-4o-mini` | Chat model id |
+| `AI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model id |
+| `AI_MAX_SOURCE_BYTES` | `52428800` (50 MiB) | Max AI source file size |
+| `AI_ENABLE_TOPIC_WEB` | `true` | Seed trusted educational URLs for topic mode |
+
+See [AI_QUIZ_GENERATION.md](./AI_QUIZ_GENERATION.md) for architecture and optional extractors.
+
 ## Storage
 
 | Variable | Default | Description |

@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.routers import (
+    ai_generation,
     answer_options,
     auth,
     dashboard,
@@ -32,6 +33,9 @@ api_router.include_router(answer_options.router, tags=["Answer Options"])
 
 # Media (API_SPEC.md §10)
 api_router.include_router(media.router, prefix="/media", tags=["Media"])
+
+# AI quiz generation
+api_router.include_router(ai_generation.router, prefix="/ai", tags=["AI Generation"])
 
 # Live sessions (API_SPEC.md §11–12)
 api_router.include_router(live_rooms.router, prefix="/live-rooms", tags=["Live Rooms"])

@@ -19,6 +19,7 @@ async def lifespan(app: FastAPI):
     """Application startup and shutdown hooks."""
     from app.api.deps import get_session_factory
     from app.services.auth_service import AuthService
+    from app.services.ai.job_worker import ai_job_worker
     from app.services.timer_service import auto_progression
 
     settings = get_settings()
@@ -39,12 +40,14 @@ async def lifespan(app: FastAPI):
         session.close()
 
     await auto_progression.start()
+    await ai_job_worker.start()
     if settings.app_env != "test":
         await heartbeat_monitor.start()
     try:
         yield
     finally:
         await auto_progression.stop()
+        await ai_job_worker.stop()
         if settings.app_env != "test":
             await heartbeat_monitor.stop()
         logger.info("Shutting down QuizArena API")

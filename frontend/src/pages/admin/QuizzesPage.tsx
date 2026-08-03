@@ -1,4 +1,4 @@
-import { MoreHorizontal, Plus, Radio } from 'lucide-react'
+import { MoreHorizontal, Plus, Radio, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -169,12 +169,20 @@ export function QuizzesPage() {
         title="Quizzes"
         description="Search, filter, and manage quiz templates."
         actions={
-          <Button asChild>
-            <Link to="/admin/quizzes/new">
-              <Plus className="h-4 w-4" />
-              Create quiz
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link to="/admin/quizzes/ai">
+                <Sparkles className="h-4 w-4" />
+                Generate with AI
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link to="/admin/quizzes/new">
+                <Plus className="h-4 w-4" />
+                Create quiz
+              </Link>
+            </Button>
+          </div>
         }
       />
 

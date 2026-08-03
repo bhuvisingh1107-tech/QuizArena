@@ -110,6 +110,24 @@ class Settings(BaseSettings):
     storage_backend: Literal["local", "cloud"] = "local"
     storage_path: str = "../storage"
 
+    # AI quiz generation
+    ai_provider: Literal["mock", "openai_compatible"] = Field(
+        default="mock",
+        description="AI provider: mock (offline/tests) or openai_compatible",
+    )
+    ai_api_key: str = Field(default="", description="API key for the configured AI provider")
+    ai_api_base_url: str = Field(
+        default="https://api.openai.com/v1",
+        description="OpenAI-compatible API base URL",
+    )
+    ai_chat_model: str = Field(default="gpt-4o-mini")
+    ai_embedding_model: str = Field(default="text-embedding-3-small")
+    ai_max_source_bytes: int = Field(default=50 * 1024 * 1024, ge=1024)
+    ai_enable_topic_web: bool = Field(
+        default=True,
+        description="Allow trusted-web fetch for topic mode (disabled in mock)",
+    )
+
     # Rate limits (per IP, in-memory — use edge/nginx for multi-instance)
     login_rate_limit_per_minute: int = Field(default=10, ge=1)
     join_rate_limit_per_minute: int = Field(default=30, ge=1)

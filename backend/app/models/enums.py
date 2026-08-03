@@ -83,9 +83,46 @@ class MediaCategory(StrEnum):
     QUESTION_AUDIO = "question_audio"
     QUIZ_BRANDING = "quiz_branding"
     PLATFORM_BRANDING = "platform_branding"
+    AI_SOURCE = "ai_source"
 
 
 class SecurityEventType(StrEnum):
     LOGIN_SUCCESS = "login_success"
     LOGOUT = "logout"
     LOGIN_FAILED = "login_failed"
+
+
+class AiGenerationMode(StrEnum):
+    DOCUMENT = "document"
+    TOPIC = "topic"
+
+
+class AiJobStatus(StrEnum):
+    QUEUED = "queued"
+    UPLOADING = "uploading"
+    EXTRACTING = "extracting"
+    ANALYZING = "analyzing"
+    GENERATING = "generating"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AiDifficulty(StrEnum):
+    EASY = "easy"
+    MEDIUM = "medium"
+    HARD = "hard"
+    MIXED = "mixed"
+
+
+class AiQuestionKind(StrEnum):
+    MCQ = "mcq"
+    MULTIPLE_CORRECT = "multiple_correct"
+    TRUE_FALSE = "true_false"
+    FILL_BLANK = "fill_blank"
+
+
+class AiSourceKind(StrEnum):
+    UPLOADED_FILE = "uploaded_file"
+    WEB_URL = "web_url"
+    TOPIC = "topic"

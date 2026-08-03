@@ -1,10 +1,23 @@
 """SQLAlchemy ORM models — DATABASE_SCHEMA.md entity set."""
 
 from app.models.admin import Admin
+from app.models.ai_generation import (
+    AiDocumentChunk,
+    AiGeneratedQuestion,
+    AiGeneratedSection,
+    AiGenerationJob,
+    AiSourceFile,
+    AiSourceReference,
+)
 from app.models.answer_option import AnswerOption
 from app.models.base import Base
 from app.models.enums import (
     AdminRole,
+    AiDifficulty,
+    AiGenerationMode,
+    AiJobStatus,
+    AiQuestionKind,
+    AiSourceKind,
     AnswerRevealBehavior,
     ConnectionStatus,
     LobbySubState,
@@ -36,6 +49,17 @@ from app.models.session_section import SessionSection
 __all__ = [
     "Admin",
     "AdminRole",
+    "AiDifficulty",
+    "AiDocumentChunk",
+    "AiGeneratedQuestion",
+    "AiGeneratedSection",
+    "AiGenerationJob",
+    "AiGenerationMode",
+    "AiJobStatus",
+    "AiQuestionKind",
+    "AiSourceFile",
+    "AiSourceKind",
+    "AiSourceReference",
     "AnswerOption",
     "AnswerRevealBehavior",
     "Base",

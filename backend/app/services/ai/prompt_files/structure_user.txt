@@ -1,0 +1,19 @@
+Analyze the following study material and produce a section outline.
+
+Language: {{language}}
+Desired quiz title hint: {{title_hint}}
+
+Return JSON:
+{
+  "title": "string",
+  "sections": [
+    {
+      "name": "string",
+      "summary": "string",
+      "concepts": ["string"]
+    }
+  ]
+}
+
+Source material:
+{{source_text}}

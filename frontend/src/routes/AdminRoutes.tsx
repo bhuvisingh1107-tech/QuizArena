@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 
 import { AdminLayout } from '@/layouts/AdminLayout'
+import { AiGeneratePage } from '@/pages/admin/AiGeneratePage'
+import { AiReviewPage } from '@/pages/admin/AiReviewPage'
 import { DashboardPage } from '@/pages/admin/DashboardPage'
 import { LiveRoomsPage } from '@/pages/admin/LiveRoomsPage'
 import { QuizBuilderPage } from '@/pages/admin/QuizBuilderPage'
@@ -26,6 +28,8 @@ export function AdminRoutes() {
           <Route path="dashboard" element={<DashboardPage />} />
 
           <Route path="quizzes" element={<QuizzesPage />} />
+          <Route path="quizzes/ai" element={<AiGeneratePage />} />
+          <Route path="quizzes/ai/:jobId" element={<AiReviewPage />} />
           <Route path="quizzes/new" element={<QuizBuilderPage />} />
           <Route path="quizzes/:quizId" element={<QuizBuilderPage />} />
           <Route path="quizzes/:quizId/questions" element={<RedirectToBuilderQuestions />} />

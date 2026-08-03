@@ -1,0 +1,14 @@
+Create a section outline for the topic: "{{topic}}"
+
+Language: {{language}}
+
+Return JSON:
+{
+  "title": "string",
+  "sections": [
+    {"name": "string", "summary": "string", "concepts": ["string"]}
+  ],
+  "trustedSources": [
+    {"title": "string", "url": "string", "publisher": "string"}
+  ]
+}

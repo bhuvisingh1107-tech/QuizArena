@@ -27,6 +27,8 @@ flowchart LR
 | Path prefix | Role |
 |-------------|------|
 | `/admin/*` | Quiz builder, live room control, results |
+| `/admin/quizzes/ai` | AI quiz generation (topic / upload) |
+| `/admin/quizzes/ai/:jobId` | AI job progress + review editor |
 | `/display/:secretToken` | Presentation / projector view |
 | `/join`, `/lobby`, `/quiz`, `/results` | Participant experience |
 
@@ -56,6 +58,7 @@ app/
 - **PostgreSQL** in production (Docker Compose, CI, deployed environments).
 - **SQLite** for lightweight local development and unit/integration tests.
 - Schema managed by **Alembic** migrations in `backend/alembic/versions/`.
+- **AI quiz generation** uses dedicated tables (jobs, chunks, draft questions). See [AI_QUIZ_GENERATION.md](./AI_QUIZ_GENERATION.md).
 
 ## Deployment topology (production)
 
