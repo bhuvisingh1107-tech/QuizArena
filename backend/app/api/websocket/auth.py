@@ -80,6 +80,12 @@ def _auth_admin(
 
     admin = AuthService(session, settings).get_admin_from_token(token)
     room = _get_room(session, room_uuid)
+    # Enforce same ownership gate as HTTP live-room routes.
+    from app.models.quiz import Quiz
+
+    quiz = session.get(Quiz, room.quiz_id)
+    if quiz is None or quiz.owner_id != admin.id:
+        raise NotFoundError("NOT_FOUND", "Live room not found")
     _ensure_room_connectable(room)
     return AuthenticatedSocket(
         role=ClientRole.ADMIN,

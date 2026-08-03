@@ -29,7 +29,15 @@ QuestionServiceDep = Annotated[QuestionService, Depends(get_question_service)]
 
 
 def _question_response(question) -> QuestionResponseData:
-    return QuestionResponseData.model_validate(question)
+    from app.services.question_crypto import open_explanation, open_prompt
+
+    data = QuestionResponseData.model_validate(question)
+    return data.model_copy(
+        update={
+            "prompt_text": open_prompt(question.prompt_text),
+            "explanation": open_explanation(question.explanation),
+        },
+    )
 
 
 def _envelope(data, request_id: str, *, status_code: int = status.HTTP_200_OK) -> JSONResponse:

@@ -112,6 +112,7 @@ def _room_response(room: LiveRoom, service: LiveRoomService) -> LiveRoomResponse
         quiz_title_snapshot=room.quiz_title_snapshot,
         current_question_index=room.current_question_index,
         codes_expired=room.codes_expired,
+        awaiting_host_advance=bool(room.awaiting_host_advance),
         join_url=service.join_url(room.room_code),
         display_url=service.display_url(room.secret_token),
         qr_target=service.qr_target(room.room_code),
@@ -480,19 +481,39 @@ def get_room_results(
 @router.get(
     "/{room_id}/results/export",
     status_code=status.HTTP_200_OK,
-    summary="Export session results as CSV",
+    summary="Export session results as Excel (xlsx) or CSV",
 )
 def export_room_results(
     room_id: UUID,
     admin: CurrentAdmin,
     service: ResultsServiceDep,
     rooms: LiveRoomServiceDep,
+    request: Request,
+    format: Annotated[str | None, Query(description="xlsx or csv")] = None,
 ) -> Response:
     rooms.get(room_id, owner_id=admin.id)
-    csv_text = service.export_csv(room_id)
-    filename = f"room-{room_id}-results.csv"
-    return StreamingResponse(
-        iter([csv_text]),
-        media_type="text/csv",
+
+    resolved = (format or "").strip().lower()
+    if not resolved:
+        accept = (request.headers.get("accept") or "").lower()
+        if "text/csv" in accept and "spreadsheetml" not in accept:
+            resolved = "csv"
+        else:
+            resolved = "xlsx"
+
+    if resolved == "csv":
+        csv_text = service.export_csv(room_id)
+        filename = f"room-{room_id}-results.csv"
+        return StreamingResponse(
+            iter([csv_text]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    xlsx_bytes = service.export_xlsx(room_id)
+    filename = f"room-{room_id}-results.xlsx"
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

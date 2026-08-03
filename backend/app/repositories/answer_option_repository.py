@@ -58,24 +58,6 @@ class AnswerOptionRepository:
         )
         return int(self._session.scalar(stmt) or 0)
 
-    def count_correct_for_question(
-        self,
-        question_id: UUID,
-        *,
-        exclude_option_id: UUID | None = None,
-    ) -> int:
-        stmt = (
-            select(func.count())
-            .select_from(AnswerOption)
-            .where(
-                AnswerOption.question_id == question_id,
-                AnswerOption.is_correct.is_(True),
-            )
-        )
-        if exclude_option_id is not None:
-            stmt = stmt.where(AnswerOption.id != exclude_option_id)
-        return int(self._session.scalar(stmt) or 0)
-
     def next_sort_order(self, question_id: UUID) -> int:
         stmt = select(func.max(AnswerOption.sort_order)).where(
             AnswerOption.question_id == question_id,

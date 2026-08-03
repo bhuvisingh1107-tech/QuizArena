@@ -109,6 +109,9 @@ class AutoProgressionScheduler:
         try:
             await asyncio.sleep(REVEAL_DWELL_SECONDS)
             await self._leaderboard_and_broadcast(room_id)
+            if await asyncio.to_thread(self._is_manual_mode, room_id):
+                await self._await_host_and_broadcast(room_id)
+                return
             await asyncio.sleep(LEADERBOARD_DWELL_SECONDS)
             await self._advance_and_broadcast(room_id)
         except asyncio.CancelledError:
@@ -120,6 +123,8 @@ class AutoProgressionScheduler:
         from app.models.enums import SessionQuestionState
 
         try:
+            if await asyncio.to_thread(self._is_awaiting_host, room_id):
+                return
             state = await asyncio.to_thread(self._question_state, room_id)
             if state is None:
                 return
@@ -129,12 +134,18 @@ class AutoProgressionScheduler:
                 await self._reveal_and_broadcast(room_id)
                 await asyncio.sleep(REVEAL_DWELL_SECONDS)
                 await self._leaderboard_and_broadcast(room_id)
+                if await asyncio.to_thread(self._is_manual_mode, room_id):
+                    await self._await_host_and_broadcast(room_id)
+                    return
                 await asyncio.sleep(LEADERBOARD_DWELL_SECONDS)
                 await self._advance_and_broadcast(room_id)
                 return
             if state in {SessionQuestionState.REVEALED, SessionQuestionState.SCORED}:
-                # Already revealed — show standings, then advance.
+                # Already revealed — show standings, then advance (or wait for host).
                 await self._leaderboard_and_broadcast(room_id)
+                if await asyncio.to_thread(self._is_manual_mode, room_id):
+                    await self._await_host_and_broadcast(room_id)
+                    return
                 await asyncio.sleep(LEADERBOARD_DWELL_SECONDS)
                 await self._advance_and_broadcast(room_id)
         except asyncio.CancelledError:
@@ -187,6 +198,9 @@ class AutoProgressionScheduler:
             await self._reveal_and_broadcast(room_id)
             await asyncio.sleep(REVEAL_DWELL_SECONDS)
             await self._leaderboard_and_broadcast(room_id)
+            if await asyncio.to_thread(self._is_manual_mode, room_id):
+                await self._await_host_and_broadcast(room_id)
+                return
             await asyncio.sleep(LEADERBOARD_DWELL_SECONDS)
             await self._advance_and_broadcast(room_id)
         except asyncio.CancelledError:
@@ -228,6 +242,13 @@ class AutoProgressionScheduler:
             from app.api.websocket.broadcast_helpers import broadcast_execution_events
 
             await broadcast_execution_events(room_id, events)
+
+    async def _await_host_and_broadcast(self, room_id: UUID) -> None:
+        """Manual mode: stop after leaderboard and wait for admin:next_question."""
+        result = await asyncio.to_thread(self._sync_await_host, room_id)
+        if result is not None:
+            await self._broadcast_result(room_id, result)
+        self._tasks.pop(room_id, None)
 
     async def _advance_and_broadcast(self, room_id: UUID) -> None:
         result = await asyncio.to_thread(self._sync_advance, room_id)
@@ -285,6 +306,138 @@ class AutoProgressionScheduler:
         except QuizArenaError as exc:
             logger.info("Leaderboard broadcast skipped for %s: %s", room_id, exc.code)
             return []
+        finally:
+            session.close()
+
+    def _is_manual_mode(self, room_id: UUID) -> bool:
+        from app.api.deps import get_session_factory
+        from app.models.enums import QuestionAdvanceMode
+        from app.services.live_room_service import LiveRoomService
+
+        session = get_session_factory()()
+        try:
+            from app.config import get_settings
+
+            room = LiveRoomService(session, get_settings()).get(room_id)
+            if room.config is None:
+                # Fail toward automatic so a missing config cannot stall a live room.
+                return False
+            return room.config.question_advance_mode == QuestionAdvanceMode.MANUAL
+        except Exception:
+            logger.exception("Failed reading advance mode for room %s", room_id)
+            return False
+        finally:
+            session.close()
+
+    def _is_awaiting_host(self, room_id: UUID) -> bool:
+        from app.api.deps import get_session_factory
+        from app.services.live_room_service import LiveRoomService
+
+        session = get_session_factory()()
+        try:
+            from app.config import get_settings
+
+            room = LiveRoomService(session, get_settings()).get(room_id)
+            return bool(room.awaiting_host_advance)
+        except Exception:
+            return False
+        finally:
+            session.close()
+
+    def _sync_await_host(self, room_id: UUID) -> Any | None:
+        from app.api.deps import get_session_factory
+        from app.core.exceptions import QuizArenaError
+        from app.models.enums import RoomState, SessionQuestionState
+        from app.services.quiz_execution_service import (
+            BroadcastEvent,
+            ExecutionResult,
+            QuizExecutionService,
+        )
+        from app.services.session_event_service import (
+            AWAITING_HOST_ADVANCE,
+            log_session_event,
+        )
+
+        session = get_session_factory()()
+        try:
+            execution = QuizExecutionService(session)
+            state = execution.get_execution_state(room_id)
+            room = state.room
+            if room.state != RoomState.ACTIVE:
+                return None
+            question = state.question
+            if question is None:
+                return None
+            if question.state not in {
+                SessionQuestionState.REVEALED,
+                SessionQuestionState.SCORED,
+            }:
+                return None
+
+            expected_question_id = question.id
+            expected_index = room.current_question_index
+
+            section = execution._section_for(room, question)
+            payload = execution._question_payload(
+                room,
+                question,
+                section,
+                include_correct=True,
+            )
+            payload["awaitingHostAdvance"] = True
+            log_session_event(
+                session,
+                room_id,
+                AWAITING_HOST_ADVANCE,
+                {
+                    "questionId": str(question.id),
+                    "questionIndex": room.current_question_index,
+                },
+                flush=False,
+            )
+
+            # Compare-and-set: host next_question may have advanced already.
+            session.refresh(room)
+            session.refresh(question)
+            if (
+                room.state != RoomState.ACTIVE
+                or room.current_question_index != expected_index
+                or bool(room.awaiting_host_advance)
+                or question.id != expected_question_id
+                or question.state
+                not in {SessionQuestionState.REVEALED, SessionQuestionState.SCORED}
+            ):
+                session.rollback()
+                return None
+
+            room.awaiting_host_advance = True
+            session.commit()
+            return ExecutionResult(
+                room=room,
+                events=[
+                    BroadcastEvent(
+                        type="question:awaiting_advance",
+                        payload=payload,
+                        audience="room",
+                    ),
+                    BroadcastEvent(
+                        type="room:state_changed",
+                        payload={
+                            **execution._room_state_payload(room),
+                            "awaitingHostAdvance": True,
+                        },
+                        audience="room",
+                    ),
+                ],
+            )
+        except QuizArenaError as exc:
+            session.rollback()
+            logger.info("Await-host advance skipped for %s: %s", room_id, exc.code)
+            return None
+        except Exception:
+            session.rollback()
+            logger.exception("Await-host failed for room %s", room_id)
+            return None
         finally:
             session.close()
 

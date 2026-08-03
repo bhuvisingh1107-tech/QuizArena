@@ -246,6 +246,20 @@ export function RoomMonitorPage() {
 
   const state = room.state
   const isCompleted = state === 'Completed' || state === 'Closed'
+  const advanceMode =
+    room.config?.questionAdvanceMode ??
+    room.questionAdvanceMode ??
+    'manual'
+  const isManual = advanceMode === 'manual'
+  const questionState = live.currentQuestion?.state
+  const showNextQuestion =
+    !isCompleted &&
+    (state === 'Active' || state === 'Paused' || state === 'SectionBreak') &&
+    (Boolean(room.awaitingHostAdvance) ||
+      (isManual &&
+        (questionState === 'Revealed' ||
+          questionState === 'Scored' ||
+          state === 'SectionBreak')))
 
   return (
     <div className="space-y-6">
@@ -373,8 +387,9 @@ export function RoomMonitorPage() {
           <CardHeader>
             <CardTitle className="text-base">Host controls</CardTitle>
             <CardDescription>
-              Open the lobby once, then Start Quiz. Questions advance automatically. Use Skip only
-              in emergencies.
+              {isManual
+                ? 'Open the lobby once, then Start Quiz. After each reveal, click Next Question to continue. Use Emergency Skip only if needed.'
+                : 'Open the lobby once, then Start Quiz. Questions advance automatically after the timer and reveal. Use Emergency Skip only if needed.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
@@ -417,6 +432,15 @@ export function RoomMonitorPage() {
               <Play className="h-4 w-4" />
               Resume
             </Button>
+            {showNextQuestion ? (
+              <Button
+                size="sm"
+                onClick={() => runWs('admin:next_question', 'Next question')}
+              >
+                <SkipForward className="h-4 w-4" />
+                Next Question
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="secondary"
@@ -454,9 +478,9 @@ export function RoomMonitorPage() {
         <CardHeader>
           <CardTitle className="text-base">Live progression</CardTitle>
           <CardDescription>
-            Timer or all answers → answer reveal (3s) → leaderboard (3s) → next question.
-            No manual Next required.
-            required.
+            {isManual
+              ? 'Timer or all answers → answer reveal (3s) → leaderboard → wait for Next Question.'
+              : 'Timer or all answers → answer reveal (3s) → leaderboard (3s) → next question automatically.'}
           </CardDescription>
         </CardHeader>
       </Card>

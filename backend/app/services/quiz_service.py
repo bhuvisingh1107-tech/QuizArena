@@ -341,7 +341,10 @@ class QuizService:
             for question in questions:
                 total_questions += 1
                 q_path = f"questions.{question.id}"
-                if not question.prompt_text or not question.prompt_text.strip():
+                from app.services.question_crypto import open_option_fields, open_prompt
+
+                prompt = open_prompt(question.prompt_text) or ""
+                if not prompt.strip():
                     errors.append({"field": f"{q_path}.promptText", "message": "Question text is required"})
                 if question.base_points < 1:
                     errors.append({"field": f"{q_path}.basePoints", "message": "Base points must be ≥ 1"})
@@ -354,7 +357,7 @@ class QuizService:
                             "message": f"Each question needs {_MIN_OPTIONS}–{_MAX_OPTIONS} options",
                         }
                     )
-                elif not any(opt.is_correct for opt in options):
+                elif not any(open_option_fields(opt.text, opt.is_correct)[1] for opt in options):
                     errors.append(
                         {
                             "field": f"{q_path}.options",

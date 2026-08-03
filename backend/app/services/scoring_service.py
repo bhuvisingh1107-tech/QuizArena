@@ -344,6 +344,7 @@ class ScoringService:
     @staticmethod
     def _evaluate_correctness(response: Response, question: SessionQuestion) -> bool:
         """SR-003 / SR-004 — exact set match (all-or-nothing for multi-select)."""
+        # Session options are plaintext snapshots (decrypted at room create).
         correct_ids = {opt.id for opt in question.options if opt.is_correct}
         try:
             selected = {UUID(str(oid)) for oid in (response.selected_option_ids or [])}

@@ -184,6 +184,15 @@ class Settings(BaseSettings):
         description="Allow trusted-web fetch for topic mode (disabled in mock)",
     )
 
+    # Question content encryption (AES-256-GCM). Strongly recommended in production.
+    question_encryption_key: str = Field(
+        default="",
+        description=(
+            "32-byte key (urlsafe base64 or hex) or passphrase hashed to 32 bytes. "
+            "When set, question prompts/explanations/options are sealed at rest."
+        ),
+    )
+
     # Rate limits (per IP, in-memory — use edge/nginx for multi-instance)
     login_rate_limit_per_minute: int = Field(default=10, ge=1)
     join_rate_limit_per_minute: int = Field(default=30, ge=1)

@@ -85,6 +85,17 @@ function mergeRoom(existing: LiveRoom | null, patch: Record<string, unknown>): L
   if (!existing && !(patch.id || patch.roomId)) return existing
   const base = existing ?? (patch as unknown as LiveRoom)
   const id = String(patch.id ?? patch.roomId ?? base.id)
+  const configPatch = patch.config ? asRecord(patch.config) : null
+  const nextConfig =
+    configPatch || patch.questionAdvanceMode
+      ? {
+          ...(base.config ?? ({} as LiveRoom['config'])),
+          ...(configPatch as object),
+          ...(typeof patch.questionAdvanceMode === 'string'
+            ? { questionAdvanceMode: patch.questionAdvanceMode as LiveRoom['questionAdvanceMode'] }
+            : {}),
+        }
+      : base.config
   return {
     ...base,
     ...patch,
@@ -97,6 +108,17 @@ function mergeRoom(existing: LiveRoom | null, patch: Record<string, unknown>): L
       typeof patch.currentQuestionIndex === 'number'
         ? patch.currentQuestionIndex
         : (base.currentQuestionIndex ?? null),
+    awaitingHostAdvance:
+      typeof patch.awaitingHostAdvance === 'boolean'
+        ? patch.awaitingHostAdvance
+        : (base.awaitingHostAdvance ?? false),
+    questionAdvanceMode:
+      (patch.questionAdvanceMode as LiveRoom['questionAdvanceMode']) ??
+      (configPatch?.questionAdvanceMode as LiveRoom['questionAdvanceMode']) ??
+      base.questionAdvanceMode ??
+      base.config?.questionAdvanceMode ??
+      null,
+    config: nextConfig as LiveRoom['config'],
     quizTitleSnapshot: String(
       patch.quizTitleSnapshot ?? patch.quizTitle ?? base.quizTitleSnapshot ?? '',
     ),
@@ -369,16 +391,24 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
             room: mergeRoom(state.room, {
               state: 'Active',
               currentQuestionIndex: index,
+              awaitingHostAdvance: false,
             }),
           }
         }
 
         case 'question:closed':
         case 'question:reveal':
-        case 'question:scored': {
+        case 'question:scored':
+        case 'question:awaiting_advance': {
           const q = data.question ? asRecord(data.question) : null
+          const awaiting =
+            type === 'question:awaiting_advance' || data.awaitingHostAdvance === true
           return {
             ...state,
+            room: mergeRoom(state.room, {
+              awaitingHostAdvance: awaiting,
+              ...(data.room ? asRecord(data.room) : {}),
+            }),
             currentQuestion: q
               ? {
                   ...(q as unknown as LiveQuestionSnapshot),
@@ -392,7 +422,9 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
                       ? 'Closed'
                       : type === 'question:reveal'
                         ? 'Revealed'
-                        : 'Scored'),
+                        : type === 'question:awaiting_advance'
+                          ? (state.currentQuestion?.state ?? 'Revealed')
+                          : 'Scored'),
                 }
               : state.currentQuestion
                 ? {
@@ -402,7 +434,9 @@ function liveReducer(state: AdminLiveState, action: LiveAction): AdminLiveState 
                         ? 'Closed'
                         : type === 'question:reveal'
                           ? 'Revealed'
-                          : 'Scored',
+                          : type === 'question:awaiting_advance'
+                            ? (state.currentQuestion.state ?? 'Revealed')
+                            : 'Scored',
                   }
                 : null,
           }

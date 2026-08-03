@@ -12,6 +12,7 @@ from app.models.session_question import SessionQuestion
 from app.repositories.participant_repository import ParticipantRepository
 from app.repositories.response_repository import ResponseRepository
 from app.services.leaderboard_service import LeaderboardService
+from app.services.question_crypto import open_explanation, open_option_fields, open_prompt
 from app.services.results_service import assign_competition_ranks
 
 
@@ -40,15 +41,16 @@ class DisplayStatsService:
         options = sorted(question.options, key=lambda o: o.sort_order)
         out: list[dict] = []
         for opt in options:
+            text, is_correct = open_option_fields(opt.text, opt.is_correct)
             count = int(selection_counts.get(opt.id, 0))
             percent = round((count / answered) * 100.0, 1) if answered else 0.0
             out.append(
                 {
                     "optionId": str(opt.id),
-                    "text": opt.text,
+                    "text": text,
                     "selectedCount": count,
                     "percent": percent,
-                    "isCorrect": bool(opt.is_correct),
+                    "isCorrect": is_correct,
                 }
             )
         return out
@@ -68,7 +70,7 @@ class DisplayStatsService:
 
             source = self._session.get(Question, question.source_question_id)
             if source is not None:
-                explanation = source.explanation
+                explanation = open_explanation(source.explanation)
         accuracy = round((correct / answered) * 100.0, 1) if answered else 0.0
         return {
             "optionDistribution": distribution,
@@ -165,7 +167,7 @@ class DisplayStatsService:
                 summary = {
                     "questionId": str(question.id),
                     "questionIndex": index,
-                    "promptText": question.prompt_text,
+                    "promptText": open_prompt(question.prompt_text) or "",
                     "accuracyPercent": round(accuracy, 1),
                     "missPercent": round(miss_rate, 1),
                 }
@@ -190,7 +192,7 @@ class DisplayStatsService:
                         "displayName": owner.display_name if owner else "Player",
                         "responseTimeMs": best_time_ms,
                         "questionId": str(question.id),
-                        "promptText": question.prompt_text,
+                        "promptText": open_prompt(question.prompt_text) or "",
                     }
 
         ranked = assign_competition_ranks(participants)

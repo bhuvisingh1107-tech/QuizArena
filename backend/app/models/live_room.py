@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.quiz import Quiz
     from app.models.room_ban import RoomBan
     from app.models.room_config import RoomConfig
+    from app.models.session_event import SessionEvent
     from app.models.session_question import SessionQuestion
     from app.models.session_section import SessionSection
 
@@ -62,6 +63,12 @@ class LiveRoom(Base, TimestampMixin):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pause_accumulated_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    awaiting_host_advance: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=false(),
+    )
 
     quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="live_rooms")
     config: Mapped[Optional["RoomConfig"]] = relationship(
@@ -91,4 +98,10 @@ class LiveRoom(Base, TimestampMixin):
         "RoomBan",
         back_populates="live_room",
         cascade="all, delete-orphan",
+    )
+    session_events: Mapped[list["SessionEvent"]] = relationship(
+        "SessionEvent",
+        back_populates="live_room",
+        cascade="all, delete-orphan",
+        order_by="SessionEvent.created_at",
     )

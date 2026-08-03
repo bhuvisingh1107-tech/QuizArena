@@ -6,6 +6,7 @@ import csv
 import io
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session, selectinload
@@ -189,6 +190,218 @@ class ResultsService:
                 ]
             )
         return buffer.getvalue()
+
+    def export_xlsx(self, room_id: UUID) -> bytes:
+        """Build multi-sheet Excel workbook for session results export."""
+        from openpyxl import Workbook
+
+        room = self._rooms.get_by_id(room_id)
+        if room is None:
+            raise NotFoundError("NOT_FOUND", "Live room not found")
+
+        participants = self._participants.list_for_room(room_id)
+        ranked = assign_competition_ranks(participants)
+        questions = sorted(room.session_questions, key=lambda q: q.sort_order)
+        responses = self._list_responses_for_room(room_id)
+        responses_by_participant: dict[UUID, list[Response]] = defaultdict(list)
+        for response in responses:
+            responses_by_participant[response.participant_id].append(response)
+
+        question_index_by_id = {q.id: idx for idx, q in enumerate(questions)}
+        options_by_question: dict[UUID, dict[UUID, str]] = {}
+        correct_options_by_question: dict[UUID, list[str]] = {}
+        for question in questions:
+            opts = {opt.id: opt.text for opt in question.options}
+            options_by_question[question.id] = opts
+            correct_options_by_question[question.id] = [
+                opt.text for opt in sorted(question.options, key=lambda o: o.sort_order) if opt.is_correct
+            ]
+
+        wb = Workbook()
+
+        # ── Participants ──────────────────────────────────────────────────
+        ws_p = wb.active
+        ws_p.title = "Participants"
+        ws_p.append(
+            [
+                "Rank",
+                "Name",
+                "Email",
+                "Score",
+                "Accuracy",
+                "Avg response time",
+                "Streak",
+                "Fastest answer",
+            ]
+        )
+        total_q = len(questions)
+        for rp in ranked:
+            p = rp.participant
+            p_responses = [
+                r
+                for r in responses_by_participant.get(p.id, [])
+                if not r.is_unanswered and r.submitted_at is not None
+            ]
+            times = [
+                int(r.response_time_ms)
+                for r in p_responses
+                if r.response_time_ms is not None
+            ]
+            avg_time = round(sum(times) / len(times), 2) if times else None
+            fastest = min(times) if times else None
+            accuracy = (
+                round((int(p.total_correct or 0) / total_q) * 100.0, 2) if total_q else 0.0
+            )
+            ws_p.append(
+                [
+                    rp.rank,
+                    p.display_name,
+                    p.email,
+                    int(p.total_score or 0),
+                    accuracy,
+                    avg_time,
+                    int(p.streak or 0),
+                    fastest,
+                ]
+            )
+
+        # ── Questions ─────────────────────────────────────────────────────
+        ws_q = wb.create_sheet("Questions")
+        ws_q.append(
+            [
+                "Participant",
+                "Question #",
+                "Question ID",
+                "Question text",
+                "Selected option",
+                "Correct option",
+                "Correct/Incorrect",
+                "Points",
+                "Time taken",
+                "Timestamp",
+                "Time bonus",
+                "Streak bonus",
+            ]
+        )
+        participant_name = {p.id: p.display_name for p in participants}
+        for response in sorted(
+            responses,
+            key=lambda r: (
+                participant_name.get(r.participant_id, ""),
+                question_index_by_id.get(r.session_question_id, 0),
+            ),
+        ):
+            qid = response.session_question_id
+            q_index = question_index_by_id.get(qid)
+            question = next((q for q in questions if q.id == qid), None)
+            opt_map = options_by_question.get(qid, {})
+            selected_texts: list[str] = []
+            for raw_id in response.selected_option_ids or []:
+                try:
+                    selected_texts.append(opt_map.get(UUID(str(raw_id)), str(raw_id)))
+                except (TypeError, ValueError):
+                    selected_texts.append(str(raw_id))
+            if response.is_unanswered:
+                verdict = "Unanswered"
+            elif response.is_correct:
+                verdict = "Correct"
+            else:
+                verdict = "Incorrect"
+            ws_q.append(
+                [
+                    participant_name.get(response.participant_id, ""),
+                    (q_index + 1) if q_index is not None else None,
+                    str(qid),
+                    question.prompt_text if question is not None else "",
+                    "; ".join(selected_texts),
+                    "; ".join(correct_options_by_question.get(qid, [])),
+                    verdict,
+                    int(response.total_points_earned or 0),
+                    response.response_time_ms,
+                    response.submitted_at.isoformat() if response.submitted_at else None,
+                    int(response.time_bonus_earned or 0),
+                    int(response.streak_bonus_earned or 0),
+                ]
+            )
+
+        # ── Timeline ──────────────────────────────────────────────────────
+        ws_t = wb.create_sheet("Timeline")
+        ws_t.append(["Timestamp", "Event type", "Payload"])
+        for row in self._timeline_rows(room, responses, questions):
+            ws_t.append(row)
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        return buffer.getvalue()
+
+    def _timeline_rows(
+        self,
+        room,
+        responses: list[Response],
+        questions: list[SessionQuestion],
+    ) -> list[list[Any]]:
+        """Prefer session_events; otherwise synthesize from room + responses."""
+        from app.models.session_event import SessionEvent
+
+        events = list(
+            self._session.scalars(
+                select(SessionEvent)
+                .where(SessionEvent.live_room_id == room.id)
+                .order_by(SessionEvent.created_at.asc())
+            ).all()
+        )
+        if events:
+            rows: list[list[Any]] = []
+            for event in events:
+                payload = event.payload_json
+                payload_text = ""
+                if payload is not None:
+                    import json
+
+                    payload_text = json.dumps(payload, default=str)
+                rows.append(
+                    [
+                        event.created_at.isoformat() if event.created_at else None,
+                        event.event_type,
+                        payload_text,
+                    ]
+                )
+            return rows
+
+        # Synthesize chronological timeline when no session_events exist.
+        synthetic: list[tuple[Any, str, str]] = []
+        if room.created_at:
+            synthetic.append((room.created_at, "room_created", f"code={room.room_code}"))
+        if room.started_at:
+            synthetic.append((room.started_at, "quiz_started", ""))
+        for question in questions:
+            if question.opened_at:
+                synthetic.append(
+                    (
+                        question.opened_at,
+                        "question_shown",
+                        f"questionId={question.id} text={question.prompt_text or ''}",
+                    )
+                )
+        for response in responses:
+            if response.submitted_at:
+                synthetic.append(
+                    (
+                        response.submitted_at,
+                        "answer_submitted",
+                        f"participantId={response.participant_id} questionId={response.session_question_id}",
+                    )
+                )
+        if room.completed_at:
+            synthetic.append((room.completed_at, "quiz_ended", ""))
+        if room.closed_at:
+            synthetic.append((room.closed_at, "room_closed", ""))
+
+        synthetic.sort(key=lambda item: item[0] or "")
+        return [
+            [ts.isoformat() if hasattr(ts, "isoformat") else ts, event_type, payload]
+            for ts, event_type, payload in synthetic
+        ]
 
     def _list_responses_for_room(self, room_id: UUID) -> list[Response]:
         stmt = (

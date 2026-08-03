@@ -41,6 +41,7 @@ class ServerEventType(StrEnum):
     QUESTION_STARTED = "question:started"
     QUESTION_CLOSED = "question:closed"
     QUESTION_REVEAL = "question:reveal"
+    QUESTION_AWAITING_ADVANCE = "question:awaiting_advance"
     QUIZ_COMPLETED = "quiz:completed"
 
     # Answer submission

@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { TableCell, TableHead, TableRow } from '@/components/ui/table'
 import {
-  downloadRoomResultsCsv,
+  downloadRoomResults,
   useRoomResults,
 } from '@/hooks/queries/useRoomResults'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
@@ -43,8 +43,8 @@ export function RoomResultsPage() {
   const handleExport = async () => {
     setExporting(true)
     try {
-      await downloadRoomResultsCsv(roomId)
-      toastSuccess('CSV downloaded')
+      await downloadRoomResults(roomId, 'xlsx')
+      toastSuccess('Excel downloaded')
     } catch (error) {
       toastError(error)
     } finally {
@@ -68,7 +68,7 @@ export function RoomResultsPage() {
               onClick={() => void handleExport()}
             >
               <Download className="h-4 w-4" />
-              {exporting ? 'Exporting…' : 'Export CSV'}
+              {exporting ? 'Exporting…' : 'Export Excel'}
             </Button>
             <Button size="sm" variant="outline" onClick={() => window.print()}>
               <Printer className="h-4 w-4" />

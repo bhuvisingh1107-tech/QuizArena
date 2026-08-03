@@ -167,6 +167,9 @@ class LiveRoomService:
         room = self.get(room_id, owner_id=owner_id)
         room.state = room_fsm.transition(room.state, "open_lobby")
         room.lobby_sub_state = LobbySubState.OPEN
+        from app.services.session_event_service import LOBBY_OPENED, log_session_event
+
+        log_session_event(self._session, room_id, LOBBY_OPENED, flush=False)
         self._rooms.flush()
         self._session.commit()
         return self.get(room_id, owner_id=owner_id)
@@ -191,10 +194,14 @@ class LiveRoomService:
         room.state = room_fsm.transition(room.state, "start")
         room.started_at = datetime.now(UTC)
         room.current_question_index = 0
+        room.awaiting_host_advance = False
         # Snapshot questions stay Pending until the host starts quiz execution.
         questions = sorted(room.session_questions, key=lambda q: q.sort_order)
         if questions:
             questions[0].state = SessionQuestionState.PENDING
+        from app.services.session_event_service import QUIZ_STARTED, log_session_event
+
+        log_session_event(self._session, room_id, QUIZ_STARTED, flush=False)
         self._rooms.flush()
         self._session.commit()
         return self.get(room_id, owner_id=owner_id)
@@ -204,6 +211,9 @@ class LiveRoomService:
         room.state = room_fsm.transition(room.state, "pause")
         if room.paused_at is None:
             room.paused_at = datetime.now(UTC)
+        from app.services.session_event_service import PAUSE, log_session_event
+
+        log_session_event(self._session, room_id, PAUSE, flush=False)
         self._rooms.flush()
         self._session.commit()
         from app.core.audit import audit
@@ -227,6 +237,9 @@ class LiveRoomService:
             delta_ms = int((datetime.now(UTC) - paused_at).total_seconds() * 1000)
             room.pause_accumulated_ms = int(room.pause_accumulated_ms or 0) + max(0, delta_ms)
             room.paused_at = None
+        from app.services.session_event_service import RESUME, log_session_event
+
+        log_session_event(self._session, room_id, RESUME, flush=False)
         self._rooms.flush()
         self._session.commit()
         from app.core.audit import audit
@@ -237,6 +250,10 @@ class LiveRoomService:
             from app.models.enums import SessionQuestionState
             from app.services.quiz_execution_service import QuizExecutionService
             from app.services.timer_service import auto_progression
+
+            # Host already waiting on Next — do not restart auto-advance.
+            if room.awaiting_host_advance:
+                return room
 
             execution = QuizExecutionService(self._session).get_execution_state(room_id)
             if execution.question is None:
@@ -272,7 +289,17 @@ class LiveRoomService:
         room = self.get(room_id, owner_id=owner_id)
         room.state = room_fsm.transition(room.state, "end")
         room.completed_at = datetime.now(UTC)
+        room.awaiting_host_advance = False
         self._release_quiz_if_idle(room.quiz_id, exclude_room_id=room.id)
+        from app.services.session_event_service import QUIZ_ENDED, log_session_event
+
+        log_session_event(
+            self._session,
+            room_id,
+            QUIZ_ENDED,
+            {"source": "host_end"},
+            flush=False,
+        )
         self._rooms.flush()
         self._session.commit()
         try:
@@ -370,7 +397,14 @@ class LiveRoomService:
         return RoomConfig(**data)
 
     def _create_session_snapshot(self, room: LiveRoom, quiz: Quiz) -> None:
-        """Deep-copy sections/questions/options into immutable session rows."""
+        """Deep-copy sections/questions/options into immutable session rows.
+
+        Source quiz rows may be AES-GCM sealed. Session snapshot stores
+        *plaintext* so live scoring/results/export stay simple; the sealed
+        authoring tables remain the encrypted source of truth.
+        """
+        from app.services.question_crypto import open_option_fields, open_prompt
+
         global_question_order = 0
         sections = sorted(quiz.sections, key=lambda s: s.sort_order)
         for section in sections:
@@ -389,7 +423,7 @@ class LiveRoomService:
                     session_section_id=session_section.id,
                     source_question_id=question.id,
                     question_type=question.question_type,
-                    prompt_text=question.prompt_text,
+                    prompt_text=open_prompt(question.prompt_text),
                     media_file_id=question.media_file_id,
                     base_points=question.base_points,
                     time_limit_seconds=question.time_limit_seconds,
@@ -402,12 +436,16 @@ class LiveRoomService:
 
                 options = sorted(question.options, key=lambda o: o.sort_order)
                 for option in options:
+                    plain_text, plain_correct = open_option_fields(
+                        option.text,
+                        option.is_correct,
+                    )
                     self._rooms.add_session_option(
                         SessionOption(
                             session_question_id=session_question.id,
                             source_option_id=option.id,
-                            text=option.text,
-                            is_correct=option.is_correct,
+                            text=plain_text,
+                            is_correct=plain_correct,
                             sort_order=option.sort_order,
                         ),
                     )

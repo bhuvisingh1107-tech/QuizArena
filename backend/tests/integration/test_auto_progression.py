@@ -73,7 +73,7 @@ def test_start_quiz_opens_first_question_and_schedules(
     room = client.post(
         "/api/v1/live-rooms",
         headers=_auth(admin_token),
-        json={"quizId": quiz_id},
+        json={"quizId": quiz_id, "config": {"questionAdvanceMode": "automatic"}},
     ).json()["data"]
     client.post(f"/api/v1/live-rooms/{room['id']}/open-lobby", headers=_auth(admin_token))
 
@@ -113,7 +113,7 @@ def test_all_answered_triggers_auto_reveal(
     room = client.post(
         "/api/v1/live-rooms",
         headers=_auth(admin_token),
-        json={"quizId": quiz_id},
+        json={"quizId": quiz_id, "config": {"questionAdvanceMode": "automatic"}},
     ).json()["data"]
     client.post(f"/api/v1/live-rooms/{room['id']}/open-lobby", headers=_auth(admin_token))
     join = client.post(
@@ -159,7 +159,7 @@ def test_pause_cancels_and_resume_reschedules(
     room = client.post(
         "/api/v1/live-rooms",
         headers=_auth(admin_token),
-        json={"quizId": quiz_id},
+        json={"quizId": quiz_id, "config": {"questionAdvanceMode": "automatic"}},
     ).json()["data"]
     room_id = UUID(room["id"])
     client.post(f"/api/v1/live-rooms/{room['id']}/open-lobby", headers=_auth(admin_token))
@@ -190,7 +190,7 @@ def test_emergency_skip_advances(
     room = client.post(
         "/api/v1/live-rooms",
         headers=_auth(admin_token),
-        json={"quizId": quiz_id},
+        json={"quizId": quiz_id, "config": {"questionAdvanceMode": "automatic"}},
     ).json()["data"]
     client.post(f"/api/v1/live-rooms/{room['id']}/open-lobby", headers=_auth(admin_token))
     client.post(f"/api/v1/live-rooms/{room['id']}/start", headers=_auth(admin_token))
@@ -220,7 +220,7 @@ def test_timer_expiry_auto_advances(
     room = client.post(
         "/api/v1/live-rooms",
         headers=_auth(admin_token),
-        json={"quizId": quiz_id},
+        json={"quizId": quiz_id, "config": {"questionAdvanceMode": "automatic"}},
     ).json()["data"]
     client.post(f"/api/v1/live-rooms/{room['id']}/open-lobby", headers=_auth(admin_token))
 

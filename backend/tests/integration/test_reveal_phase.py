@@ -100,7 +100,7 @@ def test_reveal_then_leaderboard_then_next_across_roles(
     room = client.post(
         "/api/v1/live-rooms",
         headers=_auth(admin_token),
-        json={"quizId": quiz_id},
+        json={"quizId": quiz_id, "config": {"questionAdvanceMode": "automatic"}},
     ).json()["data"]
     room_id = room["id"]
     secret = room["secretToken"]

@@ -119,6 +119,10 @@ class LiveRoomResponseData(BaseModel):
         serialization_alias="currentQuestionIndex",
     )
     codes_expired: bool = Field(serialization_alias="codesExpired")
+    awaiting_host_advance: bool = Field(
+        default=False,
+        serialization_alias="awaitingHostAdvance",
+    )
     join_url: str = Field(serialization_alias="joinUrl")
     display_url: str = Field(serialization_alias="displayUrl")
     qr_target: str = Field(serialization_alias="qrTarget")

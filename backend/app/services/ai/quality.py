@@ -10,16 +10,20 @@ from app.core.exceptions import ValidationError
 # Patterns that indicate mock/template output — never save these.
 _PLACEHOLDER_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"concept\s*#\s*\d+", re.I),
-    re.compile(r"\bdistractor\b", re.I),
-    re.compile(r"correct\s+\w+\s+fact", re.I),
+    re.compile(r"\bdistractor\s*[a-d]\b", re.I),
+    re.compile(r"^distractor\b", re.I),
     re.compile(r"plausible\s+distractor", re.I),
+    re.compile(r"correct\s+(answer|option|fact)\b", re.I),
+    re.compile(r"correct\s+\w+\s+fact", re.I),
+    re.compile(r"^option\s*[a-d]\s*$", re.I),
     re.compile(r"^this checks understanding", re.I),
     re.compile(r"this checks understanding of", re.I),
     re.compile(r"\bplaceholder\b", re.I),
     re.compile(r"which statement best describes concept", re.I),
     re.compile(r"\bunrelated claim\b", re.I),
     re.compile(r"\bcontradictory claim\b", re.I),
-    re.compile(r"\bnoise\b", re.I),
+    re.compile(r"lorem ipsum", re.I),
+    re.compile(r"sample question", re.I),
     re.compile(r"fill in the blank: the key term for .+ #\d+", re.I),
 )
 
@@ -113,10 +117,18 @@ def validate_questions_batch(questions: list[dict[str, Any]]) -> list[dict[str, 
             "The AI returned no questions. Please retry.",
         )
     cleaned: list[dict[str, Any]] = []
+    seen_prompts: set[str] = set()
     for idx, item in enumerate(questions):
         if not isinstance(item, dict):
             raise ValidationError("AI_QUESTION_INVALID", f"Question {idx + 1} is not an object.")
         validate_question_payload(item, index=idx)
+        prompt_key = str(item.get("promptText") or item.get("prompt_text") or "").strip().lower()
+        if prompt_key in seen_prompts:
+            raise ValidationError(
+                "AI_QUESTION_INVALID",
+                f"Question {idx + 1} duplicates an earlier prompt.",
+            )
+        seen_prompts.add(prompt_key)
         cleaned.append(item)
     return cleaned
 

@@ -231,6 +231,7 @@ def test_room_results_and_export(
     export = client.get(
         f"/api/v1/live-rooms/{room['id']}/results/export",
         headers=_auth(admin_token),
+        params={"format": "csv"},
     )
     assert export.status_code == 200, export.text
     assert "text/csv" in export.headers["content-type"]
@@ -238,6 +239,14 @@ def test_room_results_and_export(
     assert lines[0] == "Rank,Display Name,Email,Score,Correct,Incorrect,Unanswered,Streak"
     assert "Casey" in lines[1]
     assert "casey@example.com" in lines[1]
+
+    xlsx = client.get(
+        f"/api/v1/live-rooms/{room['id']}/results/export",
+        headers=_auth(admin_token),
+    )
+    assert xlsx.status_code == 200, xlsx.text
+    assert "spreadsheetml" in xlsx.headers["content-type"]
+    assert xlsx.content[:2] == b"PK"
 
 
 def test_change_password_success(client: TestClient, admin_token: str) -> None:

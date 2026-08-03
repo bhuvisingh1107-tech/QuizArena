@@ -20,6 +20,7 @@ from app.models.session_option import SessionOption
 from app.models.session_question import SessionQuestion
 from app.models.session_section import SessionSection
 from app.repositories.live_room_repository import LiveRoomRepository
+from app.services.question_crypto import open_explanation, open_option_fields, open_prompt
 from app.services.state_machine import question_fsm, room_fsm
 
 
@@ -147,6 +148,15 @@ class QuizExecutionService:
                 payload=self._question_payload(room, question, section, include_correct=False),
             ),
         ]
+        from app.services.session_event_service import QUESTION_SHOWN, log_session_event
+
+        log_session_event(
+            self._session,
+            room_id,
+            QUESTION_SHOWN,
+            {"questionId": str(question.id), "questionIndex": 0},
+            flush=False,
+        )
         room = self._commit(room)
         return ExecutionResult(room=room, events=events)
 
@@ -236,6 +246,18 @@ class QuizExecutionService:
                 payload=self._question_payload(room, question, section, include_correct=True),
             ),
         ]
+        from app.services.session_event_service import REVEAL, log_session_event
+
+        log_session_event(
+            self._session,
+            room_id,
+            REVEAL,
+            {
+                "questionId": str(question.id),
+                "questionIndex": room.current_question_index,
+            },
+            flush=False,
+        )
         room = self._commit(room)
 
         summary = ScoringService(self._session).score_question(
@@ -249,9 +271,23 @@ class QuizExecutionService:
     def next_question(self, room_id: UUID) -> ExecutionResult:
         room = self._require_room(room_id)
         self._ensure_room_active(room)
+        room.awaiting_host_advance = False
         questions = self._ordered_questions(room)
         current = self._current_question(room)
         self._finalize_current_for_advance(room, current)
+
+        from app.services.session_event_service import NEXT, log_session_event
+
+        log_session_event(
+            self._session,
+            room_id,
+            NEXT,
+            {
+                "fromQuestionId": str(current.id),
+                "fromQuestionIndex": room.current_question_index,
+            },
+            flush=False,
+        )
 
         next_index = (room.current_question_index or 0) + 1
         if next_index >= len(questions):
@@ -297,6 +333,15 @@ class QuizExecutionService:
                 payload=self._question_payload(room, nxt, next_section, include_correct=False),
             ),
         ]
+        from app.services.session_event_service import QUESTION_SHOWN
+
+        log_session_event(
+            self._session,
+            room_id,
+            QUESTION_SHOWN,
+            {"questionId": str(nxt.id), "questionIndex": next_index},
+            flush=False,
+        )
         room = self._commit(room)
         return ExecutionResult(room=room, events=events)
 
@@ -307,6 +352,7 @@ class QuizExecutionService:
                 "INVALID_STATE_TRANSITION",
                 "Next section is only allowed during SectionBreak",
             )
+        room.awaiting_host_advance = False
         questions = self._ordered_questions(room)
         next_index = (room.current_question_index or 0) + 1
         if next_index >= len(questions):
@@ -336,6 +382,15 @@ class QuizExecutionService:
                 payload=self._room_state_payload(room),
             ),
         ]
+        from app.services.session_event_service import QUESTION_SHOWN, log_session_event
+
+        log_session_event(
+            self._session,
+            room_id,
+            QUESTION_SHOWN,
+            {"questionId": str(nxt.id), "questionIndex": next_index},
+            flush=False,
+        )
         room = self._commit(room)
         return ExecutionResult(room=room, events=events)
 
@@ -458,9 +513,11 @@ class QuizExecutionService:
     def _complete_quiz(self, room: LiveRoom) -> ExecutionResult:
         room.state = room_fsm.transition(room.state, "end")
         room.completed_at = datetime.now(UTC)
+        room.awaiting_host_advance = False
         from app.models.enums import QuizStatus
         from app.services.display_stats_service import DisplayStatsService
         from app.services.leaderboard_service import LeaderboardService
+        from app.services.session_event_service import QUIZ_ENDED, log_session_event
 
         board = LeaderboardService(self._session).snapshot(room.id)
         highlights = DisplayStatsService(self._session).session_highlights(room.id)
@@ -483,6 +540,13 @@ class QuizExecutionService:
         if quiz is not None and quiz.status == QuizStatus.IN_USE:
             if not self._rooms.has_active_rooms_for_quiz(room.quiz_id, exclude_room_id=room.id):
                 quiz.status = QuizStatus.READY
+        log_session_event(
+            self._session,
+            room.id,
+            QUIZ_ENDED,
+            {"completedAt": room.completed_at.isoformat() if room.completed_at else None},
+            flush=False,
+        )
         room = self._commit(room)
         # Do NOT cancel auto-progression here. Completion is often invoked from
         # inside the room's auto-advance task (via to_thread). Cancelling that
@@ -564,7 +628,7 @@ class QuizExecutionService:
 
             source = self._session.get(Question, question.source_question_id)
             if source is not None:
-                explanation = source.explanation
+                explanation = open_explanation(source.explanation)
 
         reveal_behavior = (
             room.config.answer_reveal_behavior.value
@@ -586,8 +650,13 @@ class QuizExecutionService:
                 "id": str(question.id),
                 "sectionId": str(question.session_section_id),
                 "questionType": question.question_type.value,
-                "promptText": question.prompt_text,
+                "promptText": open_prompt(question.prompt_text) or "",
                 "mediaFileId": str(question.media_file_id) if question.media_file_id else None,
+                "imageUrl": (
+                    f"/api/v1/media/{question.media_file_id}/content"
+                    if question.media_file_id
+                    else None
+                ),
                 "basePoints": question.base_points,
                 "timeLimitSeconds": int(
                     question.time_limit_seconds or DEFAULT_LIVE_QUESTION_SECONDS
@@ -643,13 +712,15 @@ class QuizExecutionService:
 
     @staticmethod
     def _option_payload(option: SessionOption, *, include_correct: bool) -> dict[str, Any]:
+        # Session snapshot stores plaintext; open_* is a no-op for legacy/plaintext.
+        text, is_correct = open_option_fields(option.text, option.is_correct)
         data: dict[str, Any] = {
             "id": str(option.id),
-            "text": option.text,
+            "text": text,
             "sortOrder": option.sort_order,
         }
         if include_correct:
-            data["isCorrect"] = option.is_correct
+            data["isCorrect"] = is_correct
         return data
 
     def _section_payload(self, room: LiveRoom, section: SessionSection) -> dict[str, Any]:
@@ -667,6 +738,11 @@ class QuizExecutionService:
 
     @staticmethod
     def _room_state_payload(room: LiveRoom) -> dict[str, Any]:
+        advance_mode = (
+            room.config.question_advance_mode.value
+            if room.config is not None
+            else None
+        )
         return {
             "roomId": str(room.id),
             "state": room.state.value,
@@ -674,6 +750,8 @@ class QuizExecutionService:
             "currentQuestionIndex": room.current_question_index,
             "codesExpired": room.codes_expired,
             "completedAt": room.completed_at.isoformat() if room.completed_at else None,
+            "awaitingHostAdvance": bool(room.awaiting_host_advance),
+            "questionAdvanceMode": advance_mode,
         }
 
     @staticmethod

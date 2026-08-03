@@ -15,6 +15,7 @@ from app.repositories.question_repository import QuestionRepository
 from app.repositories.quiz_repository import QuizRepository
 from app.repositories.section_repository import SectionRepository
 from app.schemas.answer_option import AnswerOptionCreateRequest, AnswerOptionUpdateRequest
+from app.services.question_crypto import open_option_fields, seal_option_fields
 
 _MUTABLE_QUIZ_STATUSES = {QuizStatus.DRAFT, QuizStatus.READY}
 _MAX_OPTIONS_PER_QUESTION = 6  # FR-029
@@ -60,10 +61,11 @@ class AnswerOptionService:
         if payload.is_correct:
             self._ensure_correct_flag_allowed(question, marking_correct=True)
 
+        sealed_text, sealed_correct = seal_option_fields(payload.text, payload.is_correct)
         option = self._options.create(
             question_id=question_id,
-            text=payload.text,
-            is_correct=payload.is_correct,
+            text=sealed_text,
+            is_correct=sealed_correct,
             sort_order=sort_order,
         )
         self._demote_ready_if_needed(quiz)
@@ -117,18 +119,23 @@ class AnswerOptionService:
         self._require_section(quiz_id, section_id)
         question = self._require_question(section_id, question_id)
         option = self.get(quiz_id, section_id, question_id, option_id, owner_id=owner_id)
+        current_text, current_correct = open_option_fields(option.text, option.is_correct)
 
-        if payload.text is not None:
-            option.text = payload.text
+        next_text = payload.text if payload.text is not None else current_text
+        next_correct = (
+            payload.is_correct if payload.is_correct is not None else current_correct
+        )
 
-        if payload.is_correct is not None and payload.is_correct != option.is_correct:
+        if payload.is_correct is not None and payload.is_correct != current_correct:
             if payload.is_correct:
                 self._ensure_correct_flag_allowed(
                     question,
                     marking_correct=True,
                     exclude_option_id=option.id,
                 )
-            option.is_correct = payload.is_correct
+
+        if next_text != current_text or next_correct != current_correct:
+            option.text, option.is_correct = seal_option_fields(next_text, next_correct)
 
         if payload.sort_order is not None and payload.sort_order != option.sort_order:
             self._ensure_sort_order_available(
@@ -226,9 +233,13 @@ class AnswerOptionService:
             return
         if question.allow_multiple_correct:
             return
-        existing_correct = self._options.count_correct_for_question(
-            question.id,
-            exclude_option_id=exclude_option_id,
+        existing = [
+            opt
+            for opt in self._options.list_for_question(question.id)
+            if exclude_option_id is None or opt.id != exclude_option_id
+        ]
+        existing_correct = sum(
+            1 for opt in existing if open_option_fields(opt.text, opt.is_correct)[1]
         )
         if existing_correct >= 1:
             raise ValidationError(

@@ -42,6 +42,7 @@ from app.models.room_ban import RoomBan
 from app.models.room_config import RoomConfig
 from app.models.section import Section
 from app.models.security_log import SecurityLog
+from app.models.session_event import SessionEvent
 from app.models.session_option import SessionOption
 from app.models.session_question import SessionQuestion
 from app.models.session_section import SessionSection
@@ -84,6 +85,7 @@ __all__ = [
     "Section",
     "SecurityEventType",
     "SecurityLog",
+    "SessionEvent",
     "SessionOption",
     "SessionQuestion",
     "SessionQuestionState",

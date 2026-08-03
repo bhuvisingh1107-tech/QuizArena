@@ -400,6 +400,9 @@ class EventDispatcher:
 
 
 def build_room_snapshot(room) -> dict[str, Any]:
+    advance_mode = None
+    if getattr(room, "config", None) is not None:
+        advance_mode = room.config.question_advance_mode.value
     return {
         "id": str(room.id),
         "roomCode": room.room_code,
@@ -408,7 +411,17 @@ def build_room_snapshot(room) -> dict[str, Any]:
         "quizTitle": room.quiz_title_snapshot,
         "codesExpired": room.codes_expired,
         "currentQuestionIndex": room.current_question_index,
+        "awaitingHostAdvance": bool(getattr(room, "awaiting_host_advance", False)),
+        "questionAdvanceMode": advance_mode,
         "hostName": "Host",
+        "config": (
+            {
+                "questionAdvanceMode": advance_mode,
+                "answerRevealBehavior": room.config.answer_reveal_behavior.value,
+            }
+            if getattr(room, "config", None) is not None
+            else None
+        ),
     }
 
 

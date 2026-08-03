@@ -13,6 +13,7 @@ from app.repositories.question_repository import QuestionRepository
 from app.repositories.quiz_repository import QuizRepository
 from app.repositories.section_repository import SectionRepository
 from app.schemas.question import QuestionCreateRequest, QuestionUpdateRequest
+from app.services.question_crypto import seal_explanation, seal_prompt
 
 _MUTABLE_QUIZ_STATUSES = {QuizStatus.DRAFT, QuizStatus.READY}
 _MAX_QUESTIONS_PER_QUIZ = 100  # FR-017
@@ -55,8 +56,8 @@ class QuestionService:
         question = self._questions.create(
             section_id=section_id,
             question_type=payload.question_type,
-            prompt_text=payload.prompt_text,
-            explanation=payload.explanation,
+            prompt_text=seal_prompt(payload.prompt_text),
+            explanation=seal_explanation(payload.explanation),
             base_points=payload.base_points,
             time_limit_seconds=payload.time_limit_seconds,
             allow_multiple_correct=payload.allow_multiple_correct,
@@ -111,9 +112,9 @@ class QuestionService:
         if payload.question_type is not None:
             question.question_type = payload.question_type
         if payload.prompt_text is not None:
-            question.prompt_text = payload.prompt_text
+            question.prompt_text = seal_prompt(payload.prompt_text)
         if payload.explanation is not None:
-            question.explanation = payload.explanation
+            question.explanation = seal_explanation(payload.explanation)
         if payload.base_points is not None:
             question.base_points = payload.base_points
         if payload.time_limit_seconds is not None:

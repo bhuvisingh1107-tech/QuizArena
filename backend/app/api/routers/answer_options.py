@@ -31,7 +31,11 @@ AnswerOptionServiceDep = Annotated[AnswerOptionService, Depends(get_answer_optio
 
 
 def _option_response(option) -> AnswerOptionResponseData:
-    return AnswerOptionResponseData.model_validate(option)
+    from app.services.question_crypto import open_option_fields
+
+    text, is_correct = open_option_fields(option.text, option.is_correct)
+    data = AnswerOptionResponseData.model_validate(option)
+    return data.model_copy(update={"text": text, "is_correct": is_correct})
 
 
 def _envelope(data, request_id: str, *, status_code: int = status.HTTP_200_OK) -> JSONResponse:

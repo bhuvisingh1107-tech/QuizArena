@@ -457,6 +457,9 @@ class AiGenerationService:
             if not isinstance(raw, dict):
                 continue
             name = str(raw.get("name") or f"Section {sort_order + 1}")[:255]
+            from app.services.ai.quality import validate_section_name
+
+            validate_section_name(name, allow_generic=job.mode.value != "document")
             section = AiGeneratedSection(
                 id=uuid4(),
                 job_id=job.id,

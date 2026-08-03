@@ -263,6 +263,7 @@ export interface LiveRoom {
   quizTitleSnapshot: string
   currentQuestionIndex?: number | null
   codesExpired: boolean
+  awaitingHostAdvance?: boolean
   joinUrl: string
   displayUrl: string
   qrTarget: string
@@ -274,6 +275,8 @@ export interface LiveRoom {
   closedAt?: string | null
   createdAt: string
   updatedAt: string
+  /** Present on some WS room snapshots / resync payloads. */
+  questionAdvanceMode?: QuestionAdvanceMode | null
 }
 
 export interface LiveRoomCreateInput {
@@ -323,6 +326,9 @@ export interface LeaderboardEntry {
   displayName: string
   score: number
   streak?: number
+  timeBonus?: number
+  lastTimeBonus?: number
+  lastIsCorrect?: boolean | null
 }
 
 export interface PodiumEntry {

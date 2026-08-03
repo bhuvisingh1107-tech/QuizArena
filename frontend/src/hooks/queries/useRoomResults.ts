@@ -13,9 +13,17 @@ export function useRoomResults(roomId: string | undefined, enabled = true) {
 }
 
 export async function downloadRoomResultsCsv(roomId: string): Promise<void> {
+  return downloadRoomResults(roomId, 'csv')
+}
+
+export async function downloadRoomResults(
+  roomId: string,
+  format: 'xlsx' | 'csv' = 'xlsx',
+): Promise<void> {
   try {
     const response = await apiClient.get(`/live-rooms/${roomId}/results/export`, {
       responseType: 'blob',
+      params: { format },
     })
 
     const blob = response.data instanceof Blob ? response.data : new Blob([response.data])
@@ -33,7 +41,8 @@ export async function downloadRoomResultsCsv(roomId: string): Promise<void> {
 
     const disposition = response.headers['content-disposition'] as string | undefined
     const match = disposition?.match(/filename="?([^"]+)"?/i)
-    const filename = match?.[1] ?? `room-${roomId}-results.csv`
+    const fallback = format === 'csv' ? `room-${roomId}-results.csv` : `room-${roomId}-results.xlsx`
+    const filename = match?.[1] ?? fallback
 
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
