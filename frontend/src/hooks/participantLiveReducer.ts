@@ -191,13 +191,27 @@ function deriveTimerEndsAt(
 }
 
 function stripEmailsFromLeaderboard(entries: LeaderboardEntry[]): LeaderboardEntry[] {
-  return entries.map(({ rank, participantId, displayName, score, streak }) => ({
-    rank,
-    participantId,
-    displayName,
-    score,
-    streak,
-  }))
+  return entries.map(
+    ({
+      rank,
+      participantId,
+      displayName,
+      score,
+      streak,
+      timeBonus,
+      lastTimeBonus,
+      lastIsCorrect,
+    }) => ({
+      rank,
+      participantId,
+      displayName,
+      score,
+      streak,
+      timeBonus,
+      lastTimeBonus,
+      lastIsCorrect,
+    }),
+  )
 }
 
 export function ranksFromLeaderboard(
@@ -319,6 +333,8 @@ function mapQuestion(
         : existing?.allowMultipleCorrect,
     mediaFileId:
       (nested.mediaFileId as string | null | undefined) ?? existing?.mediaFileId ?? null,
+    imageUrl:
+      (nested.imageUrl as string | null | undefined) ?? existing?.imageUrl ?? null,
     explanation:
       (nested.explanation as string | null | undefined) ??
       existing?.explanation ??
@@ -908,22 +924,14 @@ export function participantLiveReducer(
           const own = selfId
             ? leaderboard.find((e) => e.participantId === selfId)
             : undefined
-          const terminal =
-            state.resultsReady ||
-            state.room?.state === 'Completed' ||
-            state.room?.state === 'Closed'
-          const wasScored =
-            state.question?.state === 'Scored' ||
-            state.question?.state === 'Revealed' ||
-            state.lastFeedback != null
           return {
             ...state,
             leaderboard,
             previousLeaderboardRanks: ranksFromLeaderboard(state.leaderboard),
             yourRank: own?.rank ?? state.yourRank,
             yourScore: own?.score ?? state.yourScore,
-            showLeaderboardInterstitial:
-              !terminal && wasScored && leaderboard.length > 0,
+            // Persistent side/top panel — no full-screen interstitial mid-quiz.
+            showLeaderboardInterstitial: false,
             self: state.self
               ? {
                   ...state.self,

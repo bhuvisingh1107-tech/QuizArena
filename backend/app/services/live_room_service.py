@@ -111,8 +111,16 @@ class LiveRoomService:
             raise
 
         from app.core.audit import audit
+        from app.services.session_event_service import ROOM_CREATED, log_session_event
 
         created = self.get(room.id)
+        log_session_event(
+            self._session,
+            created.id,
+            ROOM_CREATED,
+            {"roomCode": created.room_code, "quizId": str(created.quiz_id)},
+        )
+        self._session.commit()
         audit(
             "room.create",
             room_id=str(created.id),

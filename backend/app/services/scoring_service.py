@@ -1,7 +1,8 @@
 """Scoring engine — evaluate responses and aggregate participant totals.
 
 Does not compute rankings, leaderboards, podiums, or analytics.
-Triggered after answer reveal (never while a question is Open).
+Individual responses are scored on submit for the live leaderboard;
+``score_question`` runs at reveal to score unanswered rows and emit feedback.
 """
 
 from __future__ import annotations

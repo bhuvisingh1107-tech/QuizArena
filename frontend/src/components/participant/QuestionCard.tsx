@@ -2,7 +2,7 @@ import { ImageIcon, Volume2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { QuestionTimer } from '@/components/participant/QuestionTimer'
-import { mediaContentUrl } from '@/lib/media-url'
+import { resolveLiveMediaUrl } from '@/lib/media-url'
 import type { ParticipantLiveQuestion } from '@/types/api'
 import { cn } from '@/lib/utils'
 
@@ -33,21 +33,26 @@ function statusLabel(state: ParticipantLiveQuestion['state']): string {
 
 function QuestionMedia({
   mediaFileId,
+  imageUrl,
   questionType,
   sessionToken,
 }: {
-  mediaFileId: string
+  mediaFileId?: string | null
+  imageUrl?: string | null
   questionType?: ParticipantLiveQuestion['questionType']
   sessionToken?: string | null
 }) {
   const [failed, setFailed] = useState(false)
+  const url = sessionToken
+    ? resolveLiveMediaUrl({ imageUrl, mediaFileId, token: sessionToken })
+    : null
 
   useEffect(() => {
     setFailed(false)
-  }, [mediaFileId])
+  }, [mediaFileId, imageUrl, sessionToken])
 
-  if (!sessionToken || failed) {
-    const unavailable = !sessionToken || failed
+  if (!url || failed) {
+    const unavailable = !url || failed
     return (
       <div
         className="mt-4 flex min-h-36 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] bg-[var(--secondary)]/40 px-4 py-8 text-center"
@@ -58,7 +63,7 @@ function QuestionMedia({
         <p className="text-sm text-[var(--muted-foreground)]">
           {failed
             ? 'Could not load media.'
-            : !sessionToken
+            : !url
               ? 'Media unavailable.'
               : 'Media loading…'}
         </p>
@@ -66,7 +71,6 @@ function QuestionMedia({
     )
   }
 
-  const url = mediaContentUrl(mediaFileId, sessionToken)
   const isAudio = questionType === 'Audio'
 
   if (isAudio) {
@@ -94,7 +98,8 @@ function QuestionMedia({
       <img
         src={url}
         alt="Question media"
-        className="max-h-64 w-full object-contain"
+        className="mx-auto max-h-64 w-full object-contain"
+        data-testid="participant-media-img"
         onError={() => setFailed(true)}
       />
     </div>
@@ -168,9 +173,10 @@ export function QuestionCard({
         {question.promptText?.trim() || 'Question'}
       </h2>
 
-      {question.mediaFileId ? (
+      {question.imageUrl || question.mediaFileId ? (
         <QuestionMedia
-          key={question.mediaFileId}
+          key={question.imageUrl || question.mediaFileId || 'media'}
+          imageUrl={question.imageUrl}
           mediaFileId={question.mediaFileId}
           questionType={question.questionType}
           sessionToken={sessionToken}

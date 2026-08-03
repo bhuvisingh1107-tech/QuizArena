@@ -56,6 +56,20 @@ export function QuizPage() {
       </ParticipantShell>
     )
   }
+
+  const leaderboardPanel = (
+    <LiveLeaderboardCard
+      yourRank={live.yourRank}
+      yourScore={totalScore}
+      leaderboard={live.leaderboard}
+      previousRanks={live.previousLeaderboardRanks}
+      selfParticipantId={selfId}
+      topN={10}
+      title="Live leaderboard"
+      className="h-full"
+    />
+  )
+
   return (
     <ParticipantShell
       connectionStatus={live.connectionStatus}
@@ -75,154 +89,96 @@ export function QuizPage() {
         ) : null
       }
     >
-      <div className="space-y-5 pb-4">
-        {live.room?.state === 'Paused' ? (
-          <div
-            role="status"
-            className="rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/15 px-4 py-3 text-center text-sm font-medium text-[var(--accent)]"
-          >
-            Quiz Paused
-          </div>
-        ) : null}
-
-        {phase !== 'leaderboard' ? (
-          <LiveLeaderboardCard
-            yourRank={live.yourRank}
-            yourScore={totalScore}
-            leaderboard={live.leaderboard}
-            previousRanks={live.previousLeaderboardRanks}
-            selfParticipantId={selfId}
-            compact={phase === 'feedback'}
-          />
-        ) : null}
-
-        {phase === 'waiting' ? (
-          <EmptyState
-            title="Waiting for the next question"
-            description="The host will open a question shortly. Stay on this screen."
-          />
-        ) : null}
-
-        {phase === 'answering' && question ? (
-          <>
-            <QuestionCard
-              question={question}
-              sessionToken={session?.sessionToken}
-              openedAt={live.questionOpenedAt}
-              paused={live.room?.state === 'Paused'}
-            />
-            <OptionList
-              options={options}
-              selectedOptionIds={live.selectedOptionIds}
-              allowMultiple={Boolean(question.allowMultipleCorrect)}
-              disabled={questionClosed}
-              showCorrectness={false}
-              submissionStatus={live.submissionStatus}
-              onChange={live.selectOptions}
-            />
-          </>
-        ) : null}
-
-        {phase === 'closed' && question ? (
-          <>
-            <QuestionCard
-              question={question}
-              sessionToken={session?.sessionToken}
-              openedAt={live.questionOpenedAt}
-              paused={live.room?.state === 'Paused'}
-            />
-            <OptionList
-              options={options}
-              selectedOptionIds={live.selectedOptionIds}
-              allowMultiple={Boolean(question.allowMultipleCorrect)}
-              disabled
-              showCorrectness={false}
-              submissionStatus={live.submissionStatus}
-              onChange={live.selectOptions}
-            />
-            <EmptyState
-              title="Time's up"
-              description="Answers are locked. Waiting for the host to reveal results…"
-            />
-          </>
-        ) : null}
-
-        {phase === 'feedback' && question ? (
-          <>
-            <QuestionCard
-              question={question}
-              sessionToken={session?.sessionToken}
-              openedAt={live.questionOpenedAt}
-              paused={live.room?.state === 'Paused'}
-            />
-            <OptionList
-              options={options}
-              selectedOptionIds={live.selectedOptionIds}
-              allowMultiple={Boolean(question.allowMultipleCorrect)}
-              disabled
-              showCorrectness={showCorrectness}
-              submissionStatus={live.submissionStatus}
-              onChange={live.selectOptions}
-            />
-            <AnswerFeedbackCard
-              question={question}
-              options={options}
-              feedback={live.lastFeedback}
-              totalScore={totalScore}
-            />
-          </>
-        ) : null}
-
-        {phase === 'scoring' && question ? (
-          <>
-            <QuestionCard
-              question={question}
-              sessionToken={session?.sessionToken}
-              openedAt={live.questionOpenedAt}
-              paused={live.room?.state === 'Paused'}
-            />
-            <OptionList
-              options={options}
-              selectedOptionIds={live.selectedOptionIds}
-              allowMultiple={Boolean(question.allowMultipleCorrect)}
-              disabled
-              showCorrectness={false}
-              submissionStatus={live.submissionStatus}
-              onChange={live.selectOptions}
-            />
-            <AnswerFeedbackCard
-              question={question}
-              options={options}
-              feedback={null}
-              totalScore={totalScore}
-            />
-          </>
-        ) : null}
-
-        {phase === 'leaderboard' ? (
-          <div className="space-y-4">
-            <div className="text-center">
-              <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
-                Round complete
-              </p>
-              <h2 className="mt-2 font-display text-2xl font-bold text-[#f0f4fa]">
-                Leaderboard
-              </h2>
+      <div className="flex flex-col gap-5 pb-4 lg:min-h-[28rem] lg:flex-row lg:items-stretch">
+        <div className="min-w-0 flex-1 space-y-5">
+          {live.room?.state === 'Paused' ? (
+            <div
+              role="status"
+              className="rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/15 px-4 py-3 text-center text-sm font-medium text-[var(--accent)]"
+            >
+              Quiz Paused
             </div>
-            <LiveLeaderboardCard
-              yourRank={live.yourRank}
-              yourScore={totalScore}
-              leaderboard={live.leaderboard}
-              previousRanks={live.previousLeaderboardRanks}
-              selfParticipantId={selfId}
-              topN={10}
-              title="Your rank"
+          ) : null}
+
+          {phase === 'waiting' ? (
+            <EmptyState
+              title="Waiting for the next question"
+              description="The host will open a question shortly. Stay on this screen."
             />
-            <p className="text-center text-sm text-[var(--muted-foreground)]">
-              Standings update — the host will continue or finish the quiz…
-            </p>
-          </div>
-        ) : null}
+          ) : null}
+
+          {phase === 'answering' && question ? (
+            <>
+              <QuestionCard
+                question={question}
+                sessionToken={session?.sessionToken}
+                openedAt={live.questionOpenedAt}
+                paused={live.room?.state === 'Paused'}
+              />
+              <OptionList
+                options={options}
+                selectedOptionIds={live.selectedOptionIds}
+                allowMultiple={Boolean(question.allowMultipleCorrect)}
+                disabled={questionClosed}
+                showCorrectness={false}
+                submissionStatus={live.submissionStatus}
+                onChange={live.selectOptions}
+              />
+            </>
+          ) : null}
+
+          {phase === 'closed' && question ? (
+            <>
+              <QuestionCard
+                question={question}
+                sessionToken={session?.sessionToken}
+                openedAt={live.questionOpenedAt}
+                paused={live.room?.state === 'Paused'}
+              />
+              <OptionList
+                options={options}
+                selectedOptionIds={live.selectedOptionIds}
+                allowMultiple={Boolean(question.allowMultipleCorrect)}
+                disabled
+                showCorrectness={false}
+                submissionStatus={live.submissionStatus}
+                onChange={live.selectOptions}
+              />
+              <EmptyState
+                title="Time's up"
+                description="Answers are locked. Waiting for the host to reveal results…"
+              />
+            </>
+          ) : null}
+
+          {(phase === 'feedback' || phase === 'scoring') && question ? (
+            <>
+              <QuestionCard
+                question={question}
+                sessionToken={session?.sessionToken}
+                openedAt={live.questionOpenedAt}
+                paused={live.room?.state === 'Paused'}
+              />
+              <OptionList
+                options={options}
+                selectedOptionIds={live.selectedOptionIds}
+                allowMultiple={Boolean(question.allowMultipleCorrect)}
+                disabled
+                showCorrectness={showCorrectness}
+                submissionStatus={live.submissionStatus}
+                onChange={live.selectOptions}
+              />
+              <AnswerFeedbackCard
+                question={question}
+                options={options}
+                feedback={phase === 'feedback' ? live.lastFeedback : null}
+                totalScore={totalScore}
+              />
+            </>
+          ) : null}
+        </div>
+
+        <div className="w-full shrink-0 lg:w-80 xl:w-96">{leaderboardPanel}</div>
       </div>
     </ParticipantShell>
   )

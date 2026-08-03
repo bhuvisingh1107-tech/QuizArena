@@ -199,7 +199,7 @@ describe('displayLiveReducer', () => {
     expect(revealed.question?.options.find((o) => o.id === 'a')?.isCorrect).toBe(true)
   })
 
-  it('switches to leaderboard after leaderboard:updated on scored question', () => {
+  it('keeps reveal view and updates ranks on leaderboard:updated', () => {
     const withBoard = {
       ...initialDisplayLiveState,
       room: {
@@ -232,6 +232,7 @@ describe('displayLiveReducer', () => {
             displayName: 'Sam',
             score: 50,
             streak: 3,
+            timeBonus: 8,
             email: 'secret@example.com',
           },
           {
@@ -252,10 +253,11 @@ describe('displayLiveReducer', () => {
       displayName: 'Sam',
       score: 50,
       streak: 3,
+      timeBonus: 8,
     })
     expect(next.leaderboard[0]).not.toHaveProperty('email')
-    expect(next.viewMode).toBe('leaderboard')
-    expect(next.showLeaderboardAfterScore).toBe(true)
+    expect(next.viewMode).toBe('reveal')
+    expect(next.showLeaderboardAfterScore).toBe(false)
   })
 
   it('enters section_break with stats and top3', () => {
@@ -504,7 +506,7 @@ describe('deriveViewMode', () => {
         resultsReady: false,
         preferLeaderboard: true,
       }),
-    ).toBe('leaderboard')
+    ).toBe('reveal')
   })
 })
 

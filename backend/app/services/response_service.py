@@ -1,8 +1,8 @@
-"""Answer submission — persist participant responses (no scoring).
+"""Answer submission — persist participant responses and score immediately.
 
+Scoring on submit powers the live leaderboard (updates after every answer).
+Reveal still scores unanswered responses and broadcasts answer reveal UI.
 Duplicate submits for the same question are rejected (ALREADY_SUBMITTED).
-PROJECT_SPEC FR-072 allows changing selections before the first Submit;
-post-submit updates are not supported (DATABASE_SCHEMA.md idempotent lock).
 """
 
 from __future__ import annotations
@@ -172,6 +172,31 @@ class ResponseService:
         try:
             self._responses.create(response)
             participant.state = ParticipantState.ANSWERED
+            # Score immediately so the live leaderboard updates on every submit.
+            # score_question at reveal skips already-scored rows and scores unanswered.
+            from app.services.scoring_service import ScoringService
+
+            ScoringService(self._session).score_response(
+                response,
+                question,
+                participant,
+                room.config,
+            )
+            from app.services.session_event_service import ANSWER_SUBMITTED, log_session_event
+
+            log_session_event(
+                self._session,
+                room_id,
+                ANSWER_SUBMITTED,
+                {
+                    "participantId": str(participant.id),
+                    "displayName": participant.display_name,
+                    "questionId": str(question.id),
+                    "questionIndex": execution.question_index,
+                    "responseTimeMs": response.response_time_ms,
+                },
+                flush=False,
+            )
             self._session.commit()
         except Exception as exc:
             self._session.rollback()
@@ -184,11 +209,17 @@ class ResponseService:
                 ) from exc
             raise
         self._session.refresh(response)
+        self._session.refresh(participant)
 
         submitted_count = self._responses.count_submitted_for_question(question.id)
         participant_count = self._participants.count_for_room(room_id)
         eligible_count = self._count_eligible_participants(room_id)
         all_answered = eligible_count > 0 and submitted_count >= eligible_count
+
+        from app.services.leaderboard_service import LeaderboardService
+
+        board = LeaderboardService(self._session).snapshot(room_id)
+        self._session.commit()
 
         accept_payload = {
             "roomId": str(room_id),
@@ -198,7 +229,12 @@ class ResponseService:
             "selectedOptionIds": id_strings,
             "submittedAt": now.isoformat(),
             "responseTimeMs": response.response_time_ms,
-            "status": response.status,
+            # Keep the public submit ack as "submitted" so clients do not treat
+            # answer:accepted as pre-reveal correctness feedback.
+            "status": "submitted",
+            "pointsEarned": int(response.total_points_earned or 0),
+            "totalScore": int(participant.total_score or 0),
+            "streak": int(participant.streak or 0),
         }
         admin_count_payload = {
             "roomId": str(room_id),
@@ -228,6 +264,11 @@ class ResponseService:
                 TargetedEvent(
                     type="answer:submission_count",
                     payload=admin_count_payload,
+                    audience="room",
+                ),
+                TargetedEvent(
+                    type="leaderboard:updated",
+                    payload=board,
                     audience="room",
                 ),
             ],

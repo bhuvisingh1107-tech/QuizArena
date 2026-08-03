@@ -479,8 +479,8 @@ export function RoomMonitorPage() {
           <CardTitle className="text-base">Live progression</CardTitle>
           <CardDescription>
             {isManual
-              ? 'Timer or all answers → answer reveal (3s) → leaderboard → wait for Next Question.'
-              : 'Timer or all answers → answer reveal (3s) → leaderboard (3s) → next question automatically.'}
+              ? 'Timer or all answers → answer reveal (3s) → wait for Next Question. Live leaderboard updates on every submission.'
+              : 'Timer or all answers → answer reveal (3s) → next question automatically. Live leaderboard updates on every submission.'}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -531,6 +531,8 @@ export function RoomMonitorPage() {
                     <TableHead>#</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Score</TableHead>
+                    <TableHead>Time bonus</TableHead>
+                    <TableHead>Streak</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -539,6 +541,8 @@ export function RoomMonitorPage() {
                       <TableCell>{entry.rank}</TableCell>
                       <TableCell>{entry.displayName}</TableCell>
                       <TableCell>{entry.score}</TableCell>
+                      <TableCell>+{entry.lastTimeBonus ?? entry.timeBonus ?? 0}</TableCell>
+                      <TableCell>{entry.streak ?? 0}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

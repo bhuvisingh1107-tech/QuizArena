@@ -70,8 +70,9 @@ export function RevealScreen({
         {question.promptText || '…'}
       </h1>
 
-      {question.mediaFileId ? (
+      {question.imageUrl || question.mediaFileId ? (
         <DisplayMedia
+          imageUrl={question.imageUrl}
           mediaFileId={question.mediaFileId}
           questionType={question.questionType}
           secretToken={secretToken}

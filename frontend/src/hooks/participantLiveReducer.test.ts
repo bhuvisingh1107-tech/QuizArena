@@ -233,7 +233,7 @@ describe('participantLiveReducer', () => {
 
     expect(next.previousLeaderboardRanks.p1).toBe(2)
     expect(next.yourRank).toBe(1)
-    expect(next.showLeaderboardInterstitial).toBe(true)
+    expect(next.showLeaderboardInterstitial).toBe(false)
   })
 
   it('resync mid-reveal reads nested question.state for correctness', () => {

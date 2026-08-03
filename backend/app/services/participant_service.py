@@ -106,6 +106,18 @@ class ParticipantService:
                 state=state,
                 connection_status=ConnectionStatus.CONNECTED,
             )
+            from app.services.session_event_service import PARTICIPANT_JOINED, log_session_event
+
+            log_session_event(
+                self._session,
+                room.id,
+                PARTICIPANT_JOINED,
+                {
+                    "participantId": str(participant.id),
+                    "displayName": participant.display_name,
+                },
+                flush=False,
+            )
             self._session.commit()
         except Exception as exc:
             self._session.rollback()
@@ -191,6 +203,18 @@ class ParticipantService:
 
         participant.state = ParticipantState.DISCONNECTED
         participant.connection_status = ConnectionStatus.DISCONNECTED
+        from app.services.session_event_service import PARTICIPANT_LEFT, log_session_event
+
+        log_session_event(
+            self._session,
+            participant.live_room_id,
+            PARTICIPANT_LEFT,
+            {
+                "participantId": str(participant.id),
+                "displayName": participant.display_name,
+            },
+            flush=False,
+        )
         self._participants.flush()
         self._session.commit()
         self._session.refresh(participant)

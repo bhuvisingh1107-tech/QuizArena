@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { DisplayShell } from '@/components/display/DisplayShell'
-import { LeaderboardScreen } from '@/components/display/LeaderboardScreen'
+import { LiveLeaderboardPanel } from '@/components/display/LiveLeaderboardPanel'
 import { PodiumScreen } from '@/components/display/PodiumScreen'
 import { QuestionScreen } from '@/components/display/QuestionScreen'
 import { RevealScreen } from '@/components/display/RevealScreen'
@@ -14,6 +14,8 @@ import { useDisplayWebSocket } from '@/hooks/useDisplayWebSocket'
 interface DisplayPageProps {
   secretToken: string | undefined
 }
+
+const SIDE_PANEL_MODES = new Set(['question', 'time_up', 'reveal', 'section_break'])
 
 export function DisplayPage({ secretToken }: DisplayPageProps) {
   const live = useDisplayWebSocket({
@@ -43,6 +45,7 @@ export function DisplayPage({ secretToken }: DisplayPageProps) {
   const roomCode = live.room?.roomCode
   const token = secretToken.trim()
   const paused = live.room?.state === 'Paused'
+  const showSidePanel = SIDE_PANEL_MODES.has(live.viewMode)
 
   let body: ReactNode
   switch (live.viewMode) {
@@ -98,14 +101,6 @@ export function DisplayPage({ secretToken }: DisplayPageProps) {
         />
       )
       break
-    case 'leaderboard':
-      body = (
-        <LeaderboardScreen
-          leaderboard={live.leaderboard}
-          previousRanks={live.previousRanks}
-        />
-      )
-      break
     case 'podium':
     case 'completed':
       body = (
@@ -114,6 +109,26 @@ export function DisplayPage({ secretToken }: DisplayPageProps) {
           leaderboard={live.leaderboard}
           quizTitle={quizTitle}
           sessionHighlights={live.sessionHighlights}
+        />
+      )
+      break
+    case 'leaderboard':
+      // Mid-quiz full-screen leaderboard is retired; keep reveal + side panel.
+      body = live.question ? (
+        <RevealScreen
+          question={live.question}
+          secretToken={token}
+          optionDistribution={live.optionDistribution}
+          explanation={live.explanation}
+          accuracyPercent={live.accuracyPercent}
+          answeredCount={live.answeredCount}
+        />
+      ) : (
+        <WaitingScreen
+          quizTitle={quizTitle}
+          roomCode={roomCode}
+          participantCount={live.participantCount}
+          connectionStatus={live.connectionStatus}
         />
       )
       break
@@ -160,7 +175,23 @@ export function DisplayPage({ secretToken }: DisplayPageProps) {
           Quiz Paused
         </div>
       ) : null}
-      {body}
+      <div
+        className={
+          showSidePanel
+            ? 'flex min-h-0 flex-1 flex-col gap-5 lg:flex-row lg:gap-6'
+            : 'flex min-h-0 flex-1 flex-col'
+        }
+      >
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{body}</div>
+        {showSidePanel ? (
+          <div className="h-[min(42vh,22rem)] shrink-0 lg:h-auto lg:w-[min(28vw,26rem)] xl:w-[28rem]">
+            <LiveLeaderboardPanel
+              leaderboard={live.leaderboard}
+              previousRanks={live.previousRanks}
+            />
+          </div>
+        ) : null}
+      </div>
     </DisplayShell>
   )
 }

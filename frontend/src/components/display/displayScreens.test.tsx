@@ -3,6 +3,20 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/media-url', () => ({
   mediaContentUrl: (mediaFileId: string) => `/media/${mediaFileId}/content`,
+  resolveLiveMediaUrl: ({
+    imageUrl,
+    mediaFileId,
+    token,
+  }: {
+    imageUrl?: string | null
+    mediaFileId?: string | null
+    token: string
+  }) => {
+    if (!token) return null
+    if (imageUrl) return `${imageUrl}?token=${token}`
+    if (mediaFileId) return `/media/${mediaFileId}/content?token=${token}`
+    return null
+  },
 }))
 
 import { AnswerProgressRing } from '@/components/display/AnswerProgressRing'
@@ -83,6 +97,29 @@ describe('QuestionScreen', () => {
     )
 
     expect(screen.getByTestId('display-media-image')).toBeInTheDocument()
+  })
+
+  it('prefers imageUrl from the websocket payload', () => {
+    render(
+      <QuestionScreen
+        secretToken="display-token"
+        question={{
+          id: 'q1',
+          index: 0,
+          promptText: 'Look at the image',
+          imageUrl: '/api/v1/media/media-99/content',
+          mediaFileId: 'media-99',
+          state: 'Open',
+          options: [{ id: 'a', text: 'Yes', sortOrder: 0 }],
+        }}
+      />,
+    )
+
+    const img = screen.getByTestId('display-media-img')
+    expect(img).toHaveAttribute(
+      'src',
+      '/api/v1/media/media-99/content?token=display-token',
+    )
   })
 })
 

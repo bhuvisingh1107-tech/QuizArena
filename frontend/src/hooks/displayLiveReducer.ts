@@ -34,6 +34,8 @@ export interface DisplayLiveQuestion {
   promptText?: string | null
   sectionName?: string | null
   mediaFileId?: string | null
+  /** WS path/URL for question media (no bytes). Prefer over reconstructing from mediaFileId. */
+  imageUrl?: string | null
   questionType?: QuestionType
   state?: SessionQuestionState
   basePoints?: number
@@ -171,13 +173,27 @@ export function computeReconnectDelay(attempt: number, maxMs = 10_000): number {
 }
 
 function stripEmailsFromLeaderboard(entries: LeaderboardEntry[]): LeaderboardEntry[] {
-  return entries.map(({ rank, participantId, displayName, score, streak }) => ({
-    rank,
-    participantId,
-    displayName,
-    score,
-    streak,
-  }))
+  return entries.map(
+    ({
+      rank,
+      participantId,
+      displayName,
+      score,
+      streak,
+      timeBonus,
+      lastTimeBonus,
+      lastIsCorrect,
+    }) => ({
+      rank,
+      participantId,
+      displayName,
+      score,
+      streak,
+      timeBonus,
+      lastTimeBonus,
+      lastIsCorrect,
+    }),
+  )
 }
 
 function mapOptions(
@@ -289,6 +305,8 @@ function mapQuestion(
       null,
     mediaFileId:
       (nested.mediaFileId as string | null | undefined) ?? existing?.mediaFileId ?? null,
+    imageUrl:
+      (nested.imageUrl as string | null | undefined) ?? existing?.imageUrl ?? null,
     sectionName:
       (section.name as string | undefined) ??
       (nested.sectionName as string | undefined) ??
@@ -512,7 +530,7 @@ export function deriveViewMode(input: {
     }
 
     if (qState === 'Revealed' || qState === 'Scored') {
-      if (input.preferLeaderboard) return 'leaderboard'
+      // Keep reveal on the main stage; live standings live in the side panel.
       return 'reveal'
     }
 
@@ -868,18 +886,12 @@ export function displayLiveReducer(
 
         case 'leaderboard:updated': {
           const leaderboard = parseLeaderboard(data) ?? state.leaderboard
-          const qState = state.question?.state
-          const preferLeaderboard =
-            qState === 'Scored' || qState === 'Revealed'
-          return withViewMode(
-            state,
-            {
-              leaderboard,
-              previousRanks: ranksFromLeaderboard(state.leaderboard),
-              showLeaderboardAfterScore: preferLeaderboard,
-            },
-            preferLeaderboard,
-          )
+          return withViewMode(state, {
+            leaderboard,
+            previousRanks: ranksFromLeaderboard(state.leaderboard),
+            // Side panel updates in place — do not swap the main stage away from the question/reveal.
+            showLeaderboardAfterScore: false,
+          })
         }
 
         case 'error': {

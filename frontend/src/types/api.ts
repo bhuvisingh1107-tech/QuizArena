@@ -462,6 +462,8 @@ export interface ParticipantLiveQuestion {
   basePoints?: number
   allowMultipleCorrect?: boolean
   mediaFileId?: string | null
+  /** WS path/URL for question media (no bytes). Prefer over reconstructing from mediaFileId. */
+  imageUrl?: string | null
   sectionId?: string | null
   sectionName?: string | null
   totalQuestions?: number | null

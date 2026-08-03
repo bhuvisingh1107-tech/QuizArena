@@ -1,12 +1,13 @@
 import { ImageIcon, Volume2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { mediaContentUrl } from '@/lib/media-url'
+import { resolveLiveMediaUrl } from '@/lib/media-url'
 import type { QuestionType } from '@/types/api'
 import { cn } from '@/lib/utils'
 
 interface DisplayMediaProps {
-  mediaFileId: string
+  mediaFileId?: string | null
+  imageUrl?: string | null
   questionType?: QuestionType
   secretToken: string
   className?: string
@@ -14,17 +15,19 @@ interface DisplayMediaProps {
 
 export function DisplayMedia({
   mediaFileId,
+  imageUrl,
   questionType,
   secretToken,
   className,
 }: DisplayMediaProps) {
   const [failed, setFailed] = useState(false)
+  const url = resolveLiveMediaUrl({ imageUrl, mediaFileId, token: secretToken })
 
   useEffect(() => {
     setFailed(false)
-  }, [mediaFileId])
+  }, [imageUrl, mediaFileId, secretToken])
 
-  if (!secretToken || failed) {
+  if (!url || failed) {
     return (
       <div
         className={cn(
@@ -33,7 +36,7 @@ export function DisplayMedia({
         )}
         data-testid="media-placeholder"
         role="img"
-        aria-label={failed || !secretToken ? 'Media unavailable' : 'Media loading'}
+        aria-label={failed || !url ? 'Media unavailable' : 'Media loading'}
       >
         <div className="text-center">
           <ImageIcon
@@ -43,7 +46,7 @@ export function DisplayMedia({
           <p className="font-display text-lg font-semibold text-[var(--heading)]">
             {failed
               ? 'Could not load media'
-              : !secretToken
+              : !url
                 ? 'Media unavailable'
                 : 'Media loading…'}
           </p>
@@ -52,7 +55,6 @@ export function DisplayMedia({
     )
   }
 
-  const url = mediaContentUrl(mediaFileId, secretToken)
   const isAudio = questionType === 'Audio'
 
   if (isAudio) {
@@ -96,6 +98,7 @@ export function DisplayMedia({
         src={url}
         alt="Question media"
         className="mx-auto max-h-[min(40vh,420px)] w-full object-contain"
+        data-testid="display-media-img"
         onError={() => setFailed(true)}
       />
     </div>
