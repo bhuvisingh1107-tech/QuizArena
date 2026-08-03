@@ -189,7 +189,9 @@ export function AiReviewPage() {
               />
             </div>
             {job.status === 'failed' ? (
-              <p className="text-sm text-red-600">{job.errorMessage || 'Generation failed'}</p>
+              <p className="whitespace-pre-wrap break-words text-sm text-red-600">
+                {job.errorMessage || 'Generation failed'}
+              </p>
             ) : (
               <p className="flex items-center gap-2 text-sm text-[var(--muted-foreground)]">
                 <Loader2 className="h-4 w-4 animate-spin" />

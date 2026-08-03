@@ -253,7 +253,18 @@ class AiGenerationService:
             job = self._repo.get_job(job_id) or job
             job.status = AiJobStatus.FAILED
             job.error_code = getattr(exc, "code", None) or "AI_GENERATION_FAILED"
-            job.error_message = str(getattr(exc, "message", None) or exc)[:2000]
+            # Prefer domain message; append provider details (e.g. full Gemini HTTP body)
+            # so the admin UI shows the exact upstream error, not a truncated generic line.
+            message = str(getattr(exc, "message", None) or exc)
+            details = getattr(exc, "details", None) or []
+            if details:
+                import json
+
+                message = (
+                    f"{message}\n\nProvider details:\n"
+                    f"{json.dumps(details, default=str, indent=2)}"
+                )
+            job.error_message = message[:50000]
             job.progress_message = "Failed"
             job.completed_at = datetime.now(UTC)
             self._repo.commit()

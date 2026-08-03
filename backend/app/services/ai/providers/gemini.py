@@ -95,38 +95,34 @@ class GeminiProvider(AiProvider):
             response = client.post(url, headers=self._headers, json=payload)
 
         if response.status_code >= 400:
-            body = response.text[:2000]
-            logger.error(
-                "Gemini generateContent failed status=%s url=%s model=%s body=%s",
-                response.status_code,
-                url,
-                self._model,
-                body,
-            )
-            raise ValidationError(
-                "AI_PROVIDER_ERROR",
-                "The AI provider rejected the request. Check AI_API_KEY and AI_CHAT_MODEL.",
-                details=[
-                    {
-                        "status": response.status_code,
-                        "url": url,
-                        "model": self._model,
-                        "auth": "x-goog-api-key",
-                        "body": body,
-                    },
-                ],
-            )
+            raise self._http_error(response, url=url, model=self._model, operation="generateContent")
 
         data = response.json()
         try:
             parts = data["candidates"][0]["content"]["parts"]
             text = "".join(str(part.get("text") or "") for part in parts if isinstance(part, dict))
         except (KeyError, IndexError, TypeError) as exc:
-            logger.error("Unexpected Gemini payload keys=%s", list(data.keys()) if isinstance(data, dict) else type(data))
+            logger.error(
+                "Unexpected Gemini payload url=%s model=%s status=%s headers=%s body=%s",
+                url,
+                self._model,
+                response.status_code,
+                dict(response.headers),
+                response.text,
+            )
             raise ValidationError(
                 "AI_PROVIDER_ERROR",
-                "Unexpected generateContent payload from Gemini.",
-                details=[{"body": str(data)[:1000]}],
+                f"Unexpected generateContent payload from Gemini. Raw body: {response.text}",
+                details=[
+                    {
+                        "url": url,
+                        "model": self._model,
+                        "status": response.status_code,
+                        "headers": self._safe_headers(response),
+                        "body": response.text,
+                        "bodyJson": data if isinstance(data, dict) else None,
+                    },
+                ],
             ) from exc
 
         logger.info(
@@ -161,13 +157,87 @@ class GeminiProvider(AiProvider):
                     json={"content": {"parts": [{"text": text}]}},
                 )
                 if response.status_code >= 400:
-                    logger.warning(
-                        "Gemini embedContent failed status=%s body=%s; using local hash",
+                    logger.error(
+                        "Gemini embedContent failed url=%s model=%s status=%s headers=%s body=%s",
+                        url,
+                        embed_model,
                         response.status_code,
-                        response.text[:500],
+                        self._safe_headers(response),
+                        response.text,
                     )
+                    logger.warning("Falling back to local hash embeddings after embedContent failure")
                     return hash_embeddings(texts)
                 data = response.json()
                 values = (data.get("embedding") or {}).get("values") or []
                 vectors.append([float(v) for v in values])
         return vectors
+
+    @staticmethod
+    def _safe_headers(response: httpx.Response) -> dict[str, str]:
+        """Loggable response headers (never echo the API key)."""
+        out: dict[str, str] = {}
+        for key, value in response.headers.items():
+            if key.lower() in {"x-goog-api-key", "authorization"}:
+                out[key] = "***redacted***"
+            else:
+                out[key] = value
+        return out
+
+    def _http_error(
+        self,
+        response: httpx.Response,
+        *,
+        url: str,
+        model: str,
+        operation: str,
+    ) -> ValidationError:
+        """Build an error that preserves Google's full HTTP body (no generic rewrite)."""
+        body_text = response.text
+        headers = self._safe_headers(response)
+        body_json: Any | None = None
+        google_message = body_text
+        google_status: str | None = None
+        try:
+            body_json = response.json()
+            err = body_json.get("error") if isinstance(body_json, dict) else None
+            if isinstance(err, dict):
+                google_message = str(err.get("message") or body_text)
+                if err.get("status") is not None:
+                    google_status = str(err.get("status"))
+                elif err.get("code") is not None:
+                    google_status = str(err.get("code"))
+        except Exception:
+            body_json = None
+
+        logger.error(
+            "Gemini %s failed url=%s model=%s status=%s google_status=%s headers=%s body=%s",
+            operation,
+            url,
+            model,
+            response.status_code,
+            google_status,
+            headers,
+            body_text,
+        )
+
+        # Message shown in UI / job.error_message — must be Google's text, not a generic phrase.
+        message = (
+            f"Gemini {operation} HTTP {response.status_code}"
+            + (f" ({google_status})" if google_status else "")
+            + f": {google_message}"
+        )
+        return ValidationError(
+            "AI_PROVIDER_ERROR",
+            message,
+            details=[
+                {
+                    "url": url,
+                    "model": model,
+                    "operation": operation,
+                    "status": response.status_code,
+                    "headers": headers,
+                    "body": body_text,
+                    "bodyJson": body_json,
+                },
+            ],
+        )

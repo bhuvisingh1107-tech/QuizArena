@@ -65,13 +65,13 @@ PROVIDER_PRESETS: dict[str, ProviderPreset] = {
             "X-Title": "QuizArena",
         },
     ),
-    "gemini": ProviderPreset(
+       "gemini": ProviderPreset(
         transport="gemini",
         # Google AI Studio (Gemini API) — NOT Vertex AI.
         # Native REST: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
         # Auth: x-goog-api-key (AI Studio API key). Docs: https://ai.google.dev/gemini-api/docs
         base_url="https://generativelanguage.googleapis.com/v1beta",
-        default_chat_model="gemini-2.5-flash",
+        default_chat_model="gemini-3.6-flash",
         default_embedding_model="gemini-embedding-001",
         requires_api_key=True,
         extra_headers={},
