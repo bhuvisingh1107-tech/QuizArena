@@ -54,13 +54,24 @@ Production requires PostgreSQL (`postgresql://user:pass@host:5432/dbname` or Neo
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AI_PROVIDER` | `mock` | `mock` (**tests only**) or `openai_compatible`. Production must use `openai_compatible`. |
-| `AI_API_KEY` | empty | Required for `openai_compatible` |
-| `AI_API_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base |
-| `AI_CHAT_MODEL` | `gpt-4o-mini` | Chat model id |
-| `AI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model id |
+| `AI_PROVIDER` | `mock` | `openai` \| `openrouter` \| `gemini` \| `anthropic` \| `ollama` \| `openai_compatible`. `mock` is **tests only**. Required outside `APP_ENV=test` (startup fails if missing/invalid). |
+| `AI_API_KEY` | empty | Required for all providers except `ollama` |
+| `AI_API_BASE_URL` | provider preset | Override OpenAI-compatible base (optional for named aliases) |
+| `AI_CHAT_MODEL` | provider default | Chat model id |
+| `AI_EMBEDDING_MODEL` | provider default | Embedding model id (`local` = hash vectors; Anthropic always local) |
 | `AI_MAX_SOURCE_BYTES` | `52428800` (50 MiB) | Max AI source file size |
 | `AI_ENABLE_TOPIC_WEB` | `true` | Seed trusted educational URLs for topic mode |
+
+### Provider presets
+
+| `AI_PROVIDER` | Default base | Default chat model | Notes |
+|---------------|--------------|--------------------|-------|
+| `openai` | `https://api.openai.com/v1` | `gpt-4o-mini` | Official OpenAI |
+| `openrouter` | `https://openrouter.ai/api/v1` | `openai/gpt-4o-mini` | OpenAI-compatible + Referer headers |
+| `gemini` | Google AI Studio OpenAI-compat (`generativelanguage.googleapis.com`) | `gemini-2.5-flash` | Free Gemini API key from AI Studio — **not** Vertex AI |
+| `anthropic` | `https://api.anthropic.com` | `claude-3-5-haiku-latest` | Native Messages API; local embeddings |
+| `ollama` | `http://127.0.0.1:11434/v1` | `llama3.2` | Local/dev; API key optional |
+| `openai_compatible` | `https://api.openai.com/v1` | `gpt-4o-mini` | Any OpenAI-compatible gateway |
 
 See [AI_QUIZ_GENERATION.md](./AI_QUIZ_GENERATION.md) for architecture and optional extractors.
 
@@ -115,6 +126,7 @@ VITE_WS_BASE_URL=wss://quizarena-api.onrender.com/ws
 - [ ] `CORS_ORIGIN_REGEX` allows HTTPS `*.vercel.app` (default) or empty if unused
 - [ ] `TRUSTED_HOSTS` = Render hostname
 - [ ] Vercel `VITE_API_BASE_URL` / `VITE_WS_BASE_URL` set for **Production and Preview**
+- [ ] `AI_PROVIDER` + `AI_API_KEY` set on Render (startup fails without them)
 - [ ] Render persistent disk mounted at `/app/storage`
 - [ ] Admin seeded once via `python -m scripts.seed_admin`
 

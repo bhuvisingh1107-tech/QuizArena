@@ -174,6 +174,11 @@ Copy [`frontend/.env.production.example`](../frontend/.env.production.example) a
 | `MAX_REQUEST_BODY_BYTES` | No | `20971520` |
 | `LOGIN_RATE_LIMIT_PER_MINUTE` | No | `10` |
 | `JOIN_RATE_LIMIT_PER_MINUTE` | No | `30` |
+| `AI_PROVIDER` | Yes | `openai` (or `openrouter` / `gemini` / `anthropic` / `openai_compatible`) — startup fails if unset/mock |
+| `AI_API_KEY` | Yes* | Provider API key (*optional only for `ollama`) |
+| `AI_API_BASE_URL` | No | Override preset base URL |
+| `AI_CHAT_MODEL` | No | e.g. `gpt-4o-mini`, `openai/gpt-4o-mini`, `gemini-2.0-flash` |
+| `AI_EMBEDDING_MODEL` | No | e.g. `text-embedding-3-small` |
 | `PORT` | Auto | Set by Render |
 
 ### Frontend (Vercel — build time)

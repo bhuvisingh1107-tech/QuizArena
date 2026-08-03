@@ -153,15 +153,28 @@ class Settings(BaseSettings):
     storage_path: str = "../storage"
 
     # AI quiz generation
-    # Production must use openai_compatible + AI_API_KEY. Mock is test-only.
-    ai_provider: Literal["mock", "openai_compatible"] = Field(
+    # Production / non-test: require a real provider + API key (Ollama exempt from key).
+    # Supported: openai | openrouter | gemini | anthropic | ollama | openai_compatible
+    # mock is APP_ENV=test only.
+    ai_provider: Literal[
+        "mock",
+        "openai_compatible",
+        "openai",
+        "openrouter",
+        "gemini",
+        "anthropic",
+        "ollama",
+    ] = Field(
         default="mock",
-        description="AI provider: mock (tests only) or openai_compatible",
+        description=(
+            "AI provider alias. Production: openai|openrouter|gemini|anthropic|"
+            "ollama|openai_compatible. mock is test-only."
+        ),
     )
     ai_api_key: str = Field(default="", description="API key for the configured AI provider")
     ai_api_base_url: str = Field(
         default="https://api.openai.com/v1",
-        description="OpenAI-compatible API base URL",
+        description="OpenAI-compatible API base URL (overridden by named provider presets)",
     )
     ai_chat_model: str = Field(default="gpt-4o-mini")
     ai_embedding_model: str = Field(default="text-embedding-3-small")
@@ -247,6 +260,13 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "TRUSTED_HOSTS must be set to the API hostname(s) when APP_ENV=production",
                 )
+            # AI must be configured before the process accepts traffic — never
+            # defer AI_CONFIG_ERROR to the first generate request.
+            from app.services.ai.provider_presets import ai_configuration_error
+
+            ai_error = ai_configuration_error(self)
+            if ai_error:
+                raise ValueError(ai_error)
         return self
 
     @property

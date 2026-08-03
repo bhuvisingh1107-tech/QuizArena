@@ -315,7 +315,7 @@ class AiGenerationService:
         self._set_progress(job, 15, AiJobStatus.ANALYZING, "Planning sections from topic")
         outline = self._topic_outline(job)
 
-        for src in trusted_source_seeds(job.topic):
+        for src in trusted_source_seeds(job.topic) if self._settings.ai_enable_topic_web else []:
             self._repo.add(
                 AiSourceReference(
                     id=uuid4(),

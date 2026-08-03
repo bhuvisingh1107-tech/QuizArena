@@ -20,6 +20,7 @@ async def lifespan(app: FastAPI):
     from app.api.deps import get_session_factory
     from app.services.auth_service import AuthService
     from app.services.ai.job_worker import ai_job_worker
+    from app.services.ai.provider_presets import ai_configuration_error, resolve_ai_runtime
     from app.services.timer_service import auto_progression
 
     settings = get_settings()
@@ -27,6 +28,20 @@ async def lifespan(app: FastAPI):
     logger.info(
         "Starting QuizArena API",
         extra={"app_env": settings.app_env, "debug": settings.debug},
+    )
+
+    # Fail fast on AI misconfiguration outside tests (production also validated in Settings).
+    ai_error = ai_configuration_error(settings)
+    if ai_error:
+        logger.critical("AI configuration invalid — refusing to start: %s", ai_error)
+        raise RuntimeError(ai_error)
+    runtime = resolve_ai_runtime(settings)
+    logger.info(
+        "AI ready provider=%s transport=%s model=%s base=%s",
+        runtime.provider,
+        runtime.transport,
+        runtime.chat_model,
+        runtime.base_url,
     )
 
     # Production-safe admin bootstrap: create only when the table is empty.

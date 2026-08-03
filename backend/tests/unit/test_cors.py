@@ -130,6 +130,8 @@ def test_production_rejects_wildcard_cors_regex() -> None:
             cors_origin_regex=".*",
             trusted_hosts=["api.example.onrender.com"],
             public_app_url="https://quiz-arena-zeta-six.vercel.app",
+            ai_provider="openai",
+            ai_api_key="sk-test-key",
         )
 
 
@@ -142,6 +144,8 @@ def test_production_accepts_default_vercel_regex() -> None:
         cors_origins=["https://quiz-arena-zeta-six.vercel.app"],
         trusted_hosts=["api.example.onrender.com"],
         public_app_url="https://quiz-arena-zeta-six.vercel.app",
+        ai_provider="openai",
+        ai_api_key="sk-test-key",
     )
     assert settings.cors_origin_regex == DEFAULT_CORS_ORIGIN_REGEX
     assert settings.cors_origin_regex_or_none == DEFAULT_CORS_ORIGIN_REGEX

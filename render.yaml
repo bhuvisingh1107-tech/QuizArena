@@ -60,6 +60,17 @@ services:
         value: admin
       - key: ADMIN_PASSWORD
         sync: false
+      # AI quiz generation — required in production (startup fails without these)
+      - key: AI_PROVIDER
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_API_BASE_URL
+        sync: false
+      - key: AI_CHAT_MODEL
+        sync: false
+      - key: AI_EMBEDDING_MODEL
+        sync: false
 
     disk:
       name: quizarena-media

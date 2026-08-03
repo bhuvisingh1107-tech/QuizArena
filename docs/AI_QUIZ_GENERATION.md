@@ -45,8 +45,21 @@ Migration: `alembic/versions/20260803_1300_ai_generation.py`
 
 ### AI provider abstraction
 
-- `AI_PROVIDER=openai_compatible` — **required for real quizzes** (OpenAI or compatible gateway)
-- `AI_PROVIDER=mock` — **tests only**; blocked outside `APP_ENV=test` (and auto-overridden when `AI_API_KEY` is set)
+Supported `AI_PROVIDER` values:
+
+| Provider | Transport | API key | Typical use |
+|----------|-----------|---------|-------------|
+| `openai` | OpenAI Chat Completions | Required | Production default |
+| `openrouter` | OpenAI-compatible | Required | Multi-model gateway |
+| `gemini` | Google AI Studio OpenAI-compatible API | Required | Free Gemini API (`generativelanguage.googleapis.com`, not Vertex) |
+| `anthropic` | Anthropic Messages API | Required | Claude |
+| `ollama` | OpenAI-compatible (local) | Optional | Local development |
+| `openai_compatible` | OpenAI-compatible | Required | Azure / custom gateways |
+| `mock` | In-process | — | **`APP_ENV=test` only** |
+
+Startup validation (non-test): missing/invalid `AI_PROVIDER` or missing `AI_API_KEY` (except Ollama) **refuses to start** with a clear log — the API never reaches runtime `AI_CONFIG_ERROR` for misconfiguration.
+
+Topic and document pipelines both call the same resolved `AiProvider` (`chat_json` + `embed`).
 
 Placeholder / template questions (`concept #1`, `Distractor A`, etc.) are rejected by a quality gate; failed generations mark the job **FAILED** instead of saving fakes.
 
@@ -84,13 +97,53 @@ Jobs run via FastAPI **BackgroundTasks** (not `asyncio.create_task` from sync th
 
 | Variable | Default | Notes |
 |----------|---------|--------|
-| `AI_PROVIDER` | `mock` | `mock` or `openai_compatible` |
-| `AI_API_KEY` | empty | Required for `openai_compatible` |
-| `AI_API_BASE_URL` | `https://api.openai.com/v1` | Compatible base URL |
-| `AI_CHAT_MODEL` | `gpt-4o-mini` | Chat model id |
-| `AI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model id |
+| `AI_PROVIDER` | `mock` | `openai` / `openrouter` / `gemini` / `anthropic` / `ollama` / `openai_compatible` (`mock` = tests only) |
+| `AI_API_KEY` | empty | Required except `ollama` |
+| `AI_API_BASE_URL` | preset | Optional override of provider base URL |
+| `AI_CHAT_MODEL` | preset | Chat model id |
+| `AI_EMBEDDING_MODEL` | preset | Embedding model (`local` for hash vectors) |
 | `AI_MAX_SOURCE_BYTES` | `52428800` (50 MiB) | Per-file upload cap |
 | `AI_ENABLE_TOPIC_WEB` | `true` | Trusted-source seeding for topic mode |
+
+### Render (production)
+
+Set secrets on the web service (also listed in `render.yaml`):
+
+```env
+AI_PROVIDER=openai
+AI_API_KEY=sk-...
+AI_CHAT_MODEL=gpt-4o-mini
+AI_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+OpenRouter example:
+
+```env
+AI_PROVIDER=openrouter
+AI_API_KEY=sk-or-...
+AI_CHAT_MODEL=openai/gpt-4o-mini
+```
+
+Ollama (local development):
+
+```env
+AI_PROVIDER=ollama
+AI_CHAT_MODEL=llama3.2
+# AI_API_KEY optional
+```
+
+### Google AI Studio (Gemini free API)
+
+Uses `https://generativelanguage.googleapis.com/v1beta/openai` (AI Studio), **not** Vertex AI.
+
+```env
+AI_PROVIDER=gemini
+AI_API_KEY=<key from https://aistudio.google.com/apikey>
+AI_CHAT_MODEL=gemini-2.5-flash
+AI_EMBEDDING_MODEL=gemini-embedding-001
+```
+
+Do **not** set `AI_API_BASE_URL` unless you intentionally override the preset (leave it unset on Render).
 
 ### Optional extractors (production)
 

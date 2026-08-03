@@ -39,6 +39,8 @@ def test_production_accepts_postgres() -> None:
         cors_origins=["https://app.vercel.app/"],
         trusted_hosts=["api.example.onrender.com"],
         public_app_url="https://app.vercel.app/",
+        ai_provider="openai",
+        ai_api_key="sk-test-key",
     )
     assert settings.is_postgres is True
     assert settings.cors_origins == ["https://app.vercel.app"]
@@ -55,6 +57,8 @@ def test_production_accepts_localhost_public_app_url() -> None:
         cors_origins=["http://localhost:5173"],
         trusted_hosts=["api.example.onrender.com"],
         public_app_url="http://localhost:5173",
+        ai_provider="openai",
+        ai_api_key="sk-test-key",
     )
     assert settings.public_app_url == "http://localhost:5173"
 
@@ -70,6 +74,8 @@ def test_production_rejects_blank_or_relative_public_app_url() -> None:
                 cors_origins=["https://app.vercel.app"],
                 trusted_hosts=["api.example.onrender.com"],
                 public_app_url=bad,
+                ai_provider="openai",
+                ai_api_key="sk-test-key",
             )
 
 
@@ -83,6 +89,8 @@ def test_production_requires_trusted_hosts() -> None:
             cors_origins=["https://app.vercel.app"],
             trusted_hosts=["*"],
             public_app_url="https://app.vercel.app",
+            ai_provider="openai",
+            ai_api_key="sk-test-key",
         )
 
 
@@ -97,6 +105,8 @@ def test_env_csv_cors_and_trusted_hosts_without_json() -> None:
         "CORS_ORIGINS": "https://app.vercel.app,https://preview.vercel.app",
         "TRUSTED_HOSTS": "api.example.onrender.com,localhost",
         "PUBLIC_APP_URL": "https://app.vercel.app",
+        "AI_PROVIDER": "openai",
+        "AI_API_KEY": "sk-test-key",
     }
     with patch.dict(os.environ, env, clear=False):
         settings = Settings(_env_file=None)  # type: ignore[call-arg]
