@@ -1,4 +1,4 @@
-import { Archive, ClipboardPlus, FileEdit, Radio, Trophy, Users } from 'lucide-react'
+import { Archive, ClipboardPlus, FileEdit, Radio, Sparkles, Trophy, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { DataTable } from '@/components/shared/DataTable'
@@ -31,6 +31,12 @@ export function DashboardPage() {
         description="Overview of quizzes, live sessions, and quick actions."
         actions={
           <div className="flex flex-wrap gap-2">
+            <Button asChild variant="accent">
+              <Link to="/admin/quizzes/ai">
+                <Sparkles className="h-4 w-4" />
+                Generate with AI
+              </Link>
+            </Button>
             <Button asChild>
               <Link to="/admin/quizzes/new">
                 <ClipboardPlus className="h-4 w-4" />
@@ -137,11 +143,19 @@ export function DashboardPage() {
                 <DataTable
                   empty={!quizzes.data?.items.length}
                   emptyTitle="No quizzes yet"
-                  emptyDescription="Create your first quiz to get started."
+                  emptyDescription="Create manually or generate with AI."
                   emptyAction={
-                    <Button asChild>
-                      <Link to="/admin/quizzes/new">Create quiz</Link>
-                    </Button>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Button asChild variant="accent">
+                        <Link to="/admin/quizzes/ai">
+                          <Sparkles className="h-4 w-4" />
+                          Generate with AI
+                        </Link>
+                      </Button>
+                      <Button asChild>
+                        <Link to="/admin/quizzes/new">Create quiz</Link>
+                      </Button>
+                    </div>
                   }
                   columns={
                     <>

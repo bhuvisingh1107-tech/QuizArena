@@ -4,6 +4,7 @@ import {
   LogOut,
   Radio,
   Settings,
+  Sparkles,
   Trophy,
   Menu,
   X,
@@ -19,6 +20,7 @@ import { cn } from '@/lib/utils'
 const navItems = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/admin/quizzes', label: 'My Quizzes', icon: ClipboardList },
+  { to: '/admin/quizzes/ai', label: 'Generate with AI', icon: Sparkles },
   { to: '/admin/live-rooms', label: 'Live Rooms', icon: Radio },
   { to: '/admin/results', label: 'History', icon: Trophy },
   { to: '/admin/settings', label: 'Profile', icon: Settings },
@@ -40,6 +42,7 @@ export function AdminLayout() {
         <NavLink
           key={to}
           to={to}
+          end={to === '/admin/dashboard' || to === '/admin/quizzes'}
           onClick={() => setMobileOpen(false)}
           className={({ isActive }) =>
             cn(

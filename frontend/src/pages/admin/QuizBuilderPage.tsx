@@ -1,4 +1,4 @@
-import { Archive, Copy, Radio, Trash2 } from 'lucide-react'
+import { Archive, Copy, Radio, Sparkles, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
@@ -163,6 +163,14 @@ export function QuizBuilderPage() {
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {isNew ? (
+              <Button asChild variant="accent" size="sm">
+                <Link to="/admin/quizzes/ai">
+                  <Sparkles className="h-4 w-4" />
+                  Generate with AI instead
+                </Link>
+              </Button>
+            ) : null}
             {quiz ? <StatusBadge status={quiz.status} /> : null}
             {quiz?.status === 'Ready' ? (
               <Button

@@ -170,7 +170,7 @@ export function QuizzesPage() {
         description="Search, filter, and manage quiz templates."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline">
+            <Button asChild variant="accent">
               <Link to="/admin/quizzes/ai">
                 <Sparkles className="h-4 w-4" />
                 Generate with AI
@@ -185,6 +185,21 @@ export function QuizzesPage() {
           </div>
         }
       />
+
+      <div className="mb-6 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-4 py-3 sm:flex sm:items-center sm:justify-between sm:gap-4">
+        <div>
+          <p className="font-medium text-[var(--heading)]">New: AI quiz generation</p>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Upload study material or enter a topic — review questions, then save as a draft.
+          </p>
+        </div>
+        <Button asChild className="mt-3 sm:mt-0" variant="accent">
+          <Link to="/admin/quizzes/ai">
+            <Sparkles className="h-4 w-4" />
+            Open AI generator
+          </Link>
+        </Button>
+      </div>
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
         <SearchBar
@@ -262,11 +277,19 @@ export function QuizzesPage() {
             loadingLabel="Loading quizzes…"
             empty={!isLoading && items.length === 0}
             emptyTitle="No quizzes found"
-            emptyDescription="Try another search, or create a new quiz."
+            emptyDescription="Create one manually or generate a draft with AI."
             emptyAction={
-              <Button asChild>
-                <Link to="/admin/quizzes/new">Create quiz</Link>
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button asChild variant="accent">
+                  <Link to="/admin/quizzes/ai">
+                    <Sparkles className="h-4 w-4" />
+                    Generate with AI
+                  </Link>
+                </Button>
+                <Button asChild>
+                  <Link to="/admin/quizzes/new">Create quiz</Link>
+                </Button>
+              </div>
             }
             columns={
               <>

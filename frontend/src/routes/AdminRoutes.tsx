@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { AdminLayout } from '@/layouts/AdminLayout'
 import { AiGeneratePage } from '@/pages/admin/AiGeneratePage'
 import { AiReviewPage } from '@/pages/admin/AiReviewPage'
+import { CreateQuizChooserPage } from '@/pages/admin/CreateQuizChooserPage'
 import { DashboardPage } from '@/pages/admin/DashboardPage'
 import { LiveRoomsPage } from '@/pages/admin/LiveRoomsPage'
 import { QuizBuilderPage } from '@/pages/admin/QuizBuilderPage'
@@ -28,9 +29,13 @@ export function AdminRoutes() {
           <Route path="dashboard" element={<DashboardPage />} />
 
           <Route path="quizzes" element={<QuizzesPage />} />
+          {/* Static paths before :quizId so "ai" / "new" never hit the builder */}
           <Route path="quizzes/ai" element={<AiGeneratePage />} />
           <Route path="quizzes/ai/:jobId" element={<AiReviewPage />} />
-          <Route path="quizzes/new" element={<QuizBuilderPage />} />
+          <Route path="quizzes/new" element={<CreateQuizChooserPage />} />
+          <Route path="quizzes/new/manual" element={<QuizBuilderPage />} />
+          <Route path="ai" element={<Navigate to="/admin/quizzes/ai" replace />} />
+          <Route path="ai/:jobId" element={<AiReviewRedirect />} />
           <Route path="quizzes/:quizId" element={<QuizBuilderPage />} />
           <Route path="quizzes/:quizId/questions" element={<RedirectToBuilderQuestions />} />
           <Route
@@ -53,4 +58,9 @@ export function AdminRoutes() {
       <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
     </Routes>
   )
+}
+
+function AiReviewRedirect() {
+  const { jobId = '' } = useParams()
+  return <Navigate to={`/admin/quizzes/ai/${jobId}`} replace />
 }
