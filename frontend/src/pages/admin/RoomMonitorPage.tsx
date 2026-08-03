@@ -144,6 +144,8 @@ export function RoomMonitorPage() {
             displayName: e.displayName,
             score: e.score,
             streak: e.streak,
+            timeBonus: 0,
+            lastTimeBonus: 0,
           }))
       : live.leaderboard.length > 0
         ? live.leaderboard
@@ -153,6 +155,8 @@ export function RoomMonitorPage() {
             displayName: e.displayName,
             score: e.score,
             streak: e.streak,
+            timeBonus: 0,
+            lastTimeBonus: 0,
           }))
 
   const questionIndex =
