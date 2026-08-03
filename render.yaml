@@ -3,7 +3,7 @@
 #
 # Pair with:
 #   - Neon PostgreSQL (DATABASE_URL)
-#   - Vercel frontend (PUBLIC_APP_URL + CORS_ORIGINS)
+#   - Vercel frontend (PUBLIC_APP_URL + CORS_ORIGINS + CORS_ORIGIN_REGEX for previews)
 #
 # After first deploy, seed admin once from the Render Shell:
 #   python -m scripts.seed_admin

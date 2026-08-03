@@ -37,7 +37,8 @@ Production requires PostgreSQL (`postgresql://user:pass@host:5432/dbname` or Neo
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CORS_ORIGINS` | `http://localhost:5173,...` | Comma-separated allowed origins (exact Vercel URL in prod) |
+| `CORS_ORIGINS` | `http://localhost:5173,...` | Exact allowed Origins (production SPA + localhost). No `*` in production. |
+| `CORS_ORIGIN_REGEX` | HTTPS `*.vercel.app` | Extra Origins via `re.fullmatch` (Vercel production + previews). Empty disables. |
 | `TRUSTED_HOSTS` | `*` | Comma-separated hosts for TrustedHostMiddleware (Render hostname in prod) |
 | `LOGIN_RATE_LIMIT_PER_MINUTE` | `10` | In-app login rate limit per IP |
 | `JOIN_RATE_LIMIT_PER_MINUTE` | `30` | In-app join rate limit per IP |
@@ -85,7 +86,7 @@ VITE_API_BASE_URL=http://localhost:8000/api/v1
 VITE_WS_BASE_URL=ws://localhost:8000/ws
 ```
 
-Vercel production (build-time):
+Vercel production **and** preview (build-time — enable both environments):
 
 ```env
 VITE_API_BASE_URL=https://quizarena-api.onrender.com/api/v1
@@ -110,9 +111,10 @@ VITE_WS_BASE_URL=wss://quizarena-api.onrender.com/ws
 - [ ] `APP_ENV=production` and `DEBUG=false`
 - [ ] Strong `JWT_SECRET_KEY`
 - [ ] `PUBLIC_APP_URL` = Vercel origin
-- [ ] `CORS_ORIGINS` = Vercel origin (exact match)
+- [ ] `CORS_ORIGINS` = production Vercel origin (exact match)
+- [ ] `CORS_ORIGIN_REGEX` allows HTTPS `*.vercel.app` (default) or empty if unused
 - [ ] `TRUSTED_HOSTS` = Render hostname
-- [ ] Vercel `VITE_API_BASE_URL` / `VITE_WS_BASE_URL` point at Render
+- [ ] Vercel `VITE_API_BASE_URL` / `VITE_WS_BASE_URL` set for **Production and Preview**
 - [ ] Render persistent disk mounted at `/app/storage`
 - [ ] Admin seeded once via `python -m scripts.seed_admin`
 

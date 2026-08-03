@@ -14,6 +14,7 @@ const baseURL = getApiBaseUrl()
 
 export const participantApiClient: AxiosInstance = axios.create({
   baseURL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',

@@ -115,12 +115,15 @@ Requires `ADMIN_USERNAME` + `ADMIN_PASSWORD` (or `ADMIN_PASSWORD_HASH`) in the e
 4. Build command: `npm run build`
 5. Output directory: `dist`
 6. Ensure [`frontend/vercel.json`](../frontend/vercel.json) is used (SPA refresh rewrites).
-7. Set **Production** environment variables (build-time):
+7. Set **Production and Preview** environment variables (build-time — both required):
 
-| Variable | Example |
-|----------|---------|
-| `VITE_API_BASE_URL` | `https://quizarena-api.onrender.com/api/v1` |
-| `VITE_WS_BASE_URL` | `wss://quizarena-api.onrender.com/ws` |
+   | Variable | Example |
+   |----------|---------|
+   | `VITE_API_BASE_URL` | `https://quizarena-api.onrender.com/api/v1` |
+   | `VITE_WS_BASE_URL` | `wss://quizarena-api.onrender.com/ws` |
+
+   In Vercel → Settings → Environment Variables, enable each for **Production** and **Preview**.
+   Preview builds without these bake in relative `/api/v1` and login fails with "Network Error".
 
 8. Deploy. Note the production URL, e.g. `https://quizarena.vercel.app`.
 
@@ -130,11 +133,14 @@ Requires `ADMIN_USERNAME` + `ADMIN_PASSWORD` (or `ADMIN_PASSWORD_HASH`) in the e
 |------------|-------|
 | `PUBLIC_APP_URL` | `https://quizarena.vercel.app` |
 | `CORS_ORIGINS` | `https://quizarena.vercel.app` |
+| `CORS_ORIGIN_REGEX` | `https://([a-zA-Z0-9-]+\.)*vercel\.app` (default if unset) |
 | `TRUSTED_HOSTS` | `quizarena-api.onrender.com` |
 
 10. Redeploy backend after CORS/`PUBLIC_APP_URL` changes.
 
-Preview deployments: either disable previews or add each preview origin to `CORS_ORIGINS` (comma-separated).
+**Preview deployments:** Backend `CORS_ORIGIN_REGEX` allows HTTPS `*.vercel.app` with
+`allow_credentials=True` (reflects the request Origin; never `*`). Keep the canonical
+production origin in `CORS_ORIGINS`. Do not list each preview URL manually.
 
 Copy [`frontend/.env.production.example`](../frontend/.env.production.example) as a template.
 
@@ -151,7 +157,8 @@ Copy [`frontend/.env.production.example`](../frontend/.env.production.example) a
 | `DATABASE_URL` | Yes | Neon `postgresql://…?sslmode=require` |
 | `JWT_SECRET_KEY` | Yes | Long random secret (Render can generate) |
 | `PUBLIC_APP_URL` | Yes | Vercel SPA origin (no trailing slash) |
-| `CORS_ORIGINS` | Yes | Exact Vercel origin(s), comma-separated — no `*` |
+| `CORS_ORIGINS` | Yes | Exact production SPA origin(s), comma-separated — no `*` |
+| `CORS_ORIGIN_REGEX` | No | Default `https://([a-zA-Z0-9-]+\.)*vercel\.app` for preview hosts; empty disables |
 | `TRUSTED_HOSTS` | Yes | Render hostname, e.g. `quizarena-api.onrender.com` |
 | `ADMIN_USERNAME` | Seed | `admin` |
 | `ADMIN_PASSWORD` | Seed once | Strong password (≥8 chars, mixed) |
@@ -202,7 +209,8 @@ Work through each item on production URLs:
 
 | Symptom | Fix |
 |---------|-----|
-| CORS blocked | `CORS_ORIGINS` must exactly match the Vercel HTTPS origin |
+| CORS blocked | `CORS_ORIGINS` must match the production origin; previews need `CORS_ORIGIN_REGEX` (HTTPS `*.vercel.app`) |
+| Preview Network Error | Set `VITE_API_*` for Preview on Vercel, then redeploy; confirm Render CORS regex |
 | WS fails / 404 | Confirm `VITE_WS_BASE_URL=wss://…/ws` and Render plan is always-on |
 | 400 Bad Host | Add Render hostname to `TRUSTED_HOSTS` |
 | Join/display wrong domain | Host UI rebuilds links from `window.location.origin` via `getAppOrigin()` — redeploy the Vercel frontend. Optionally set Render `PUBLIC_APP_URL` for API-returned URLs when no Origin header is present. |
