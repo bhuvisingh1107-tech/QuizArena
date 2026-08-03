@@ -26,10 +26,16 @@ REQUEST_ID_HEADER = "X-Request-ID"
 
 
 def setup_cors(app: FastAPI, settings: Settings) -> None:
-    """Configure CORS for allowed frontend origins."""
+    """Configure CORS for exact origins plus optional Origin regex (Vercel previews).
+
+    ``allow_credentials=True`` requires reflecting a specific Origin (never ``*``).
+    Exact ``CORS_ORIGINS`` covers production + localhost; ``CORS_ORIGIN_REGEX``
+    covers HTTPS ``*.vercel.app`` preview deployments without listing each URL.
+    """
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
+        allow_origin_regex=settings.cors_origin_regex_or_none,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=[

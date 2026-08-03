@@ -37,6 +37,9 @@ const baseURL = getApiBaseUrl()
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL,
+  // Auth uses Bearer JWT in Authorization (not cookies). CORS still requires
+  // allow_credentials + a reflected Origin on the API for credentialed XHR.
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
