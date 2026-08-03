@@ -1,6 +1,6 @@
 """Add awaiting_host_advance and session_events.
 
-Revision ID: 20260803_1600_awaiting_host_advance
+Revision ID: 20260803_1600_host_advance
 Revises: 20260803_1300_ai_generation
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "20260803_1600_awaiting_host_advance"
+revision = "20260803_1600_host_advance"
 down_revision = "20260803_1300_ai_generation"
 branch_labels = None
 depends_on = None
