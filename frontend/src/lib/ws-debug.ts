@@ -6,6 +6,7 @@ const ENABLED =
 
 export type WsDebugPhase =
   | 'create'
+  | 'connect'
   | 'acquire'
   | 'reuse'
   | 'open'
