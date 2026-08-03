@@ -111,9 +111,10 @@ class Settings(BaseSettings):
     storage_path: str = "../storage"
 
     # AI quiz generation
+    # Production must use openai_compatible + AI_API_KEY. Mock is test-only.
     ai_provider: Literal["mock", "openai_compatible"] = Field(
         default="mock",
-        description="AI provider: mock (offline/tests) or openai_compatible",
+        description="AI provider: mock (tests only) or openai_compatible",
     )
     ai_api_key: str = Field(default="", description="API key for the configured AI provider")
     ai_api_base_url: str = Field(

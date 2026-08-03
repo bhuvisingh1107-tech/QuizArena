@@ -1,14 +1,70 @@
-"""Deterministic mock AI provider for tests and offline development."""
+"""Deterministic mock AI provider — TESTS ONLY (APP_ENV=test).
+
+Produces content grounded in the prompt's source/topic text.
+Never emits banned placeholder phrases (concept #, Distractor A, etc.).
+"""
 
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import re
 from typing import Any
 
 from app.config import Settings
 from app.services.ai.provider import AiProvider, ChatMessage, parse_json_object
+
+logger = logging.getLogger(__name__)
+
+_STOP = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "from",
+    "have",
+    "are",
+    "was",
+    "were",
+    "will",
+    "into",
+    "your",
+    "about",
+    "when",
+    "what",
+    "which",
+    "their",
+    "there",
+    "then",
+    "than",
+    "also",
+    "such",
+    "only",
+    "over",
+    "under",
+    "after",
+    "before",
+    "between",
+    "section",
+    "summary",
+    "concepts",
+    "language",
+    "difficulty",
+    "allowed",
+    "kinds",
+    "return",
+    "json",
+    "source",
+    "excerpt",
+    "generate",
+    "questions",
+    "topic",
+    "create",
+    "outline",
+}
 
 
 class MockAiProvider(AiProvider):
@@ -18,9 +74,6 @@ class MockAiProvider(AiProvider):
         self._settings = settings
 
     def chat_json(self, messages: list[ChatMessage], *, temperature: float = 0.3) -> dict[str, Any]:
-        import logging
-
-        logger = logging.getLogger(__name__)
         logger.info("LLM request provider=mock messages=%s", len(messages))
         user = next((m.content for m in reversed(messages) if m.role == "user"), "")
         system = next((m.content for m in messages if m.role == "system"), "")
@@ -28,6 +81,7 @@ class MockAiProvider(AiProvider):
         if "section outline for the topic" in user.lower() or "trustedSources" in user:
             topic = _extract_quoted(user) or "General Topic"
             sections = _topic_sections(topic)
+            logger.info("mock topic outline sections=%s", len(sections))
             return {
                 "title": f"{topic} Quiz",
                 "sections": sections,
@@ -43,26 +97,31 @@ class MockAiProvider(AiProvider):
         if "produce a section outline" in user.lower() or "Analyze the following study" in user:
             title = _guess_title(user)
             sections = _sections_from_text(user)
+            logger.info("mock document outline sections=%s", len(sections))
             return {"title": title, "sections": sections}
 
         if "Generate" in user and "questions for section" in user:
             section = _extract_between(user, 'section "', '"') or "General"
             count = _extract_count(user) or 3
             kinds = _extract_kinds(user)
-            return {
-                "questions": [
-                    _mock_question(section, i, kinds[i % len(kinds)]) for i in range(count)
-                ]
-            }
+            source = user.split("Source excerpt:", 1)[-1] if "Source excerpt:" in user else user
+            questions = [
+                _grounded_question(section, i, kinds[i % len(kinds)], source) for i in range(count)
+            ]
+            logger.info("mock questions generated=%s section=%s", len(questions), section)
+            return {"questions": questions}
 
         if "regenerate" in system.lower() or "regenerate" in user.lower():
-            return _mock_question("Regenerated", 0, "mcq")
+            source = user
+            section = _extract_between(user, "about ", ".") or "Topic"
+            return {"question": _grounded_question(section, 0, "mcq", source)}
 
-        # Fallback parse attempt (tests may inject JSON).
         try:
             return parse_json_object(user)
-        except Exception:
-            return {"title": "Generated Quiz", "sections": [], "questions": []}
+        except Exception as exc:
+            raise ValueError(
+                "Mock provider could not parse JSON and will not invent empty quizzes"
+            ) from exc
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
@@ -111,6 +170,21 @@ def _guess_title(user: str) -> str:
     return "Study Material Quiz"
 
 
+def _terms_from(text: str, *, limit: int = 12) -> list[str]:
+    words = re.findall(r"[A-Za-z][A-Za-z0-9_-]{3,}", text or "")
+    terms: list[str] = []
+    seen: set[str] = set()
+    for word in words:
+        key = word.lower()
+        if key in _STOP or key in seen:
+            continue
+        seen.add(key)
+        terms.append(word)
+        if len(terms) >= limit:
+            break
+    return terms or ["Scheduling", "Memory", "Process", "Throughput"]
+
+
 def _topic_sections(topic: str) -> list[dict[str, Any]]:
     presets = {
         "basic geometry": [
@@ -123,29 +197,60 @@ def _topic_sections(topic: str) -> list[dict[str, Any]]:
             "Polygons",
         ],
         "operating systems": [
-            "Introduction",
-            "Processes",
+            "Processes and Threads",
+            "CPU Scheduling",
             "Memory Management",
+            "Virtual Memory",
             "File Systems",
-            "Concurrency",
-            "Scheduling",
+            "Concurrency and Synchronization",
+        ],
+        "vector calculus": [
+            "Vectors and Vector Fields",
+            "Gradient",
+            "Divergence",
+            "Curl",
+            "Line and Surface Integrals",
+            "Applications of Stokes and Divergence Theorems",
         ],
         "computer networks": [
             "Network Models",
             "Physical Layer",
-            "Data Link",
+            "Data Link Layer",
             "Network Layer",
             "Transport Layer",
             "Application Layer",
         ],
+        "machine learning": [
+            "Supervised Learning",
+            "Unsupervised Learning",
+            "Model Evaluation",
+            "Overfitting and Regularization",
+            "Neural Networks",
+            "Feature Engineering",
+        ],
     }
     names = presets.get(topic.lower())
     if not names:
-        names = [f"{topic} Foundations", f"{topic} Core Ideas", f"{topic} Applications"]
+        # Derive section-like phrases from the topic words — avoid bare Foundations/Applications.
+        parts = [p for p in re.split(r"[\s,/]+", topic) if len(p) > 2]
+        if len(parts) >= 2:
+            names = [
+                f"{parts[0]} Fundamentals",
+                f"{parts[-1]} Methods",
+                f"{topic} Problem Solving",
+                f"{topic} Worked Examples",
+            ]
+        else:
+            names = [
+                f"{topic} Fundamentals",
+                f"{topic} Methods",
+                f"{topic} Problem Solving",
+                f"{topic} Worked Examples",
+            ]
     return [
         {
             "name": name,
-            "summary": f"Key ideas in {name} for {topic}.",
+            "summary": f"Study focus: {name} within {topic}, including definitions and typical exam-style reasoning.",
             "concepts": [name, topic],
         }
         for name in names
@@ -155,66 +260,87 @@ def _topic_sections(topic: str) -> list[dict[str, Any]]:
 def _sections_from_text(user: str) -> list[dict[str, Any]]:
     body = user.split("Source material:", 1)[-1]
     headings = re.findall(
-        r"^(?:Chapter\s+\d+[:.\s]+|[0-9]+\.\s+|#\s+)(.+)$",
+        r"^(?:Chapter\s+\d+[:.\s]+|[0-9]+\.\s+|##\s+|#\s+)(.+)$",
         body,
         flags=re.M | re.I,
     )
     if not headings:
-        # Fall back to capitalized lines as crude section hints.
+        headings = [
+            line.strip("# ").strip()
+            for line in body.splitlines()
+            if line.strip().startswith("#")
+        ]
+    if not headings:
         headings = [
             line.strip()
             for line in body.splitlines()
-            if line.strip() and line.strip() == line.strip().title() and 3 < len(line.strip()) < 60
+            if line.strip()
+            and line.strip() == line.strip().title()
+            and 3 < len(line.strip()) < 60
         ][:8]
     if not headings:
-        headings = ["Introduction", "Core Concepts", "Practice"]
+        terms = _terms_from(body, limit=4)
+        headings = [f"{t} Overview" for t in terms]
     return [
         {
             "name": h[:120],
-            "summary": f"Coverage of {h}.",
+            "summary": f"Material covering {h} from the uploaded source.",
             "concepts": [h],
         }
         for h in headings
     ]
 
 
-def _mock_question(section: str, index: int, kind: str) -> dict[str, Any]:
+def _grounded_question(section: str, index: int, kind: str, source: str) -> dict[str, Any]:
+    """Build a non-placeholder question tied to terms in the source/section."""
     kind = kind if kind in {"mcq", "multiple_correct", "true_false", "fill_blank"} else "mcq"
-    prompt = f"In {section}, which statement best describes concept #{index + 1}?"
+    terms = _terms_from(f"{section}\n{source}", limit=16)
+    focus = terms[index % len(terms)]
+    alt = terms[(index + 1) % len(terms)]
+    alt2 = terms[(index + 2) % len(terms)]
+    alt3 = terms[(index + 3) % len(terms)]
+
     if kind == "true_false":
+        prompt = f"True or False: In {section}, {focus} is discussed as part of the material."
         options = [
             {"text": "True", "isCorrect": True},
             {"text": "False", "isCorrect": False},
         ]
     elif kind == "multiple_correct":
+        prompt = f"Which of the following are relevant to {focus} within {section}? (Select all that apply.)"
         options = [
-            {"text": f"{section} idea A", "isCorrect": True},
-            {"text": f"{section} idea B", "isCorrect": True},
-            {"text": "Unrelated claim", "isCorrect": False},
-            {"text": "Contradictory claim", "isCorrect": False},
+            {"text": f"{focus} is covered under {section}", "isCorrect": True},
+            {"text": f"{alt} can relate to the same {section} discussion", "isCorrect": True},
+            {"text": f"{alt2} replaces all of {section}", "isCorrect": False},
+            {"text": f"{section} never mentions {focus}", "isCorrect": False},
         ]
     elif kind == "fill_blank":
+        prompt = f"In {section}, the term that best completes the idea around {focus} is ____."
         options = [
-            {"text": f"{section}-term", "isCorrect": True},
-            {"text": "Placeholder", "isCorrect": False},
-            {"text": "Noise", "isCorrect": False},
-            {"text": "Distractor", "isCorrect": False},
+            {"text": focus, "isCorrect": True},
+            {"text": alt, "isCorrect": False},
+            {"text": alt2, "isCorrect": False},
+            {"text": alt3, "isCorrect": False},
         ]
-        prompt = f"Fill in the blank: The key term for {section} #{index + 1} is ____."
     else:
+        prompt = f"In {section}, which statement about {focus} is best supported by the material?"
         options = [
-            {"text": f"Correct {section} fact", "isCorrect": True},
-            {"text": "Plausible distractor A", "isCorrect": False},
-            {"text": "Plausible distractor B", "isCorrect": False},
-            {"text": "Plausible distractor C", "isCorrect": False},
+            {"text": f"{focus} is a key idea presented in {section}", "isCorrect": True},
+            {"text": f"{focus} is never related to {section}", "isCorrect": False},
+            {"text": f"{alt} fully replaces the role of {focus}", "isCorrect": False},
+            {"text": f"{section} only covers {alt3} and ignores {focus}", "isCorrect": False},
         ]
+
     return {
         "kind": kind,
         "promptText": prompt,
-        "explanation": f"This checks understanding of {section}.",
+        "explanation": (
+            f"The source material for {section} references {focus}; "
+            f"the correct option aligns with that coverage rather than contradicting it."
+        ),
         "difficulty": ["easy", "medium", "hard"][index % 3],
         "topicLabel": section,
-        "estimatedTimeSeconds": 20,
+        "estimatedTimeSeconds": 25,
         "sourceLocator": f"Section: {section}",
         "options": options,
     }

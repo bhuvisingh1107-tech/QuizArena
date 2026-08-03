@@ -45,8 +45,10 @@ Migration: `alembic/versions/20260803_1300_ai_generation.py`
 
 ### AI provider abstraction
 
-- `AI_PROVIDER=mock` — deterministic offline / CI (default)
-- `AI_PROVIDER=openai_compatible` — OpenAI or any OpenAI-compatible base URL (Anthropic/Gemini via compatible gateways, local models)
+- `AI_PROVIDER=openai_compatible` — **required for real quizzes** (OpenAI or compatible gateway)
+- `AI_PROVIDER=mock` — **tests only**; blocked outside `APP_ENV=test` (and auto-overridden when `AI_API_KEY` is set)
+
+Placeholder / template questions (`concept #1`, `Distractor A`, etc.) are rejected by a quality gate; failed generations mark the job **FAILED** instead of saving fakes.
 
 Prompts live in files under `backend/app/services/ai/prompt_files/` and are loaded via `prompts.py` — not hardcoded in services.
 

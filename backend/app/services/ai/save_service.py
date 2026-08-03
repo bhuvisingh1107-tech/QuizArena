@@ -33,6 +33,8 @@ class AiSaveService:
 
     def save_job_as_quiz(self, job_id: UUID, *, owner_id: UUID) -> UUID:
         """Create (or return existing) Draft quiz from an AI job. Idempotent."""
+        from app.services.ai.quality import assert_no_placeholders
+
         job = self._jobs.get_job(job_id, owner_id=owner_id)
         if job is None:
             raise NotFoundError("NOT_FOUND", "Generation job not found")
@@ -47,6 +49,17 @@ class AiSaveService:
             raise NotFoundError("NOT_FOUND", "Generation job not found")
         if not job.sections:
             raise ValidationError("VALIDATION_ERROR", "Job has no sections to save")
+
+        # Final safety gate — never persist template/placeholder content.
+        for section in job.sections:
+            assert_no_placeholders(section.name, field="section.name")
+            for question in section.questions:
+                assert_no_placeholders(question.prompt_text, field="question.prompt")
+                if question.explanation:
+                    assert_no_placeholders(question.explanation, field="question.explanation")
+                for raw in question.options_json or []:
+                    if isinstance(raw, dict):
+                        assert_no_placeholders(str(raw.get("text") or ""), field="question.option")
 
         title = (job.title or job.topic or "AI Generated Quiz").strip()[:255]
         quiz = self._quizzes.create(

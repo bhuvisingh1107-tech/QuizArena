@@ -1,3 +1,5 @@
-You outline an educational quiz for a topic using only trusted academic knowledge
+You outline an educational quiz for a topic using trusted academic knowledge
 (Wikipedia-level facts, textbooks, OCW-style curricula). Prefer canonical section
-breakdowns. Return ONLY valid JSON.
+breakdowns specific to the topic (e.g. for Vector Calculus: Gradient, Divergence, Curl).
+Avoid vague labels like "Foundations" or "Core Ideas" unless they are standard for the topic.
+Return ONLY valid JSON.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -9,6 +10,8 @@ import httpx
 from app.config import Settings
 from app.core.exceptions import ValidationError
 from app.services.ai.provider import AiProvider, ChatMessage, parse_json_object
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAICompatibleProvider(AiProvider):
@@ -28,20 +31,26 @@ class OpenAICompatibleProvider(AiProvider):
         }
 
     def chat_json(self, messages: list[ChatMessage], *, temperature: float = 0.3) -> dict[str, Any]:
-        import logging
-
-        logger = logging.getLogger(__name__)
         payload = {
             "model": self._settings.ai_chat_model,
             "temperature": temperature,
             "response_format": {"type": "json_object"},
             "messages": [{"role": m.role, "content": m.content} for m in messages],
         }
+        prompt_chars = sum(len(m.content) for m in messages)
         logger.info(
-            "LLM request provider=openai_compatible model=%s messages=%s",
+            "LLM request provider=openai_compatible model=%s messages=%s prompt_chars=%s",
             self._settings.ai_chat_model,
             len(messages),
+            prompt_chars,
         )
+        for msg in messages:
+            logger.info(
+                "LLM prompt role=%s preview=%s",
+                msg.role,
+                (msg.content[:400] + "…") if len(msg.content) > 400 else msg.content,
+            )
+
         with httpx.Client(timeout=120.0) as client:
             response = client.post(
                 f"{self._base}/chat/completions",
@@ -56,8 +65,8 @@ class OpenAICompatibleProvider(AiProvider):
             )
             raise ValidationError(
                 "AI_PROVIDER_ERROR",
-                f"Chat completion failed ({response.status_code})",
-                details=[response.text[:500]],
+                "The AI provider rejected the request. Check AI_API_KEY and model settings.",
+                details=[{"status": response.status_code}],
             )
         data = response.json()
         try:
@@ -65,10 +74,25 @@ class OpenAICompatibleProvider(AiProvider):
         except (KeyError, IndexError, TypeError) as exc:
             raise ValidationError(
                 "AI_PROVIDER_ERROR",
-                "Unexpected chat completion payload",
+                "Unexpected chat completion payload from the AI provider.",
             ) from exc
-        logger.info("LLM response received chars=%s", len(str(content)))
-        return parse_json_object(str(content))
+
+        raw = str(content)
+        logger.info(
+            "LLM response chars=%s preview=%s",
+            len(raw),
+            (raw[:500] + "…") if len(raw) > 500 else raw,
+        )
+        try:
+            parsed = parse_json_object(raw)
+        except Exception as exc:
+            logger.exception("LLM JSON parse failed")
+            raise ValidationError(
+                "AI_PARSE_ERROR",
+                "The AI returned invalid JSON. Generation will retry or fail.",
+            ) from exc
+        logger.info("LLM parsed JSON keys=%s", sorted(parsed.keys()))
+        return parsed
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:

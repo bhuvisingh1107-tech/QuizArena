@@ -53,8 +53,8 @@ Production requires PostgreSQL (`postgresql://user:pass@host:5432/dbname` or Neo
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AI_PROVIDER` | `mock` | `mock` (offline/CI) or `openai_compatible` |
-| `AI_API_KEY` | empty | Required when `AI_PROVIDER=openai_compatible` |
+| `AI_PROVIDER` | `mock` | `mock` (**tests only**) or `openai_compatible`. Production must use `openai_compatible`. |
+| `AI_API_KEY` | empty | Required for `openai_compatible` |
 | `AI_API_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base |
 | `AI_CHAT_MODEL` | `gpt-4o-mini` | Chat model id |
 | `AI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model id |

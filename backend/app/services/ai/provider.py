@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.config import Settings
+from app.core.exceptions import ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -61,8 +64,28 @@ def render_template(template: str, **values: object) -> str:
 
 
 def get_ai_provider(settings: Settings) -> AiProvider:
-    logger = logging.getLogger(__name__)
-    if settings.ai_provider == "openai_compatible":
+    """Resolve provider. Mock is blocked outside automated tests."""
+    provider_name = settings.ai_provider
+
+    # Prefer a real LLM whenever a key is configured (except explicit test mock).
+    if (
+        provider_name == "mock"
+        and settings.app_env != "test"
+        and settings.ai_api_key.strip()
+    ):
+        logger.warning(
+            "AI_PROVIDER=mock overridden to openai_compatible because AI_API_KEY is set"
+        )
+        provider_name = "openai_compatible"
+
+    if provider_name == "mock" and settings.app_env != "test":
+        raise ValidationError(
+            "AI_CONFIG_ERROR",
+            "AI quiz generation requires a real model. Set AI_PROVIDER=openai_compatible "
+            "and AI_API_KEY. Mock/placeholder generation is disabled outside tests.",
+        )
+
+    if provider_name == "openai_compatible":
         from app.services.ai.providers.openai_compatible import OpenAICompatibleProvider
 
         logger.info(
@@ -71,7 +94,8 @@ def get_ai_provider(settings: Settings) -> AiProvider:
             settings.ai_api_base_url,
         )
         return OpenAICompatibleProvider(settings)
+
     from app.services.ai.providers.mock import MockAiProvider
 
-    logger.info("AI provider selected=mock")
+    logger.info("AI provider selected=mock (test-only)")
     return MockAiProvider(settings)

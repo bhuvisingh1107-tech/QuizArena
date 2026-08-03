@@ -41,6 +41,7 @@ from app.services.ai.prompts import (
     load_prompt,
 )
 from app.services.ai.provider import ChatMessage, get_ai_provider, render_template
+from app.services.ai.quality import validate_question_payload, validate_questions_batch
 from app.services.ai.trusted_sources import trusted_source_seeds
 from app.storage.local import LocalStorageBackend
 
@@ -289,6 +290,18 @@ class AiGenerationService:
             combined.append(f"# Source: {source.original_filename}\n\n{text}")
 
         full_text = "\n\n".join(combined)
+        logger.info(
+            "AI job %s extracted text chars=%s sources=%s",
+            job.id,
+            len(full_text),
+            len(job.source_files),
+        )
+        if len(full_text.strip()) < 40:
+            raise ValidationError(
+                "EMPTY_EXTRACTION",
+                "Extracted text is too short to generate a meaningful quiz. "
+                "Try a clearer document or a different file.",
+            )
         self._set_progress(job, 25, AiJobStatus.EXTRACTING, "Chunking content")
         self._store_chunks(job, full_text)
 
@@ -372,9 +385,23 @@ class AiGenerationService:
             title_hint=job.title or "none",
             source_text=source_text[:24000],
         )
-        return self._provider.chat_json(
-            [ChatMessage("system", system), ChatMessage("user", user)],
+        logger.info(
+            "AI job %s structure prompt ready source_chars=%s prompt_chars=%s",
+            job.id,
+            len(source_text),
+            len(user),
         )
+        data = self._chat_json_with_retry(
+            [ChatMessage("system", system), ChatMessage("user", user)],
+            temperature=0.2,
+            expect_key="sections",
+        )
+        logger.info(
+            "AI job %s structure parsed sections=%s",
+            job.id,
+            len(data.get("sections") or []),
+        )
+        return data
 
     def _topic_outline(self, job: AiGenerationJob) -> dict[str, Any]:
         system = load_prompt(TOPIC_OUTLINE_SYSTEM)
@@ -384,13 +411,16 @@ class AiGenerationService:
             language=job.language,
         )
         logger.info(
-            "AI job %s topic outline prompt ready provider=%s user_chars=%s",
+            "AI job %s topic outline prompt ready provider=%s user_chars=%s topic=%s",
             job.id,
             self._provider.name,
             len(user),
+            job.topic,
         )
-        data = self._provider.chat_json(
+        data = self._chat_json_with_retry(
             [ChatMessage("system", system), ChatMessage("user", user)],
+            temperature=0.3,
+            expect_key="sections",
         )
         logger.info(
             "AI job %s topic outline response sections=%s",
@@ -486,12 +516,93 @@ class AiGenerationService:
             concepts=", ".join(str(c) for c in concepts),
             source_text=source_text[:18000],
         )
-        data = self._provider.chat_json(
-            [ChatMessage("system", system), ChatMessage("user", user)],
-            temperature=0.4,
+        logger.info(
+            "AI job %s question prompt section=%s source_chars=%s prompt_chars=%s count=%s",
+            job.id,
+            section_name,
+            len(source_text),
+            len(user),
+            question_count,
         )
-        questions = data.get("questions") or []
-        return [q for q in questions if isinstance(q, dict)]
+        if len(source_text.strip()) < 20:
+            raise ValidationError(
+                "AI_SOURCE_TOO_SHORT",
+                f"Not enough source text to generate questions for section '{section_name}'.",
+            )
+
+        last_error: Exception | None = None
+        for attempt in range(1, 3):
+            try:
+                data = self._provider.chat_json(
+                    [ChatMessage("system", system), ChatMessage("user", user)],
+                    temperature=0.35 if attempt == 1 else 0.15,
+                )
+                raw_questions = [q for q in (data.get("questions") or []) if isinstance(q, dict)]
+                logger.info(
+                    "AI job %s section=%s attempt=%s parsed_questions=%s keys=%s",
+                    job.id,
+                    section_name,
+                    attempt,
+                    len(raw_questions),
+                    list(data.keys()),
+                )
+                validated = validate_questions_batch(raw_questions)
+                logger.info(
+                    "AI job %s section=%s validation ok questions=%s",
+                    job.id,
+                    section_name,
+                    len(validated),
+                )
+                return validated[:question_count] if question_count else validated
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "AI job %s section=%s question generation attempt %s failed: %s",
+                    job.id,
+                    section_name,
+                    attempt,
+                    exc,
+                )
+
+        raise ValidationError(
+            getattr(last_error, "code", None) or "AI_GENERATION_FAILED",
+            str(getattr(last_error, "message", None) or last_error or "Question generation failed"),
+        )
+
+    def _chat_json_with_retry(
+        self,
+        messages: list[ChatMessage],
+        *,
+        temperature: float,
+        expect_key: str | None = None,
+        attempts: int = 2,
+    ) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                data = self._provider.chat_json(messages, temperature=temperature)
+                if expect_key and not data.get(expect_key):
+                    raise ValidationError(
+                        "AI_PARSE_ERROR",
+                        f"AI response missing '{expect_key}'.",
+                    )
+                return data
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "AI chat_json attempt %s/%s failed: %s",
+                    attempt,
+                    attempts,
+                    exc,
+                )
+        raise ValidationError(
+            getattr(last_error, "code", None) or "AI_PARSE_ERROR",
+            str(
+                getattr(last_error, "message", None)
+                or last_error
+                or "AI response could not be parsed"
+            ),
+        )
 
     def regenerate_question(
         self,
@@ -511,12 +622,16 @@ class AiGenerationService:
             f"Language: {job.language}\n"
             f"Previous prompt: {question.prompt_text}"
         )
-        data = self._provider.chat_json(
+        data = self._chat_json_with_retry(
             [ChatMessage("system", system), ChatMessage("user", user)],
             temperature=0.5,
+            expect_key=None,
         )
         # Provider may return {question: {...}} or the object itself.
         payload = data.get("question") if isinstance(data.get("question"), dict) else data
+        if not isinstance(payload, dict):
+            raise ValidationError("AI_PARSE_ERROR", "Regenerated question payload was invalid")
+        validate_question_payload(payload, index=0)
         updated = self._question_from_payload(job, section, payload, question.sort_order)
         question.kind = updated.kind
         question.prompt_text = updated.prompt_text
@@ -628,6 +743,7 @@ class AiGenerationService:
         payload: dict[str, Any],
         sort_order: int,
     ) -> AiGeneratedQuestion:
+        validate_question_payload(payload, index=sort_order)
         kind_raw = str(payload.get("kind") or "mcq")
         try:
             kind = AiQuestionKind(kind_raw)
@@ -643,18 +759,15 @@ class AiGenerationService:
         options = payload.get("options") or []
         if not isinstance(options, list):
             options = []
+        prompt = str(payload.get("promptText") or payload.get("prompt_text") or "").strip()
+        explanation = str(payload.get("explanation") or "").strip() or None
         return AiGeneratedQuestion(
             id=uuid4(),
             job_id=job.id,
             section_id=section.id,
             kind=kind,
-            prompt_text=str(payload.get("promptText") or payload.get("prompt_text") or "").strip()
-            or f"Question about {section.name}",
-            explanation=(
-                str(payload.get("explanation")).strip()
-                if payload.get("explanation") is not None
-                else None
-            ),
+            prompt_text=prompt,
+            explanation=explanation,
             difficulty=difficulty,
             topic_label=(
                 str(payload.get("topicLabel") or payload.get("topic_label") or section.name)[:255]
@@ -667,7 +780,7 @@ class AiGenerationService:
             options_json=options,
             source_locator=(
                 str(payload.get("sourceLocator") or payload.get("source_locator") or "")[:512]
-                or None
+                or f"Section: {section.name}"
             ),
             sort_order=sort_order,
         )

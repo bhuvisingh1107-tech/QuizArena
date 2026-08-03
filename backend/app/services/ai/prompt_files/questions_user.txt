@@ -1,11 +1,21 @@
-Generate {{question_count}} questions for section "{{section_name}}".
+Generate {{question_count}} high-quality questions for section "{{section_name}}".
 
-Difficulty: {{difficulty}}
+Difficulty setting: {{difficulty}}
 Allowed kinds: {{question_kinds}}
 Language: {{language}}
 
 Section summary: {{section_summary}}
-Concepts: {{concepts}}
+Concepts to emphasize: {{concepts}}
+
+Requirements:
+- Questions must be answerable from the source excerpt below.
+- Options must be realistic educational choices, not placeholders.
+- Explanations must reference the source ideas (paraphrased).
+- Use kind values only from the allowed list.
+- MCQ: exactly 4 options, exactly one correct.
+- Multiple correct: 4 options, at least two correct.
+- True/False: exactly 2 options labeled True and False.
+- Fill blank: 4 options, exactly one correct fill.
 
 Return JSON:
 {
@@ -25,10 +35,5 @@ Return JSON:
   ]
 }
 
-MCQ: exactly 4 options, one correct.
-Multiple correct: 4 options, at least two correct.
-True/False: exactly 2 options (True/False).
-Fill blank: 4 options with one correct fill.
-
-Source excerpt:
+Source excerpt (authoritative — ground all items here):
 {{source_text}}
