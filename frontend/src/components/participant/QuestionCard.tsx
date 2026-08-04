@@ -119,7 +119,8 @@ function QuestionMedia({
         alt="Question media"
         className={cn(
           'mx-auto max-h-64 w-full object-contain',
-          loaded ? 'relative' : 'absolute inset-0 h-0 w-0 opacity-0',
+          // Keep real dimensions while loading — h-0/w-0 can prevent load events.
+          loaded ? 'relative' : 'absolute inset-0 opacity-0',
         )}
         data-testid="participant-media-img"
         onLoad={() => setLoaded(true)}

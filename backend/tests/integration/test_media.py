@@ -197,6 +197,45 @@ def test_get_media_not_found(client: TestClient, admin_token: str) -> None:
     assert response.json()["error"]["code"] == "MEDIA_NOT_FOUND"
 
 
+def test_content_returns_blob_missing_when_db_row_exists_but_file_gone(
+    client: TestClient,
+    admin_token: str,
+    test_settings,
+) -> None:
+    """DB metadata without the on-disk blob → MEDIA_BLOB_MISSING (not AUTH 401/403)."""
+    from pathlib import Path
+
+    created = _upload(
+        client,
+        admin_token,
+        data=PNG_BYTES,
+        filename="orphan-blob.png",
+        category="question_image",
+        content_type="image/png",
+    ).json()["data"]
+
+    storage_root = Path(test_settings.storage_path)
+    files = list(storage_root.rglob("*.png"))
+    assert files, "upload should have written a png under STORAGE_PATH"
+    for path in files:
+        path.unlink()
+
+    meta = client.get(
+        f"/api/v1/media/{created['id']}",
+        headers=_auth(admin_token),
+    )
+    assert meta.status_code == 200
+    assert meta.json()["data"]["id"] == created["id"]
+
+    content = client.get(
+        f"/api/v1/media/{created['id']}/content",
+        headers=_auth(admin_token),
+    )
+    assert content.status_code == 404
+    assert content.json()["error"]["code"] == "MEDIA_BLOB_MISSING"
+    assert "Stored media file not found" in content.json()["error"]["message"]
+
+
 def test_delete_media(client: TestClient, admin_token: str) -> None:
     created = _upload(
         client,

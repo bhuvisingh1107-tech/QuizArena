@@ -10,6 +10,7 @@ from app.models.media_file import MediaFile
 from app.models.platform_settings import PlatformSettings
 from app.models.question import Question
 from app.models.quiz import Quiz
+from app.models.session_question import SessionQuestion
 
 
 class MediaRepository:
@@ -86,11 +87,21 @@ class MediaRepository:
         )
         return int(self._session.scalar(stmt) or 0)
 
+    def count_session_question_references(self, media_id: UUID) -> int:
+        """Live/historical session snapshots also FK to media_files."""
+        stmt = (
+            select(func.count())
+            .select_from(SessionQuestion)
+            .where(SessionQuestion.media_file_id == media_id)
+        )
+        return int(self._session.scalar(stmt) or 0)
+
     def is_referenced(self, media_id: UUID) -> bool:
         return (
             self.count_question_references(media_id) > 0
             or self.count_quiz_branding_references(media_id) > 0
             or self.count_platform_branding_references(media_id) > 0
+            or self.count_session_question_references(media_id) > 0
         )
 
     def list_question_ids_using(self, media_id: UUID) -> list[UUID]:

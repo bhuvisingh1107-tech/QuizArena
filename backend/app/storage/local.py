@@ -50,7 +50,14 @@ class LocalStorageBackend(StorageBackend):
     def read(self, storage_key: str) -> bytes:
         path = self._resolve(storage_key)
         if not path.exists():
-            raise NotFoundError("MEDIA_NOT_FOUND", "Stored media file not found")
+            # Distinct from MediaService.get()'s MEDIA_NOT_FOUND (no DB row).
+            # Participant 404s with a known mediaFileId almost always hit this path:
+            # Neon still has media_files, but /app/storage lost the blob (ephemeral disk,
+            # missing Render disk mount, or redeploy before the persistent disk existed).
+            raise NotFoundError(
+                "MEDIA_BLOB_MISSING",
+                f"Stored media file not found at '{storage_key}'",
+            )
         return path.read_bytes()
 
     def exists(self, storage_key: str) -> bool:

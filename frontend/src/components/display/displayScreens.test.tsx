@@ -2,7 +2,8 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/media-url', () => ({
-  mediaContentUrl: (mediaFileId: string) => `/media/${mediaFileId}/content`,
+  mediaContentUrl: (mediaFileId: string, token: string) =>
+    `/api/v1/media/${mediaFileId}/content?token=${token}`,
   preloadLiveMedia: () => {},
   resolveLiveMediaUrl: ({
     imageUrl,
@@ -14,8 +15,8 @@ vi.mock('@/lib/media-url', () => ({
     token: string
   }) => {
     if (!token) return null
+    if (mediaFileId) return `/api/v1/media/${mediaFileId}/content?token=${token}`
     if (imageUrl) return `${imageUrl}?token=${token}`
-    if (mediaFileId) return `/media/${mediaFileId}/content?token=${token}`
     return null
   },
 }))
