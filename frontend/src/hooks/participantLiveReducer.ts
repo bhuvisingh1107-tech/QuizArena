@@ -929,8 +929,11 @@ export function participantLiveReducer(
           }
 
         case 'leaderboard:updated': {
+          const includeCorrectness =
+            state.question?.state === 'Revealed' ||
+            state.question?.state === 'Scored'
           const leaderboard =
-            parseLeaderboard(data, { includeCorrectness: state.reveal }) ??
+            parseLeaderboard(data, { includeCorrectness }) ??
             state.leaderboard
           const selfId = state.self?.id
           const own = selfId
