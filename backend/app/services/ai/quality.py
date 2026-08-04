@@ -55,7 +55,16 @@ def assert_no_placeholders(text: str, *, field: str) -> None:
 
 def validate_question_payload(item: dict[str, Any], *, index: int) -> None:
     """Raise if a single LLM question payload is invalid or templated."""
-    from app.services.mcq_validation import OptionSnapshot, assert_mcq_options_valid
+    from app.services.mcq_validation import (
+        MCQ_ALL_FILLED,
+        MCQ_DUPLICATES,
+        MCQ_EXACTLY_FOUR,
+        MCQ_ONE_CORRECT,
+        MCQ_SELECT_CORRECT,
+        OptionSnapshot,
+        assert_mcq_options_valid,
+        is_true_false_options,
+    )
 
     prompt = str(item.get("promptText") or item.get("prompt_text") or "").strip()
     explanation = str(item.get("explanation") or "").strip()
@@ -100,19 +109,52 @@ def validate_question_payload(item: dict[str, Any], *, index: int) -> None:
             )
         )
 
-    if kind in {"true_false", "true/false", "tf"}:
-        # Normalize to True/False labels when the model used those strings.
-        assert_mcq_options_valid(
-            snapshots,
-            field=f"question[{index}].options",
-            code="AI_QUESTION_INVALID",
-        )
-    else:
-        assert_mcq_options_valid(
-            snapshots,
-            field=f"question[{index}].options",
-            code="AI_QUESTION_INVALID",
-        )
+    if kind in {"multiple_correct", "multi"}:
+        messages: list[str] = []
+        if len(snapshots) != 4:
+            messages.append(MCQ_EXACTLY_FOUR)
+        if any(not s.text.strip() for s in snapshots):
+            messages.append(MCQ_ALL_FILLED)
+        lowered = [s.text.strip().lower() for s in snapshots if s.text.strip()]
+        if len(lowered) != len(set(lowered)):
+            messages.append(MCQ_DUPLICATES)
+        correct = sum(1 for s in snapshots if s.is_correct and s.text.strip())
+        if correct < 2:
+            messages.append("Multiple-correct questions need at least two correct options.")
+        if messages:
+            raise ValidationError(
+                "AI_QUESTION_INVALID",
+                messages[0],
+                details=[
+                    {"field": f"question[{index}].options", "message": m} for m in messages
+                ],
+                status_code=400,
+            )
+        return
+
+    if is_true_false_options(snapshots) or kind in {"true_false", "true/false", "tf"}:
+        correct = sum(1 for s in snapshots if s.is_correct)
+        if correct == 0:
+            raise ValidationError(
+                "AI_QUESTION_INVALID",
+                MCQ_SELECT_CORRECT,
+                details=[{"field": f"question[{index}].options", "message": MCQ_SELECT_CORRECT}],
+                status_code=400,
+            )
+        if correct > 1:
+            raise ValidationError(
+                "AI_QUESTION_INVALID",
+                MCQ_ONE_CORRECT,
+                details=[{"field": f"question[{index}].options", "message": MCQ_ONE_CORRECT}],
+                status_code=400,
+            )
+        return
+
+    assert_mcq_options_valid(
+        snapshots,
+        field=f"question[{index}].options",
+        code="AI_QUESTION_INVALID",
+    )
 
 
 def validate_questions_batch(questions: list[dict[str, Any]]) -> list[dict[str, Any]]:

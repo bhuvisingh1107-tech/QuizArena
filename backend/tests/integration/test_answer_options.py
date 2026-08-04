@@ -288,8 +288,7 @@ def test_single_correct_violation(client: TestClient, admin_token: str) -> None:
     assert second.json()["error"]["code"] == "MCQ_INVALID"
 
 
-def test_multiple_correct_rejected(client: TestClient, admin_token: str) -> None:
-    """Even allowMultipleCorrect=true is rejected — MCQs require exactly one correct."""
+def test_multiple_correct_allowed_when_flag_set(client: TestClient, admin_token: str) -> None:
     quiz_id, section_id, question_id = _setup(
         client,
         admin_token,
@@ -307,8 +306,8 @@ def test_multiple_correct_rejected(client: TestClient, admin_token: str) -> None
         json={"text": "B", "isCorrect": True, "sortOrder": 1},
     )
     assert first.status_code == 201
-    assert second.status_code == 400
-    assert second.json()["error"]["code"] == "MCQ_INVALID"
+    assert second.status_code == 201
+    assert second.json()["data"]["isCorrect"] is True
 
 
 def test_option_limit(client: TestClient, admin_token: str) -> None:

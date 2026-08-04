@@ -249,8 +249,10 @@ class AnswerOptionService:
         marking_correct: bool,
         exclude_option_id: UUID | None = None,
     ) -> None:
-        """MCQ rules: exactly one correct option (ignore allow_multiple_correct)."""
+        """Enforce single-correct unless the question explicitly allows multiple."""
         if not marking_correct:
+            return
+        if question.allow_multiple_correct:
             return
         existing = [
             opt

@@ -66,12 +66,12 @@ Production requires PostgreSQL (`postgresql://user:pass@host:5432/dbname` or Neo
 
 | `AI_PROVIDER` | Default base | Default chat model | Notes |
 |---------------|--------------|--------------------|-------|
-| `openai` | `https://api.openai.com/v1` | `gpt-4o-mini` | Official OpenAI |
-| `openrouter` | `https://openrouter.ai/api/v1` | `openai/gpt-4o-mini` | OpenAI-compatible + Referer headers |
-| `gemini` | Google AI Studio OpenAI-compat (`generativelanguage.googleapis.com`) | `gemini-2.5-flash` | Free Gemini API key from AI Studio — **not** Vertex AI |
+| `openai` | `https://api.openai.com/v1` | `gpt-4.1-mini` | **Production default** (embeddings: `text-embedding-3-small`) |
+| `openrouter` | `https://openrouter.ai/api/v1` | `openai/gpt-4.1-mini` | OpenAI-compatible + Referer headers |
+| `gemini` | Google AI Studio (optional) | `gemini-3.6-flash` | Alternate provider if `AI_PROVIDER=gemini` |
 | `anthropic` | `https://api.anthropic.com` | `claude-3-5-haiku-latest` | Native Messages API; local embeddings |
 | `ollama` | `http://127.0.0.1:11434/v1` | `llama3.2` | Local/dev; API key optional |
-| `openai_compatible` | `https://api.openai.com/v1` | `gpt-4o-mini` | Any OpenAI-compatible gateway |
+| `openai_compatible` | `https://api.openai.com/v1` | `gpt-4.1-mini` | Any OpenAI-compatible gateway |
 
 See [AI_QUIZ_GENERATION.md](./AI_QUIZ_GENERATION.md) for architecture and optional extractors.
 

@@ -32,6 +32,7 @@ def test_topic_generation_auto_saves_to_my_quizzes(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("AI_PROVIDER", "mock")
+    monkeypatch.setenv("AI_API_KEY", "")
     from app.config import get_settings
 
     get_settings.cache_clear()
@@ -77,6 +78,7 @@ def test_document_txt_upload_generation(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("AI_PROVIDER", "mock")
+    monkeypatch.setenv("AI_API_KEY", "")
     storage = tmp_path / "storage"
     storage.mkdir()
     monkeypatch.setenv("STORAGE_PATH", str(storage))
@@ -120,6 +122,7 @@ def test_legacy_ppt_rejected_with_clear_error(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("AI_PROVIDER", "mock")
+    monkeypatch.setenv("AI_API_KEY", "")
     storage = tmp_path / "storage"
     storage.mkdir()
     monkeypatch.setenv("STORAGE_PATH", str(storage))

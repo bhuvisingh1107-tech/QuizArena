@@ -45,31 +45,36 @@ class ProviderPreset:
     prefer_json_response_format: bool = True
 
 
+# Default OpenAI models for production (`AI_PROVIDER=openai`).
+DEFAULT_OPENAI_CHAT_MODEL = "gpt-4.1-mini"
+DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+# Settings Field defaults that should be swapped when using a non-OpenAI provider.
+_OPENAI_CENTRIC_CHAT_DEFAULTS = frozenset({"", "gpt-4o-mini", DEFAULT_OPENAI_CHAT_MODEL})
+_OPENAI_CENTRIC_EMBED_DEFAULTS = frozenset({"", DEFAULT_OPENAI_EMBEDDING_MODEL})
+
 PROVIDER_PRESETS: dict[str, ProviderPreset] = {
     "openai": ProviderPreset(
         transport="openai_compatible",
         base_url=DEFAULT_OPENAI_BASE,
-        default_chat_model="gpt-4o-mini",
-        default_embedding_model="text-embedding-3-small",
+        default_chat_model=DEFAULT_OPENAI_CHAT_MODEL,
+        default_embedding_model=DEFAULT_OPENAI_EMBEDDING_MODEL,
         requires_api_key=True,
         extra_headers={},
     ),
     "openrouter": ProviderPreset(
         transport="openai_compatible",
         base_url="https://openrouter.ai/api/v1",
-        default_chat_model="openai/gpt-4o-mini",
-        default_embedding_model="openai/text-embedding-3-small",
+        default_chat_model=f"openai/{DEFAULT_OPENAI_CHAT_MODEL}",
+        default_embedding_model=f"openai/{DEFAULT_OPENAI_EMBEDDING_MODEL}",
         requires_api_key=True,
         extra_headers={
             "HTTP-Referer": "https://quizarena.app",
             "X-Title": "QuizArena",
         },
     ),
-       "gemini": ProviderPreset(
+    "gemini": ProviderPreset(
         transport="gemini",
-        # Google AI Studio (Gemini API) — NOT Vertex AI.
-        # Native REST: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
-        # Auth: x-goog-api-key (AI Studio API key). Docs: https://ai.google.dev/gemini-api/docs
+        # Optional: Google AI Studio native API (not used in production by default).
         base_url="https://generativelanguage.googleapis.com/v1beta",
         default_chat_model="gemini-3.6-flash",
         default_embedding_model="gemini-embedding-001",
@@ -97,8 +102,8 @@ PROVIDER_PRESETS: dict[str, ProviderPreset] = {
     "openai_compatible": ProviderPreset(
         transport="openai_compatible",
         base_url=DEFAULT_OPENAI_BASE,
-        default_chat_model="gpt-4o-mini",
-        default_embedding_model="text-embedding-3-small",
+        default_chat_model=DEFAULT_OPENAI_CHAT_MODEL,
+        default_embedding_model=DEFAULT_OPENAI_EMBEDDING_MODEL,
         requires_api_key=True,
         extra_headers={},
     ),
@@ -160,12 +165,15 @@ def resolve_ai_runtime(settings: object) -> ResolvedAiRuntime:
     # Prefer configured models; fall back to preset defaults when blank.
     effective_chat = chat_model or preset.default_chat_model
     effective_embed = embedding_model or preset.default_embedding_model
-    if provider != "openai_compatible" and provider != "openai":
-        # If still on OpenAI-centric defaults while using another vendor, swap.
-        if chat_model in {"", "gpt-4o-mini"} and preset.default_chat_model != "gpt-4o-mini":
+    if provider not in {"openai", "openai_compatible"}:
+        # Settings still carry OpenAI Field defaults — swap to the vendor preset.
+        if (
+            chat_model in _OPENAI_CENTRIC_CHAT_DEFAULTS
+            and preset.default_chat_model not in _OPENAI_CENTRIC_CHAT_DEFAULTS
+        ):
             effective_chat = preset.default_chat_model
-        if embedding_model in {"", "text-embedding-3-small"} and (
-            preset.default_embedding_model != "text-embedding-3-small"
+        if embedding_model in _OPENAI_CENTRIC_EMBED_DEFAULTS and (
+            preset.default_embedding_model not in _OPENAI_CENTRIC_EMBED_DEFAULTS
             or preset.force_local_embeddings
         ):
             effective_embed = preset.default_embedding_model

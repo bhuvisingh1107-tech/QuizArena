@@ -1,4 +1,4 @@
-"""OpenAI-compatible chat + embeddings (OpenAI, OpenRouter, Gemini, Ollama, …)."""
+"""OpenAI Chat Completions + embeddings (OpenAI, OpenRouter, Ollama, gateways)."""
 
 from __future__ import annotations
 
@@ -100,11 +100,11 @@ class OpenAICompatibleProvider(AiProvider):
                 headers=self._headers,
                 json=payload,
             )
-        # Some Ollama / Gemini-compat builds reject response_format; retry once without it.
+        # Some Ollama builds reject response_format; retry once without it.
         if (
             response.status_code >= 400
             and "response_format" in payload
-            and self._runtime.provider in {"ollama", "gemini"}
+            and self._runtime.provider == "ollama"
         ):
             logger.warning(
                 "%s rejected response_format; retrying without json_object mode",
@@ -118,7 +118,7 @@ class OpenAICompatibleProvider(AiProvider):
                     json=retry_payload,
                 )
         if response.status_code >= 400:
-            body = response.text[:2000]
+            body = response.text[:8000]
             url = f"{self._base}/chat/completions"
             logger.error(
                 "LLM request failed status=%s url=%s model=%s body=%s",
@@ -127,10 +127,25 @@ class OpenAICompatibleProvider(AiProvider):
                 payload.get("model"),
                 body,
             )
+            # Prefer upstream message when the provider returns JSON; never invent a
+            # provider-specific rewrite for OpenAI Chat Completions.
+            message = (
+                f"Chat Completions HTTP {response.status_code} for model "
+                f"{payload.get('model')}: {body}"
+            )
+            try:
+                err = response.json().get("error")
+                if isinstance(err, dict) and err.get("message"):
+                    message = (
+                        f"Chat Completions HTTP {response.status_code}: {err['message']}"
+                    )
+                elif isinstance(err, str) and err.strip():
+                    message = f"Chat Completions HTTP {response.status_code}: {err}"
+            except Exception:
+                pass
             raise ValidationError(
                 "AI_PROVIDER_ERROR",
-                "The AI provider rejected the request. Check AI_API_KEY, AI_API_BASE_URL, "
-                "and AI_CHAT_MODEL.",
+                message,
                 details=[
                     {
                         "status": response.status_code,
@@ -139,6 +154,7 @@ class OpenAICompatibleProvider(AiProvider):
                         "body": body,
                     },
                 ],
+                status_code=400 if response.status_code < 500 else 502,
             )
         return response.json()
 

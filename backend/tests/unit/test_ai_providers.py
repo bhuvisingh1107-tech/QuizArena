@@ -16,6 +16,16 @@ from app.services.ai.providers.anthropic import AnthropicProvider
 from app.services.ai.providers.openai_compatible import OpenAICompatibleProvider
 
 
+def test_resolve_openai_defaults() -> None:
+    runtime = resolve_ai_runtime(
+        Settings(ai_provider="openai", ai_api_key="sk-test", app_env="development"),
+    )
+    assert runtime.transport == "openai_compatible"
+    assert runtime.base_url == "https://api.openai.com/v1"
+    assert runtime.chat_model == "gpt-4.1-mini"
+    assert runtime.embedding_model == "text-embedding-3-small"
+
+
 def test_resolve_openrouter_preset() -> None:
     settings = Settings(
         ai_provider="openrouter",
@@ -25,6 +35,7 @@ def test_resolve_openrouter_preset() -> None:
     runtime = resolve_ai_runtime(settings)
     assert runtime.base_url == "https://openrouter.ai/api/v1"
     assert runtime.chat_model.startswith("openai/")
+    assert runtime.chat_model.endswith("gpt-4.1-mini")
     assert runtime.extra_headers.get("X-Title") == "QuizArena"
     assert runtime.requires_api_key is True
 
@@ -36,7 +47,7 @@ def test_resolve_gemini_preset() -> None:
     assert "generativelanguage.googleapis.com" in runtime.base_url
     assert "aiplatform.googleapis.com" not in runtime.base_url  # not Vertex
     assert runtime.transport == "gemini"
-    assert runtime.chat_model == "gemini-2.5-flash"
+    assert runtime.chat_model == "gemini-3.6-flash"
     assert runtime.embedding_model == "gemini-embedding-001"
 
 
@@ -88,6 +99,11 @@ def test_get_provider_openai() -> None:
     )
     assert isinstance(provider, OpenAICompatibleProvider)
     assert provider.name == "openai"
+    runtime = resolve_ai_runtime(
+        Settings(ai_provider="openai", ai_api_key="sk-test", app_env="development"),
+    )
+    assert runtime.chat_model == "gpt-4.1-mini"
+    assert runtime.embedding_model == "text-embedding-3-small"
 
 
 def test_get_provider_anthropic() -> None:
@@ -103,7 +119,14 @@ def test_get_provider_anthropic() -> None:
 
 def test_mock_blocked_outside_test() -> None:
     with pytest.raises(DomainValidationError) as exc:
-        get_ai_provider(Settings(ai_provider="mock", app_env="development"))
+        get_ai_provider(
+            Settings(
+                ai_provider="mock",
+                ai_api_key="",
+                app_env="development",
+                _env_file=None,
+            ),
+        )
     assert exc.value.code == "AI_CONFIG_ERROR"
 
 

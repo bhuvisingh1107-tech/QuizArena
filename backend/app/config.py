@@ -176,7 +176,7 @@ class Settings(BaseSettings):
         default="https://api.openai.com/v1",
         description="OpenAI-compatible API base URL (overridden by named provider presets)",
     )
-    ai_chat_model: str = Field(default="gpt-4o-mini")
+    ai_chat_model: str = Field(default="gpt-4.1-mini")
     ai_embedding_model: str = Field(default="text-embedding-3-small")
     ai_max_source_bytes: int = Field(default=50 * 1024 * 1024, ge=1024)
     ai_enable_topic_web: bool = Field(

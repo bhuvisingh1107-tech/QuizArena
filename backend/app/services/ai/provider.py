@@ -108,10 +108,11 @@ def get_ai_provider(settings: Settings) -> AiProvider:
         return AnthropicProvider(effective)
 
     if runtime.transport == "gemini":
+        # Optional alternate provider — production default is OpenAI Chat Completions.
         from app.services.ai.providers.gemini import GeminiProvider
 
         logger.info(
-            "AI provider selected=gemini transport=generateContent model=%s base=%s",
+            "AI provider selected=gemini model=%s base=%s",
             runtime.chat_model,
             runtime.base_url,
         )

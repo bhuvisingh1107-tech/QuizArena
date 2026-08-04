@@ -88,25 +88,19 @@ class AiSaveService:
                         "MCQ must contain exactly 4 options.",
                         status_code=400,
                     )
-                from app.services.mcq_validation import OptionSnapshot, assert_mcq_options_valid
+                from app.models.enums import AiQuestionKind
+                from app.services.ai.quality import validate_question_payload
 
-                snapshots = [
-                    OptionSnapshot(
-                        text=str(raw.get("text") or "").strip() if isinstance(raw, dict) else "",
-                        is_correct=bool(
-                            isinstance(raw, dict)
-                            and (raw.get("isCorrect") or raw.get("is_correct"))
-                        ),
-                    )
-                    for raw in options
-                ]
-                assert_mcq_options_valid(
-                    snapshots,
-                    field=f"questions.{q_draft.id}.options",
-                    code="MCQ_INVALID",
+                validate_question_payload(
+                    {
+                        "promptText": q_draft.prompt_text,
+                        "explanation": q_draft.explanation or ("x" * 24),
+                        "kind": q_draft.kind.value if hasattr(q_draft.kind, "value") else str(q_draft.kind),
+                        "options": options,
+                    },
+                    index=q_draft.sort_order,
                 )
-                # Builder MCQ rules require exactly one correct answer.
-                allow_multiple = False
+                allow_multiple = q_draft.kind == AiQuestionKind.MULTIPLE_CORRECT
                 question = self._questions.create(
                     quiz.id,
                     section.id,

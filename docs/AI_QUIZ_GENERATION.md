@@ -27,7 +27,7 @@ API (/api/v1/ai/*)
   → AiGenerationService (orchestration)
       → extractors (optional heavy deps)
       → chunking + embeddings (JSON on chunks; pgvector-ready)
-      → AiProvider (mock | openai_compatible)
+      → AiProvider (openai Chat Completions default; openrouter / gemini / anthropic / ollama / mock)
       → prompt files (services/ai/prompt_files/*.txt)
   → ai_job_worker (asyncio background queue)
   → AiSaveService → existing Quiz / Section / Question / Option services
@@ -49,9 +49,9 @@ Supported `AI_PROVIDER` values:
 
 | Provider | Transport | API key | Typical use |
 |----------|-----------|---------|-------------|
-| `openai` | OpenAI Chat Completions | Required | Production default |
+| `openai` | OpenAI Chat Completions | Required | **Production default** (`gpt-4.1-mini`) |
 | `openrouter` | OpenAI-compatible | Required | Multi-model gateway |
-| `gemini` | Google AI Studio native `generateContent` + `x-goog-api-key` | Required | Free Gemini API (`generativelanguage.googleapis.com`, not Vertex) |
+| `gemini` | Optional Google AI Studio provider | Required | Alternate provider if selected |
 | `anthropic` | Anthropic Messages API | Required | Claude |
 | `ollama` | OpenAI-compatible (local) | Optional | Local development |
 | `openai_compatible` | OpenAI-compatible | Required | Azure / custom gateways |
@@ -112,7 +112,7 @@ Set secrets on the web service (also listed in `render.yaml`):
 ```env
 AI_PROVIDER=openai
 AI_API_KEY=sk-...
-AI_CHAT_MODEL=gpt-4o-mini
+AI_CHAT_MODEL=gpt-4.1-mini
 AI_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
@@ -121,7 +121,7 @@ OpenRouter example:
 ```env
 AI_PROVIDER=openrouter
 AI_API_KEY=sk-or-...
-AI_CHAT_MODEL=openai/gpt-4o-mini
+AI_CHAT_MODEL=openai/gpt-4.1-mini
 ```
 
 Ollama (local development):
@@ -132,22 +132,16 @@ AI_CHAT_MODEL=llama3.2
 # AI_API_KEY optional
 ```
 
-### Google AI Studio (Gemini free API)
+### Optional: Google AI Studio (Gemini)
 
-Uses native REST (not the OpenAI-compat shim, not Vertex):
-
-`POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`  
-Header: `x-goog-api-key: <AI_API_KEY>`
+Production uses OpenAI. To use Gemini instead, set `AI_PROVIDER=gemini` with an AI Studio key (optional alternate provider; factory still supports it).
 
 ```env
 AI_PROVIDER=gemini
 AI_API_KEY=<key from https://aistudio.google.com/apikey>
-AI_CHAT_MODEL=gemini-2.5-flash
+AI_CHAT_MODEL=gemini-3.6-flash
 AI_EMBEDDING_MODEL=gemini-embedding-001
 ```
-
-Leave `AI_API_BASE_URL` unset (defaults to `https://generativelanguage.googleapis.com/v1beta`).
-
 ### Optional extractors (production)
 
 Install as needed (see `backend/requirements.txt` comments):

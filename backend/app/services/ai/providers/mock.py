@@ -281,13 +281,30 @@ def _sections_from_text(user: str) -> list[dict[str, Any]]:
     if not headings:
         terms = _terms_from(body, limit=4)
         headings = [f"{t} Overview" for t in terms]
+    # Avoid bare generic section titles rejected in document mode.
+    generic = {
+        "introduction",
+        "foundations",
+        "core ideas",
+        "applications",
+        "core concepts",
+        "practice",
+    }
+    named: list[str] = []
+    for h in headings:
+        title = h.strip()[:120]
+        if title.lower() in generic:
+            terms = _terms_from(body, limit=2)
+            suffix = terms[0] if terms else "Material"
+            title = f"{title} — {suffix}"
+        named.append(title)
     return [
         {
-            "name": h[:120],
+            "name": h,
             "summary": f"Material covering {h} from the uploaded source.",
             "concepts": [h],
         }
-        for h in headings
+        for h in named
     ]
 
 
@@ -336,7 +353,7 @@ def _grounded_question(section: str, index: int, kind: str, source: str) -> dict
         "promptText": prompt,
         "explanation": (
             f"The source material for {section} references {focus}; "
-            f"the correct option aligns with that coverage rather than contradicting it."
+            f"the chosen answer matches that coverage rather than contradicting it."
         ),
         "difficulty": ["easy", "medium", "hard"][index % 3],
         "topicLabel": section,
