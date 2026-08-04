@@ -162,19 +162,16 @@ class ResponseService:
 
         now = datetime.now(UTC)
         id_strings = [str(oid) for oid in normalized_ids]
+        # Wall-clock delta from question broadcast → server receive time.
+        # Must match: Answer Submitted Timestamp - Question Broadcast Timestamp.
         response_time_ms: int | None = None
-        if question.opened_at is not None:
-            opened_at = question.opened_at
-            if opened_at.tzinfo is None:
-                opened_at = opened_at.replace(tzinfo=UTC)
-            elapsed_ms = int((now - opened_at).total_seconds() * 1000)
-            pause_ms = int(room.pause_accumulated_ms or 0)
-            if room.paused_at is not None:
-                paused_at = room.paused_at
-                if paused_at.tzinfo is None:
-                    paused_at = paused_at.replace(tzinfo=UTC)
-                pause_ms += max(0, int((now - paused_at).total_seconds() * 1000))
-            response_time_ms = max(0, elapsed_ms - pause_ms)
+        broadcast_at = question.broadcast_at or question.opened_at
+        if broadcast_at is not None:
+            from app.services.results_service import _ms_between
+
+            response_time_ms = _ms_between(broadcast_at, now)
+
+        answer_order = self._responses.count_submitted_for_question(question.id) + 1
 
         response = Response(
             participant_id=participant.id,
@@ -188,6 +185,7 @@ class ResponseService:
             total_points_earned=0,
             submitted_at=now,
             response_time_ms=response_time_ms,
+            answer_order=answer_order,
             status="submitted",
         )
         try:
@@ -213,6 +211,7 @@ class ResponseService:
                     "questionNumber": (execution.question_index or 0) + 1,
                     "selectedOptionIds": id_strings,
                     "selectedOption": "; ".join(selected_labels),
+                    "answerOrder": answer_order,
                     "responseTimeMs": response.response_time_ms,
                     "submittedAt": now.isoformat(timespec="milliseconds").replace(
                         "+00:00",

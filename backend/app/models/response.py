@@ -54,11 +54,16 @@ class Response(Base, CreatedAtMixin):
     total_points_earned: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     response_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 1-based order of submission for this question (by server receive time).
+    answer_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="submitted")
     scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Leaderboard standing immediately before/after this answer was scored (reveal).
     rank_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rank_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Streak count immediately before/after this answer was scored.
+    streak_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    streak_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
     participant: Mapped["Participant"] = relationship("Participant", back_populates="responses")
     session_question: Mapped["SessionQuestion"] = relationship(
         "SessionQuestion",

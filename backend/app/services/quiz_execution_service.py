@@ -137,7 +137,11 @@ class QuizExecutionService:
 
         room.current_question_index = 0
         question.state = question_fsm.transition(question.state, "present")
-        question.opened_at = datetime.now(UTC)
+        self._mark_question_live(
+            room_id,
+            question,
+            question_index=0,
+        )
         events = [
             BroadcastEvent(
                 type="section:started",
@@ -148,15 +152,6 @@ class QuizExecutionService:
                 payload=self._question_payload(room, question, section, include_correct=False),
             ),
         ]
-        from app.services.session_event_service import QUESTION_SHOWN, log_session_event
-
-        log_session_event(
-            self._session,
-            room_id,
-            QUESTION_SHOWN,
-            {"questionId": str(question.id), "questionIndex": 0},
-            flush=False,
-        )
         room = self._commit(room)
         return ExecutionResult(room=room, events=events)
 
@@ -246,16 +241,23 @@ class QuizExecutionService:
                 payload=self._question_payload(room, question, section, include_correct=True),
             ),
         ]
-        from app.services.session_event_service import REVEAL, log_session_event
+        from app.services.session_event_service import (
+            REVEAL_FINISHED,
+            REVEAL_STARTED,
+            log_session_event,
+        )
 
+        reveal_started_at = datetime.now(UTC)
         log_session_event(
             self._session,
             room_id,
-            REVEAL,
+            REVEAL_STARTED,
             {
                 "questionId": str(question.id),
                 "questionIndex": room.current_question_index,
+                "questionNumber": (room.current_question_index or 0) + 1,
             },
+            created_at=reveal_started_at,
             flush=False,
         )
         room = self._commit(room)
@@ -264,6 +266,19 @@ class QuizExecutionService:
             room_id,
             include_leaderboard=False,
         )
+        reveal_finished_at = datetime.now(UTC)
+        log_session_event(
+            self._session,
+            room_id,
+            REVEAL_FINISHED,
+            {
+                "questionId": str(question.id),
+                "questionIndex": room.current_question_index,
+                "questionNumber": (room.current_question_index or 0) + 1,
+            },
+            created_at=reveal_finished_at,
+        )
+        self._session.commit()
         room = self._rooms.get_by_id(room_id) or room
         _append_scoring_events(events, summary)
         return ExecutionResult(room=room, events=events)
@@ -326,22 +341,13 @@ class QuizExecutionService:
 
         room.current_question_index = next_index
         nxt.state = question_fsm.transition(nxt.state, "present")
-        nxt.opened_at = datetime.now(UTC)
+        self._mark_question_live(room_id, nxt, question_index=next_index)
         events = [
             BroadcastEvent(
                 type="question:started",
                 payload=self._question_payload(room, nxt, next_section, include_correct=False),
             ),
         ]
-        from app.services.session_event_service import QUESTION_SHOWN
-
-        log_session_event(
-            self._session,
-            room_id,
-            QUESTION_SHOWN,
-            {"questionId": str(nxt.id), "questionIndex": next_index},
-            flush=False,
-        )
         room = self._commit(room)
         return ExecutionResult(room=room, events=events)
 
@@ -363,7 +369,7 @@ class QuizExecutionService:
         room.state = room_fsm.transition(room.state, "continue_section")
         room.current_question_index = next_index
         nxt.state = question_fsm.transition(nxt.state, "present")
-        nxt.opened_at = datetime.now(UTC)
+        self._mark_question_live(room_id, nxt, question_index=next_index)
         events = [
             BroadcastEvent(
                 type="section:continued",
@@ -382,15 +388,6 @@ class QuizExecutionService:
                 payload=self._room_state_payload(room),
             ),
         ]
-        from app.services.session_event_service import QUESTION_SHOWN, log_session_event
-
-        log_session_event(
-            self._session,
-            room_id,
-            QUESTION_SHOWN,
-            {"questionId": str(nxt.id), "questionIndex": next_index},
-            flush=False,
-        )
         room = self._commit(room)
         return ExecutionResult(room=room, events=events)
 
@@ -711,6 +708,46 @@ class QuizExecutionService:
                 int((datetime.now(UTC) - paused_at).total_seconds() * 1000),
             )
         return opened_at.timestamp() + limit + (pause_ms / 1000.0)
+
+    def _mark_question_live(
+        self,
+        room_id: UUID,
+        question: SessionQuestion,
+        *,
+        question_index: int,
+    ) -> datetime:
+        """Stamp broadcast/open times and timeline events from the server clock."""
+        from app.services.session_event_service import (
+            QUESTION_BROADCAST,
+            QUESTION_OPEN,
+            log_session_event,
+        )
+
+        now = datetime.now(UTC)
+        question.broadcast_at = now
+        question.opened_at = now
+        payload = {
+            "questionId": str(question.id),
+            "questionIndex": question_index,
+            "questionNumber": question_index + 1,
+        }
+        log_session_event(
+            self._session,
+            room_id,
+            QUESTION_BROADCAST,
+            payload,
+            created_at=now,
+            flush=False,
+        )
+        log_session_event(
+            self._session,
+            room_id,
+            QUESTION_OPEN,
+            payload,
+            created_at=now,
+            flush=False,
+        )
+        return now
 
     @staticmethod
     def _option_payload(option: SessionOption, *, include_correct: bool) -> dict[str, Any]:

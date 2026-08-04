@@ -257,12 +257,14 @@ class ScoringService:
             max_bonus = int(getattr(room_config, "time_bonus_max_points", 0) or 0)
             time_bonus = int(round(remaining_ratio * max_bonus))
 
+        streak_before = int(participant.streak or 0)
         if unanswered or not correct:
             participant.streak = 0
             streak_bonus = 0
         else:
-            participant.streak = int(participant.streak or 0) + 1
+            participant.streak = streak_before + 1
             streak_bonus = self._compute_streak_bonus(participant.streak, room_config)
+        streak_after = int(participant.streak or 0)
 
         total = base + time_bonus + streak_bonus
         now = datetime.now(UTC)
@@ -274,6 +276,8 @@ class ScoringService:
         response.streak_bonus_earned = streak_bonus
         response.total_points_earned = total
         response.scored_at = now
+        response.streak_before = streak_before
+        response.streak_after = streak_after
         if unanswered:
             response.status = "unanswered"
         elif correct:

@@ -73,6 +73,11 @@ class SessionQuestion(Base, CreatedAtMixin):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Server clock when question:started was emitted (audit / response-time anchor).
+    broadcast_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     live_room: Mapped["LiveRoom"] = relationship("LiveRoom", back_populates="session_questions")
     session_section: Mapped["SessionSection"] = relationship(

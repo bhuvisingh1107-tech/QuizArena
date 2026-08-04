@@ -296,6 +296,18 @@ class AutoProgressionScheduler:
             if state.room.state != RoomState.ACTIVE:
                 return []
             board = LeaderboardService(session).snapshot(room_id)
+            from app.services.session_event_service import LEADERBOARD_UPDATED, log_session_event
+
+            log_session_event(
+                session,
+                room_id,
+                LEADERBOARD_UPDATED,
+                {
+                    "entryCount": len(board.get("entries") or []),
+                    "questionIndex": state.room.current_question_index,
+                },
+            )
+            session.commit()
             return [
                 BroadcastEvent(
                     type="leaderboard:updated",
