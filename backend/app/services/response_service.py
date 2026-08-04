@@ -1,8 +1,8 @@
-"""Answer submission — persist participant responses and score immediately.
+"""Answer submission — persist participant responses without revealing correctness.
 
-Scoring on submit powers the live leaderboard (updates after every answer).
-Reveal still scores unanswered responses and broadcasts answer reveal UI.
-Duplicate submits for the same question are rejected (ALREADY_SUBMITTED).
+Server evaluates answers only at reveal/scoring. Submit stores the selection and
+acks ``status: submitted`` so participants cannot learn correctness from WS, REST,
+or live leaderboard updates before ``question:reveal``.
 """
 
 from __future__ import annotations
@@ -47,6 +47,28 @@ class SubmitResult:
     events: list[TargetedEvent] = field(default_factory=list)
     already_submitted: bool = False
     all_eligible_answered: bool = False
+
+
+# Fields that must never appear on participant-facing pre-reveal payloads.
+FORBIDDEN_PRE_REVEAL_KEYS = frozenset(
+    {
+        "isCorrect",
+        "correctOptionId",
+        "correctOptionIds",
+        "correctAnswer",
+        "correctOptions",
+        "answerIndex",
+        "answerHash",
+        "explanation",
+        "pointsEarned",
+        "basePointsEarned",
+        "timeBonus",
+        "streakBonus",
+        "lastIsCorrect",
+        "totalCorrect",
+        "totalIncorrect",
+    }
+)
 
 
 class ResponseService:
@@ -133,7 +155,6 @@ class ResponseService:
             question.id,
         )
         if existing is not None and existing.submitted_at is not None and not existing.is_unanswered:
-            # DATABASE_SCHEMA: duplicate submit ignored — no mutation; signal client.
             raise ValidationError(
                 "ALREADY_SUBMITTED",
                 "An answer has already been submitted for this question",
@@ -172,16 +193,7 @@ class ResponseService:
         try:
             self._responses.create(response)
             participant.state = ParticipantState.ANSWERED
-            # Score immediately so the live leaderboard updates on every submit.
-            # score_question at reveal skips already-scored rows and scores unanswered.
-            from app.services.scoring_service import ScoringService
-
-            ScoringService(self._session).score_response(
-                response,
-                question,
-                participant,
-                room.config,
-            )
+            # Do NOT score here — correctness / points stay server-side until reveal.
             from app.services.session_event_service import ANSWER_SUBMITTED, log_session_event
 
             log_session_event(
@@ -216,11 +228,7 @@ class ResponseService:
         eligible_count = self._count_eligible_participants(room_id)
         all_answered = eligible_count > 0 and submitted_count >= eligible_count
 
-        from app.services.leaderboard_service import LeaderboardService
-
-        board = LeaderboardService(self._session).snapshot(room_id)
-        self._session.commit()
-
+        # Minimal ack only — no points, streak, score, or correctness.
         accept_payload = {
             "roomId": str(room_id),
             "questionId": str(question.id),
@@ -229,12 +237,7 @@ class ResponseService:
             "selectedOptionIds": id_strings,
             "submittedAt": now.isoformat(),
             "responseTimeMs": response.response_time_ms,
-            # Keep the public submit ack as "submitted" so clients do not treat
-            # answer:accepted as pre-reveal correctness feedback.
             "status": "submitted",
-            "pointsEarned": int(response.total_points_earned or 0),
-            "totalScore": int(participant.total_score or 0),
-            "streak": int(participant.streak or 0),
         }
         admin_count_payload = {
             "roomId": str(room_id),
@@ -266,11 +269,6 @@ class ResponseService:
                     payload=admin_count_payload,
                     audience="room",
                 ),
-                TargetedEvent(
-                    type="leaderboard:updated",
-                    payload=board,
-                    audience="room",
-                ),
             ],
             all_eligible_answered=all_answered,
         )
@@ -293,7 +291,10 @@ class ResponseService:
         room_id: UUID,
         participant_id: UUID,
     ) -> dict[str, Any]:
-        """Resync helper: whether the participant has answered the current question."""
+        """Resync helper: whether the participant has answered the current question.
+
+        Before reveal, ``status`` is always ``submitted`` (never correct/incorrect).
+        """
         execution = self._execution.get_execution_state(room_id)
         question = execution.question
         if question is None:
@@ -309,13 +310,20 @@ class ResponseService:
             and existing.submitted_at is not None
             and not existing.is_unanswered
         )
+        revealed = question.state in {
+            SessionQuestionState.REVEALED,
+            SessionQuestionState.SCORED,
+        }
+        public_status: str | None = None
+        if submitted and existing is not None:
+            public_status = existing.status if revealed else "submitted"
         return {
             "hasSubmitted": submitted,
             "questionId": str(question.id),
             "questionIndex": execution.question_index,
             "questionState": question.state.value,
             "selectedOptionIds": list(existing.selected_option_ids or []) if submitted else None,
-            "status": existing.status if submitted and existing is not None else None,
+            "status": public_status,
             "submittedAt": existing.submitted_at.isoformat() if submitted and existing else None,
         }
 
@@ -326,27 +334,23 @@ class ResponseService:
                 "VALIDATION_ERROR",
                 "At least one optionId is required",
             )
-        # Preserve order, drop duplicates
         seen: set[UUID] = set()
-        normalized: list[UUID] = []
+        out: list[UUID] = []
         for oid in option_ids:
-            if oid in seen:
-                continue
-            seen.add(oid)
-            normalized.append(oid)
-        return normalized
+            if oid not in seen:
+                seen.add(oid)
+                out.append(oid)
+        return out
 
-    @staticmethod
-    def _validate_options(question, option_ids: list[UUID]) -> None:
-        valid_ids = {opt.id for opt in question.options}
-        for oid in option_ids:
-            if oid not in valid_ids:
-                raise ValidationError(
-                    "INVALID_OPTION",
-                    "One or more selected options do not belong to the current question",
-                )
+    def _validate_options(self, question, option_ids: list[UUID]) -> None:
+        valid = {opt.id for opt in question.options}
+        if not set(option_ids).issubset(valid):
+            raise ValidationError(
+                "INVALID_OPTION",
+                "One or more optionIds do not belong to the current question",
+            )
         if not question.allow_multiple_correct and len(option_ids) > 1:
             raise ValidationError(
                 "VALIDATION_ERROR",
-                "This question accepts only a single selected option",
+                "This question accepts only one selected option",
             )

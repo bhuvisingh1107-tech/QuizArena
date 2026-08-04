@@ -2,7 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient, apiDelete, apiGet, apiPost, unwrapData } from '@/lib/api-client'
 import { queryKeys } from '@/hooks/queries/keys'
-import type { ApiEnvelope, MediaCategory, MediaFile, MediaList } from '@/types/api'
+import type {
+  ApiEnvelope,
+  MediaApplyToAllResult,
+  MediaCategory,
+  MediaFile,
+  MediaList,
+  MediaRemoveFromAllResult,
+} from '@/types/api'
 
 export function useMedia(mediaId: string | undefined, enabled = true) {
   return useQuery({
@@ -41,6 +48,12 @@ export function useMediaMutations() {
     if (mediaId) {
       await queryClient.invalidateQueries({ queryKey: queryKeys.media.detail(mediaId) })
     }
+  }
+
+  const invalidateQuizQuestions = async (quizId: string) => {
+    await queryClient.invalidateQueries({
+      queryKey: ['questions', quizId],
+    })
   }
 
   const uploadMedia = useMutation({
@@ -97,5 +110,29 @@ export function useMediaMutations() {
     },
   })
 
-  return { uploadMedia, deleteMedia, attachMedia }
+  const applyMediaToAll = useMutation({
+    mutationFn: ({ mediaId, quizId }: { mediaId: string; quizId: string }) =>
+      apiPost<MediaApplyToAllResult>(`/media/${mediaId}/apply-to-all`, { quizId }),
+    onSuccess: async (result) => {
+      await invalidateMedia(result.quizId, result.mediaId)
+      await invalidateQuizQuestions(result.quizId)
+    },
+  })
+
+  const removeMediaFromAll = useMutation({
+    mutationFn: ({ mediaId, quizId }: { mediaId: string; quizId: string }) =>
+      apiPost<MediaRemoveFromAllResult>(`/media/${mediaId}/remove-from-all`, { quizId }),
+    onSuccess: async (result) => {
+      await invalidateMedia(result.quizId, result.mediaId)
+      await invalidateQuizQuestions(result.quizId)
+    },
+  })
+
+  return {
+    uploadMedia,
+    deleteMedia,
+    attachMedia,
+    applyMediaToAll,
+    removeMediaFromAll,
+  }
 }

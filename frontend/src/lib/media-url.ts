@@ -52,3 +52,19 @@ export function attachMediaAuthToken(imageUrl: string, token: string): string {
   const params = new URLSearchParams({ token })
   return `${apiBase}${path}?${params.toString()}`
 }
+
+/**
+ * Warm the browser HTTP cache for a live media URL (never blocks quiz timing).
+ * Safe to call fire-and-forget after a question starts.
+ */
+export function preloadLiveMedia(url: string | null | undefined): void {
+  const href = url?.trim()
+  if (!href || typeof window === 'undefined') return
+  try {
+    const img = new Image()
+    img.decoding = 'async'
+    img.src = href
+  } catch {
+    // Ignore preload failures — quiz must continue regardless.
+  }
+}

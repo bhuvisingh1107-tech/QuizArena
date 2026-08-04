@@ -72,3 +72,40 @@ class MediaAttachData(BaseModel):
     media_id: UUID = Field(serialization_alias="mediaId")
     question_id: UUID = Field(serialization_alias="questionId")
     media_file_id: UUID = Field(serialization_alias="mediaFileId")
+
+
+class MediaQuizScopeRequest(BaseModel):
+    """Scope a bulk media operation to one quiz."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    quiz_id: UUID = Field(
+        serialization_alias="quizId",
+        validation_alias=AliasChoices("quizId", "quiz_id"),
+    )
+
+
+class MediaApplyToAllData(BaseModel):
+    """Bulk attach acknowledgement — one media object, many question references."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    media_id: UUID = Field(serialization_alias="mediaId")
+    media_file_id: UUID = Field(serialization_alias="mediaFileId")
+    quiz_id: UUID = Field(serialization_alias="quizId")
+    updated_count: int = Field(serialization_alias="updatedCount")
+    skipped_count: int = Field(serialization_alias="skippedCount")
+    question_ids: list[UUID] = Field(
+        default_factory=list,
+        serialization_alias="questionIds",
+    )
+
+
+class MediaRemoveFromAllData(BaseModel):
+    """Bulk clear acknowledgement for questions referencing a media file."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    media_id: UUID = Field(serialization_alias="mediaId")
+    quiz_id: UUID = Field(serialization_alias="quizId")
+    cleared_count: int = Field(serialization_alias="clearedCount")

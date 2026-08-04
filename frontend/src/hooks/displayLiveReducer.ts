@@ -172,7 +172,11 @@ export function computeReconnectDelay(attempt: number, maxMs = 10_000): number {
   return Math.min(maxMs, 1000 * 2 ** Math.max(0, attempt))
 }
 
-function stripEmailsFromLeaderboard(entries: LeaderboardEntry[]): LeaderboardEntry[] {
+function stripEmailsFromLeaderboard(
+  entries: LeaderboardEntry[],
+  opts: { includeCorrectness?: boolean } = {},
+): LeaderboardEntry[] {
+  const includeCorrectness = Boolean(opts.includeCorrectness)
   return entries.map(
     ({
       rank,
@@ -191,7 +195,7 @@ function stripEmailsFromLeaderboard(entries: LeaderboardEntry[]): LeaderboardEnt
       streak,
       timeBonus,
       lastTimeBonus,
-      lastIsCorrect,
+      ...(includeCorrectness ? { lastIsCorrect } : {}),
     }),
   )
 }
@@ -350,25 +354,32 @@ function mapRoom(
   }
 }
 
-function parseLeaderboard(data: Record<string, unknown>): LeaderboardEntry[] | null {
+function parseLeaderboard(
+  data: Record<string, unknown>,
+  opts: { includeCorrectness?: boolean } = {},
+): LeaderboardEntry[] | null {
   if (Array.isArray(data.entries)) {
-    return stripEmailsFromLeaderboard(data.entries as LeaderboardEntry[])
+    return stripEmailsFromLeaderboard(data.entries as LeaderboardEntry[], opts)
   }
   if (Array.isArray(data.leaderboard)) {
-    return stripEmailsFromLeaderboard(data.leaderboard as LeaderboardEntry[])
+    return stripEmailsFromLeaderboard(data.leaderboard as LeaderboardEntry[], opts)
   }
   return null
 }
 
 function parseTop3(data: Record<string, unknown>): LeaderboardEntry[] | null {
   if (Array.isArray(data.top3)) {
-    return stripEmailsFromLeaderboard(data.top3 as LeaderboardEntry[])
+    return stripEmailsFromLeaderboard(data.top3 as LeaderboardEntry[], {
+      includeCorrectness: true,
+    })
   }
   const podium = asRecord(data.podium)
   if (Array.isArray(podium.entries)) {
-    return stripEmailsFromLeaderboard(podium.entries as LeaderboardEntry[])
+    return stripEmailsFromLeaderboard(podium.entries as LeaderboardEntry[], {
+      includeCorrectness: true,
+    })
   }
-  const board = parseLeaderboard(data)
+  const board = parseLeaderboard(data, { includeCorrectness: true })
   return board ? board.slice(0, 3) : null
 }
 
@@ -885,7 +896,9 @@ export function displayLiveReducer(
         }
 
         case 'leaderboard:updated': {
-          const leaderboard = parseLeaderboard(data) ?? state.leaderboard
+          const leaderboard =
+            parseLeaderboard(data, { includeCorrectness: state.reveal }) ??
+            state.leaderboard
           return withViewMode(state, {
             leaderboard,
             previousRanks: ranksFromLeaderboard(state.leaderboard),

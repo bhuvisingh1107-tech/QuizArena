@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/media-url', () => ({
   mediaContentUrl: (mediaFileId: string) => `/media/${mediaFileId}/content`,
+  preloadLiveMedia: () => {},
   resolveLiveMediaUrl: ({
     imageUrl,
     mediaFileId,

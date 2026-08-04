@@ -666,13 +666,15 @@ class QuizExecutionService:
                 "allowMultipleCorrect": question.allow_multiple_correct,
                 "sortOrder": question.sort_order,
                 "state": question.state.value,
-                "explanation": explanation if include_correct else None,
                 "options": [
                     self._option_payload(opt, include_correct=include_correct)
                     for opt in sorted(question.options, key=lambda o: o.sort_order)
                 ],
             },
         }
+        # Never attach explanation / correctness metadata before reveal.
+        if include_correct:
+            payload["question"]["explanation"] = explanation
         # Convert timerEndsAt to ISO string for clients
         ends_ts = payload["question"]["timerEndsAt"]
         if isinstance(ends_ts, (int, float)):

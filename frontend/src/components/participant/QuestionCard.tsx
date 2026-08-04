@@ -2,7 +2,7 @@ import { ImageIcon, Volume2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { QuestionTimer } from '@/components/participant/QuestionTimer'
-import { resolveLiveMediaUrl } from '@/lib/media-url'
+import { resolveLiveMediaUrl, preloadLiveMedia } from '@/lib/media-url'
 import type { ParticipantLiveQuestion } from '@/types/api'
 import { cn } from '@/lib/utils'
 
@@ -43,13 +43,20 @@ function QuestionMedia({
   sessionToken?: string | null
 }) {
   const [failed, setFailed] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const url = sessionToken
     ? resolveLiveMediaUrl({ imageUrl, mediaFileId, token: sessionToken })
     : null
 
   useEffect(() => {
     setFailed(false)
+    setLoaded(false)
   }, [mediaFileId, imageUrl, sessionToken])
+
+  // Warm HTTP cache; never blocks timer or answering.
+  useEffect(() => {
+    preloadLiveMedia(url)
+  }, [url])
 
   if (!url || failed) {
     const unavailable = !url || failed
@@ -58,6 +65,7 @@ function QuestionMedia({
         className="mt-4 flex min-h-36 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] bg-[var(--secondary)]/40 px-4 py-8 text-center"
         role="img"
         aria-label={unavailable ? 'Media unavailable' : 'Media loading'}
+        data-testid="participant-media-placeholder"
       >
         <ImageIcon className="h-8 w-8 text-[var(--muted-foreground)]" aria-hidden />
         <p className="text-sm text-[var(--muted-foreground)]">
@@ -94,12 +102,27 @@ function QuestionMedia({
   }
 
   return (
-    <div className="mt-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--secondary)]/30">
+    <div className="relative mt-4 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--secondary)]/30">
+      {!loaded ? (
+        <div
+          className="flex min-h-36 flex-col items-center justify-center gap-2 px-4 py-8"
+          data-testid="participant-media-skeleton"
+          aria-busy="true"
+          aria-label="Media loading"
+        >
+          <ImageIcon className="h-8 w-8 animate-pulse text-[var(--muted-foreground)]" aria-hidden />
+          <p className="text-sm text-[var(--muted-foreground)]">Media loading…</p>
+        </div>
+      ) : null}
       <img
         src={url}
         alt="Question media"
-        className="mx-auto max-h-64 w-full object-contain"
+        className={cn(
+          'mx-auto max-h-64 w-full object-contain',
+          loaded ? 'relative' : 'absolute inset-0 h-0 w-0 opacity-0',
+        )}
         data-testid="participant-media-img"
+        onLoad={() => setLoaded(true)}
         onError={() => setFailed(true)}
       />
     </div>

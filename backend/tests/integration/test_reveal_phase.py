@@ -48,7 +48,12 @@ def _ready_quiz(
                 "sortOrder": idx,
             },
         ).json()["data"]
-        for text, correct, order in (("Yes", True, 0), ("No", False, 1)):
+        for text, correct, order in (
+            ("Yes", True, 0),
+            ("No", False, 1),
+            ("Maybe", False, 2),
+            ("Never", False, 3),
+        ):
             client.post(
                 f"/api/v1/quizzes/{quiz['id']}/sections/{section['id']}/questions/{q['id']}/options",
                 headers=_auth(token),

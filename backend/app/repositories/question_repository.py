@@ -78,6 +78,18 @@ class QuestionRepository:
         )
         return int(self._session.scalar(stmt) or 0)
 
+    def list_for_quiz(self, quiz_id: UUID) -> list[Question]:
+        """All questions across every section of a quiz (stable section/question order)."""
+        from app.models.section import Section
+
+        stmt = (
+            select(Question)
+            .join(Section, Question.section_id == Section.id)
+            .where(Section.quiz_id == quiz_id)
+            .order_by(Section.sort_order.asc(), Question.sort_order.asc(), Question.created_at.asc())
+        )
+        return list(self._session.scalars(stmt).all())
+
     def next_sort_order(self, section_id: UUID) -> int:
         stmt = select(func.max(Question.sort_order)).where(Question.section_id == section_id)
         current = self._session.scalar(stmt)

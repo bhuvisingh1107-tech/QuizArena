@@ -1,8 +1,8 @@
 """Scoring engine — evaluate responses and aggregate participant totals.
 
 Does not compute rankings, leaderboards, podiums, or analytics.
-Individual responses are scored on submit for the live leaderboard;
-``score_question`` runs at reveal to score unanswered rows and emit feedback.
+Responses are scored at reveal (``score_question``) so participants cannot
+infer correctness from scores, streaks, or leaderboard deltas before reveal.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 import { ImageIcon, Volume2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { resolveLiveMediaUrl } from '@/lib/media-url'
+import { preloadLiveMedia, resolveLiveMediaUrl } from '@/lib/media-url'
 import type { QuestionType } from '@/types/api'
 import { cn } from '@/lib/utils'
 
@@ -21,11 +21,17 @@ export function DisplayMedia({
   className,
 }: DisplayMediaProps) {
   const [failed, setFailed] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const url = resolveLiveMediaUrl({ imageUrl, mediaFileId, token: secretToken })
 
   useEffect(() => {
     setFailed(false)
+    setLoaded(false)
   }, [imageUrl, mediaFileId, secretToken])
+
+  useEffect(() => {
+    preloadLiveMedia(url)
+  }, [url])
 
   if (!url || failed) {
     return (
@@ -89,16 +95,38 @@ export function DisplayMedia({
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]/40',
+        'relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]/40',
         className,
       )}
       data-testid="display-media-image"
     >
+      {!loaded ? (
+        <div
+          className="flex min-h-40 items-center justify-center px-6 py-10"
+          data-testid="media-skeleton"
+          aria-busy="true"
+          aria-label="Media loading"
+        >
+          <div className="text-center">
+            <ImageIcon
+              className="mx-auto mb-2 h-10 w-10 animate-pulse text-[var(--muted-foreground)]"
+              aria-hidden
+            />
+            <p className="font-display text-lg font-semibold text-[var(--heading)]">
+              Media loading…
+            </p>
+          </div>
+        </div>
+      ) : null}
       <img
         src={url}
         alt="Question media"
-        className="mx-auto max-h-[min(40vh,420px)] w-full object-contain"
+        className={cn(
+          'mx-auto max-h-[min(40vh,420px)] w-full object-contain',
+          loaded ? 'relative' : 'absolute inset-0 h-0 w-0 opacity-0',
+        )}
         data-testid="display-media-img"
+        onLoad={() => setLoaded(true)}
         onError={() => setFailed(true)}
       />
     </div>

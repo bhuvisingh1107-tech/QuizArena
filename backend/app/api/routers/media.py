@@ -14,10 +14,13 @@ from app.models.enums import MediaCategory
 from app.models.session_question import SessionQuestion
 from app.schemas.common import DataResponse, Meta
 from app.schemas.media import (
+    MediaApplyToAllData,
     MediaAttachData,
     MediaAttachRequest,
     MediaDeleteData,
     MediaListData,
+    MediaQuizScopeRequest,
+    MediaRemoveFromAllData,
     MediaResponseData,
 )
 from app.services.auth_service import AuthService
@@ -263,6 +266,60 @@ def attach_media(
             media_id=media.id,
             question_id=question_id,
             media_file_id=media.id,
+        ),
+        request_id,
+    )
+
+
+@router.post(
+    "/{media_id}/apply-to-all",
+    response_model=DataResponse[MediaApplyToAllData],
+    status_code=status.HTTP_200_OK,
+    summary="Apply media to every compatible question in a quiz",
+)
+def apply_media_to_all(
+    media_id: UUID,
+    body: MediaQuizScopeRequest,
+    admin: CurrentAdmin,
+    service: MediaServiceDep,
+    request_id: RequestId,
+) -> JSONResponse:
+    """Reuse one media object — updates question.media_file_id only (no re-upload)."""
+    media, question_ids, skipped = service.apply_to_all_questions(
+        media_id, body, owner_id=admin.id
+    )
+    return _envelope(
+        MediaApplyToAllData(
+            media_id=media.id,
+            media_file_id=media.id,
+            quiz_id=body.quiz_id,
+            updated_count=len(question_ids),
+            skipped_count=skipped,
+            question_ids=question_ids,
+        ),
+        request_id,
+    )
+
+
+@router.post(
+    "/{media_id}/remove-from-all",
+    response_model=DataResponse[MediaRemoveFromAllData],
+    status_code=status.HTTP_200_OK,
+    summary="Remove this media from every question in a quiz",
+)
+def remove_media_from_all(
+    media_id: UUID,
+    body: MediaQuizScopeRequest,
+    admin: CurrentAdmin,
+    service: MediaServiceDep,
+    request_id: RequestId,
+) -> JSONResponse:
+    cleared = service.remove_from_all_questions(media_id, body, owner_id=admin.id)
+    return _envelope(
+        MediaRemoveFromAllData(
+            media_id=media_id,
+            quiz_id=body.quiz_id,
+            cleared_count=cleared,
         ),
         request_id,
     )

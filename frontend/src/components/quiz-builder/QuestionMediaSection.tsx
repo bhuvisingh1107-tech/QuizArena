@@ -38,7 +38,7 @@ export function QuestionMediaSection({
   const [busy, setBusy] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const { attachMedia } = useMediaMutations()
+  const { attachMedia, applyMediaToAll, removeMediaFromAll } = useMediaMutations()
   const { updateQuestion } = useQuestionMutations(quizId, sectionId)
   const attachedQuery = useMedia(mediaFileId ?? undefined, Boolean(mediaFileId))
 
@@ -46,6 +46,10 @@ export function QuestionMediaSection({
   const adminToken = getToken()
   const previewUrl =
     mediaFileId && adminToken ? mediaContentUrl(mediaFileId, adminToken) : null
+  const isKnownAudio =
+    attachedQuery.data?.category === 'question_audio' ||
+    Boolean(attachedQuery.data?.mimeType?.startsWith('audio/'))
+  const showBulkImageActions = Boolean(mediaFileId) && !isKnownAudio
 
   const uploadFile = async (file: File, category: MediaCategory): Promise<MediaFile> => {
     const form = new FormData()
@@ -135,6 +139,57 @@ export function QuestionMediaSection({
     }
   }
 
+  const applyToAll = async () => {
+    if (!mediaFileId) return
+    const confirmed = window.confirm(
+      'This will replace the image for every question in this quiz. Continue?',
+    )
+    if (!confirmed) return
+    setBusy(true)
+    setStatusMessage('Applying to all questions…')
+    try {
+      const result = await applyMediaToAll.mutateAsync({ mediaId: mediaFileId, quizId })
+      onAttached?.(result.mediaFileId)
+      const msg =
+        result.skippedCount > 0
+          ? `Image applied to ${result.updatedCount} questions (${result.skippedCount} skipped).`
+          : `Image applied to all ${result.updatedCount} questions.`
+      toastSuccess(msg)
+      setStatusMessage(msg)
+    } catch (error) {
+      toastError(error)
+      setStatusMessage('Apply to all failed')
+    } finally {
+      setBusy(false)
+      setTimeout(() => setStatusMessage(null), 2000)
+    }
+  }
+
+  const removeFromAll = async () => {
+    if (!mediaFileId) return
+    const confirmed = window.confirm(
+      'This will remove this image from every question in this quiz. Continue?',
+    )
+    if (!confirmed) return
+    setBusy(true)
+    setStatusMessage('Removing from all questions…')
+    try {
+      const result = await removeMediaFromAll.mutateAsync({ mediaId: mediaFileId, quizId })
+      onCleared?.()
+      toastSuccess(
+        result.clearedCount === 0
+          ? 'No questions were using this image.'
+          : `Image removed from ${result.clearedCount} questions.`,
+      )
+    } catch (error) {
+      toastError(error)
+      setStatusMessage('Remove from all failed')
+    } finally {
+      setBusy(false)
+      setTimeout(() => setStatusMessage(null), 2000)
+    }
+  }
+
   return (
     <div className="space-y-3 rounded-md border border-[var(--border)] p-4">
       <div className="flex items-center justify-between gap-2">
@@ -220,6 +275,30 @@ export function QuestionMediaSection({
       ) : (
         <p className="text-xs text-[var(--muted-foreground)]">No media attached.</p>
       )}
+
+      {mediaFileId && showBulkImageActions ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={!canAttach || busy}
+            onClick={() => void applyToAll()}
+          >
+            Apply to all questions
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-[var(--destructive)]"
+            disabled={!canAttach || busy}
+            onClick={() => void removeFromAll()}
+          >
+            Remove image from all questions
+          </Button>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <input

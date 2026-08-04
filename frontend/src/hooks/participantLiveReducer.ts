@@ -190,7 +190,11 @@ function deriveTimerEndsAt(
   return null
 }
 
-function stripEmailsFromLeaderboard(entries: LeaderboardEntry[]): LeaderboardEntry[] {
+function stripEmailsFromLeaderboard(
+  entries: LeaderboardEntry[],
+  opts: { includeCorrectness?: boolean } = {},
+): LeaderboardEntry[] {
+  const includeCorrectness = Boolean(opts.includeCorrectness)
   return entries.map(
     ({
       rank,
@@ -209,7 +213,7 @@ function stripEmailsFromLeaderboard(entries: LeaderboardEntry[]): LeaderboardEnt
       streak,
       timeBonus,
       lastTimeBonus,
-      lastIsCorrect,
+      ...(includeCorrectness ? { lastIsCorrect } : {}),
     }),
   )
 }
@@ -446,12 +450,15 @@ function applySubmissionStatus(
   }
 }
 
-function parseLeaderboard(data: Record<string, unknown>): LeaderboardEntry[] | null {
+function parseLeaderboard(
+  data: Record<string, unknown>,
+  opts: { includeCorrectness?: boolean } = {},
+): LeaderboardEntry[] | null {
   if (Array.isArray(data.entries)) {
-    return stripEmailsFromLeaderboard(data.entries as LeaderboardEntry[])
+    return stripEmailsFromLeaderboard(data.entries as LeaderboardEntry[], opts)
   }
   if (Array.isArray(data.leaderboard)) {
-    return stripEmailsFromLeaderboard(data.leaderboard as LeaderboardEntry[])
+    return stripEmailsFromLeaderboard(data.leaderboard as LeaderboardEntry[], opts)
   }
   return null
 }
@@ -624,13 +631,14 @@ export function participantLiveReducer(
           const revealState =
             (nestedQ?.state as string | undefined) ??
             (qData?.state as string | undefined)
+          const reveal =
+            revealState === 'Revealed' || revealState === 'Scored'
           const question = qData
             ? mapQuestion(
                 asRecord(data.question),
                 state.question,
                 {
-                  reveal:
-                    revealState === 'Revealed' || revealState === 'Scored',
+                  reveal,
                 },
               )
             : null
@@ -678,7 +686,9 @@ export function participantLiveReducer(
               selectedOptionIds: state.selectedOptionIds,
             }
           }
-          const leaderboard = parseLeaderboard(data) ?? state.leaderboard
+          const leaderboard =
+            parseLeaderboard(data, { includeCorrectness: reveal }) ??
+            state.leaderboard
           const podium = parsePodium(data) ?? state.podium
           const resultsReady =
             room?.state === 'Completed' ||
@@ -919,7 +929,9 @@ export function participantLiveReducer(
           }
 
         case 'leaderboard:updated': {
-          const leaderboard = parseLeaderboard(data) ?? state.leaderboard
+          const leaderboard =
+            parseLeaderboard(data, { includeCorrectness: state.reveal }) ??
+            state.leaderboard
           const selfId = state.self?.id
           const own = selfId
             ? leaderboard.find((e) => e.participantId === selfId)

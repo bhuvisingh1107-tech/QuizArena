@@ -147,15 +147,20 @@ def test_successful_submission(
         accepted = _recv_until(ws, ServerEventType.ANSWER_ACCEPTED)
         assert accepted["payload"]["status"] == "submitted"
         assert accepted["payload"]["selectedOptionIds"] == [option_ids[0]]
+        assert "pointsEarned" not in accepted["payload"]
+        assert "totalScore" not in accepted["payload"]
+        assert "streak" not in accepted["payload"]
+        assert "isCorrect" not in accepted["payload"]
 
     db_session.expire_all()
     rows = list(db_session.scalars(select(Response)).all())
     assert len(rows) == 1
-    assert rows[0].status == "correct"
-    assert rows[0].is_correct is True
+    # Pre-reveal: selection stored, scoring deferred until reveal.
+    assert rows[0].status == "submitted"
+    assert rows[0].is_correct is False
     assert rows[0].selected_option_ids == [option_ids[0]]
-    assert rows[0].scored_at is not None
-    assert rows[0].total_points_earned > 0
+    assert rows[0].scored_at is None
+    assert rows[0].total_points_earned == 0
 
 
 def test_duplicate_submission(
@@ -521,10 +526,10 @@ def test_persistence_fields(
     assert row.submitted_at is not None
     assert row.response_time_ms is not None
     assert row.response_time_ms >= 0
-    assert row.status == "correct"
-    assert row.is_correct is True
-    assert row.total_points_earned > 0
-    assert row.scored_at is not None
+    assert row.status == "submitted"
+    assert row.is_correct is False
+    assert row.total_points_earned == 0
+    assert row.scored_at is None
 
     db_session.expire_all()
     room_row = QuizExecutionService(db_session).get_execution_state(UUID(room["id"])).room
@@ -586,4 +591,4 @@ def test_submit_after_start_quiz_while_participant_already_connected(
     )
     assert len(responses) == 1
     assert responses[0].submitted_at is not None
-    assert responses[0].status == "correct"
+    assert responses[0].status == "submitted"

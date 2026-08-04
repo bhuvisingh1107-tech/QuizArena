@@ -12,7 +12,7 @@ from app.repositories.media_repository import MediaRepository
 from app.repositories.question_repository import QuestionRepository
 from app.repositories.quiz_repository import QuizRepository
 from app.repositories.section_repository import SectionRepository
-from app.schemas.media import MediaAttachRequest
+from app.schemas.media import MediaAttachRequest, MediaQuizScopeRequest
 from app.services.file_storage_service import FileStorageService
 
 _MUTABLE_QUIZ_STATUSES = {QuizStatus.DRAFT, QuizStatus.READY}
@@ -170,23 +170,13 @@ class MediaService:
             # Promote Text questions to the matching media type so the builder can
             # attach image/audio without a separate type PATCH.
             if question.question_type == QuestionType.TEXT:
-                if media.category == MediaCategory.QUESTION_IMAGE:
-                    question.question_type = QuestionType.IMAGE
-                elif media.category == MediaCategory.QUESTION_AUDIO:
-                    question.question_type = QuestionType.AUDIO
-                else:
-                    raise ValidationError(
-                        "MEDIA_TYPE_MISMATCH",
-                        f"Media category '{media.category.value}' is not valid for "
-                        f"question type '{question.question_type.value}'",
-                    )
+                self._promote_question_type_for_media(question, media.category)
             else:
                 raise ValidationError(
                     "MEDIA_TYPE_MISMATCH",
                     f"Media category '{media.category.value}' is not valid for "
                     f"question type '{question.question_type.value}'",
                 )
-
         if media.quiz_id is None:
             media.quiz_id = payload.quiz_id
 
@@ -201,6 +191,139 @@ class MediaService:
             self._orphan_delete_if_unused(previous_media_id)
 
         return media, question.id
+
+    def apply_to_all_questions(
+        self,
+        media_id: UUID,
+        payload: MediaQuizScopeRequest,
+        *,
+        owner_id: UUID | None = None,
+    ) -> tuple[MediaFile, list[UUID], int]:
+        """
+        Point every compatible question in the quiz at this media file.
+
+        Uploads are never duplicated — only ``media_file_id`` references are updated.
+        Incompatible question types (e.g. Audio when attaching an image) are skipped.
+        """
+        media = self.get(media_id)
+        if media.category not in {
+            MediaCategory.QUESTION_IMAGE,
+            MediaCategory.QUESTION_AUDIO,
+        }:
+            raise ValidationError(
+                "INVALID_MEDIA_CATEGORY",
+                "Only question image or audio media can be applied to questions",
+            )
+
+        quiz = self._quizzes.get_by_id(
+            payload.quiz_id,
+            include_deleted=False,
+            owner_id=owner_id,
+        )
+        if quiz is None:
+            raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
+        self._ensure_quiz_mutable(quiz.status)
+
+        if media.quiz_id is None:
+            media.quiz_id = payload.quiz_id
+        elif media.quiz_id != payload.quiz_id:
+            raise ValidationError(
+                "MEDIA_QUIZ_MISMATCH",
+                "Media belongs to a different quiz",
+            )
+
+        questions = self._questions.list_for_quiz(payload.quiz_id)
+        if not questions:
+            raise ValidationError(
+                "NO_QUESTIONS",
+                "This quiz has no questions to attach media to",
+            )
+
+        previous_ids: set[UUID] = set()
+        updated_ids: list[UUID] = []
+        skipped = 0
+
+        for question in questions:
+            if not self._can_attach_category(question.question_type, media.category):
+                skipped += 1
+                continue
+            self._promote_question_type_for_media(question, media.category)
+            previous = question.media_file_id
+            if previous is not None and previous != media.id:
+                previous_ids.add(previous)
+            question.media_file_id = media.id
+            updated_ids.append(question.id)
+
+        if not updated_ids:
+            raise ValidationError(
+                "NO_COMPATIBLE_QUESTIONS",
+                "No questions in this quiz can accept this media type",
+            )
+
+        if quiz.status == QuizStatus.READY:
+            quiz.status = QuizStatus.DRAFT
+        self._questions.flush()
+        self._session.commit()
+
+        for previous_media_id in previous_ids:
+            self._orphan_delete_if_unused(previous_media_id)
+
+        return media, updated_ids, skipped
+
+    def remove_from_all_questions(
+        self,
+        media_id: UUID,
+        payload: MediaQuizScopeRequest,
+        *,
+        owner_id: UUID | None = None,
+    ) -> int:
+        """Clear ``media_file_id`` on every question in the quiz that references this media."""
+        media = self.get(media_id)
+
+        quiz = self._quizzes.get_by_id(
+            payload.quiz_id,
+            include_deleted=False,
+            owner_id=owner_id,
+        )
+        if quiz is None:
+            raise NotFoundError("QUIZ_NOT_FOUND", "Quiz not found")
+        self._ensure_quiz_mutable(quiz.status)
+
+        questions = self._questions.list_for_quiz(payload.quiz_id)
+        cleared = 0
+        for question in questions:
+            if question.media_file_id == media.id:
+                question.media_file_id = None
+                cleared += 1
+
+        if cleared == 0:
+            return 0
+
+        if quiz.status == QuizStatus.READY:
+            quiz.status = QuizStatus.DRAFT
+        self._questions.flush()
+        self._session.commit()
+        # Keep the media object — host may re-attach. Storage is not duplicated.
+        return cleared
+
+    @staticmethod
+    def _can_attach_category(question_type: QuestionType, category: MediaCategory) -> bool:
+        if question_type == QuestionType.TEXT:
+            return category in {
+                MediaCategory.QUESTION_IMAGE,
+                MediaCategory.QUESTION_AUDIO,
+            }
+        allowed = _QUESTION_TYPE_CATEGORIES.get(question_type, set())
+        return category in allowed
+
+    @staticmethod
+    def _promote_question_type_for_media(question, category: MediaCategory) -> None:
+        if question.question_type != QuestionType.TEXT:
+            return
+        if category == MediaCategory.QUESTION_IMAGE:
+            question.question_type = QuestionType.IMAGE
+        elif category == MediaCategory.QUESTION_AUDIO:
+            question.question_type = QuestionType.AUDIO
 
     def _orphan_delete_if_unused(self, media_id: UUID) -> None:
         media = self._media.get_by_id(media_id)

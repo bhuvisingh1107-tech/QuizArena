@@ -230,6 +230,21 @@ export interface MediaList {
   total: number
 }
 
+export interface MediaApplyToAllResult {
+  mediaId: string
+  mediaFileId: string
+  quizId: string
+  updatedCount: number
+  skippedCount: number
+  questionIds: string[]
+}
+
+export interface MediaRemoveFromAllResult {
+  mediaId: string
+  quizId: string
+  clearedCount: number
+}
+
 export interface RoomConfig {
   id: string
   questionAdvanceMode: QuestionAdvanceMode
