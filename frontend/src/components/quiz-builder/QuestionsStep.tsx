@@ -1,8 +1,9 @@
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { questionKindLabel, inferQuestionKind } from '@/components/quiz-builder/McqOptionsEditor'
 import { QuestionEditorDialog } from '@/components/quiz-builder/QuestionEditorDialog'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { LoadingState } from '@/components/shared/LoadingState'
@@ -12,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useOptions } from '@/hooks/queries/useOptions'
 import { useQuestionMutations, useQuestions } from '@/hooks/queries/useQuestions'
 import { apiPost } from '@/lib/api-client'
+import { firstMcqOptionError, isMcqOptionsValid } from '@/lib/mcq-validation'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
 import { cn } from '@/lib/utils'
 import type { Question, Section } from '@/types/api'
@@ -32,6 +34,36 @@ function QuestionTypeBadge({
   )
 }
 
+function QuestionMcqErrors({
+  quizId,
+  sectionId,
+  questionId,
+  onValidity,
+}: {
+  quizId: string
+  sectionId: string
+  questionId: string
+  onValidity?: (questionId: string, valid: boolean) => void
+}) {
+  const optionsQuery = useOptions(quizId, sectionId, questionId)
+  const options = useMemo(
+    () =>
+      [...(optionsQuery.data?.items ?? [])]
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((o) => ({ text: o.text, isCorrect: o.isCorrect })),
+    [optionsQuery.data],
+  )
+  const error = optionsQuery.isLoading ? null : firstMcqOptionError(options)
+  const valid = optionsQuery.isLoading ? true : isMcqOptionsValid(options)
+
+  useEffect(() => {
+    onValidity?.(questionId, valid)
+  }, [onValidity, questionId, valid])
+
+  if (!error) return null
+  return <p className="mt-1 text-xs text-[var(--destructive)]">{error}</p>
+}
+
 interface QuestionsStepProps {
   quizId: string
   sections: Section[]
@@ -40,11 +72,13 @@ interface QuestionsStepProps {
   onSelectSection: (sectionId: string) => void
   onAddSection: () => void
   onRenameSection: (section: Section) => void
+  onDeleteSection: (section: Section) => Promise<void>
   sectionsLoading: boolean
   sectionsError: boolean
   onRetrySections: () => void
   onContinue: () => void
   addingSection?: boolean
+  deletingSection?: boolean
 }
 
 export function QuestionsStep({
@@ -55,11 +89,13 @@ export function QuestionsStep({
   onSelectSection,
   onAddSection,
   onRenameSection,
+  onDeleteSection,
   sectionsLoading,
   sectionsError,
   onRetrySections,
   onContinue,
   addingSection = false,
+  deletingSection = false,
 }: QuestionsStepProps) {
   const sectionId = section?.id
   const questionsQuery = useQuestions(quizId, sectionId, Boolean(sectionId))
@@ -73,6 +109,20 @@ export function QuestionsStep({
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Question | null>(null)
   const [creating, setCreating] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<Section | null>(null)
+  const [validityByQuestion, setValidityByQuestion] = useState<Record<string, boolean>>({})
+
+  const reportValidity = (questionId: string, valid: boolean) => {
+    setValidityByQuestion((prev) => {
+      if (prev[questionId] === valid) return prev
+      return { ...prev, [questionId]: valid }
+    })
+  }
+
+  const allQuestionsValid =
+    questions.length > 0 &&
+    questions.every((q) => validityByQuestion[q.id] !== false) &&
+    !questionsQuery.isLoading
 
   const openCreate = async () => {
     if (!sectionId) return
@@ -103,6 +153,14 @@ export function QuestionsStep({
   const openEdit = (question: Question) => {
     setEditing(question)
     setEditorOpen(true)
+  }
+
+  const requestDeleteSection = (target: Section) => {
+    if (sections.length <= 1) {
+      toastError(new Error('A quiz must contain at least one section'))
+      return
+    }
+    setDeleteConfirm(target)
   }
 
   if (sectionsLoading) return <LoadingState label="Loading sections…" />
@@ -150,19 +208,31 @@ export function QuestionsStep({
           {sections.length > 0 ? (
             <div className="flex flex-wrap items-center gap-2">
               {sections.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onSelectSection(item.id)}
-                  className={cn(
-                    'rounded-full border px-3 py-1 text-sm font-medium transition-colors',
-                    item.id === selectedSectionId
-                      ? 'border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--primary)]'
-                      : 'border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--secondary)]',
-                  )}
-                >
-                  {item.name}
-                </button>
+                <div key={item.id} className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onSelectSection(item.id)}
+                    className={cn(
+                      'rounded-full border px-3 py-1 text-sm font-medium transition-colors',
+                      item.id === selectedSectionId
+                        ? 'border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--primary)]'
+                        : 'border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--secondary)]',
+                    )}
+                  >
+                    {item.name}
+                  </button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-[var(--destructive)]"
+                    aria-label={`Delete section ${item.name}`}
+                    disabled={deletingSection}
+                    onClick={() => requestDeleteSection(item)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               ))}
               <Button
                 type="button"
@@ -183,6 +253,16 @@ export function QuestionsStep({
               >
                 <Pencil className="h-4 w-4" />
                 Rename
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={deletingSection}
+                onClick={() => requestDeleteSection(section)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Section
               </Button>
             </div>
           ) : null}
@@ -242,6 +322,12 @@ export function QuestionsStep({
                 <p className="truncate font-medium text-[#f0f4fa]">
                   {question.promptText || 'Untitled question'}
                 </p>
+                <QuestionMcqErrors
+                  quizId={quizId}
+                  sectionId={section.id}
+                  questionId={question.id}
+                  onValidity={reportValidity}
+                />
               </div>
               <div className="flex gap-1">
                 <Button
@@ -273,7 +359,7 @@ export function QuestionsStep({
         </ul>
 
         <div className="flex justify-end pt-2">
-          <Button onClick={onContinue} disabled={questions.length === 0}>
+          <Button onClick={onContinue} disabled={!allQuestionsValid}>
             Continue to Review
           </Button>
         </div>
@@ -288,6 +374,31 @@ export function QuestionsStep({
           onSaved={(saved) => {
             setEditing(saved)
             void questionsQuery.refetch()
+          }}
+        />
+
+        <ConfirmDialog
+          open={Boolean(deleteConfirm)}
+          onOpenChange={(open) => {
+            if (!open) setDeleteConfirm(null)
+          }}
+          title="Delete section?"
+          description={
+            deleteConfirm
+              ? `Delete “${deleteConfirm.name}” and all of its questions? This cannot be undone.`
+              : undefined
+          }
+          confirmLabel="Delete Section"
+          variant="destructive"
+          loading={deletingSection}
+          onConfirm={async () => {
+            if (!deleteConfirm) return
+            try {
+              await onDeleteSection(deleteConfirm)
+              setDeleteConfirm(null)
+            } catch {
+              // Parent shows toast; keep dialog open on failure.
+            }
           }}
         />
       </CardContent>

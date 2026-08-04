@@ -108,6 +108,17 @@ class SectionService:
         quiz = self._require_parent_quiz(quiz_id, owner_id=owner_id)
         self._ensure_quiz_mutable(quiz.status)
         section = self.get(quiz_id, section_id, owner_id=owner_id)
+        remaining = self._sections.count_for_quiz(quiz_id)
+        if remaining <= 1:
+            from app.services.mcq_validation import MSG_LAST_SECTION
+
+            raise ValidationError(
+                "LAST_SECTION",
+                MSG_LAST_SECTION,
+                details=[{"field": "sections", "message": MSG_LAST_SECTION}],
+                status_code=400,
+            )
+        # Questions cascade via Section.questions relationship (delete-orphan).
         self._sections.delete(section)
         self._demote_ready_if_needed(quiz)
         self._session.commit()

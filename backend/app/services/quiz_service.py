@@ -13,6 +13,8 @@ from app.models.quiz_config import QuizConfig
 from app.models.section import Section
 from app.repositories.quiz_repository import QuizRepository
 from app.schemas.quiz import QuizConfigData, QuizCreateRequest, QuizUpdateRequest
+from app.services.mcq_validation import OptionSnapshot, collect_mcq_option_errors
+from app.services.question_crypto import open_option_fields, open_prompt
 
 # States that may be edited (architecture §8.3 Edit).
 _EDITABLE_STATUSES = {QuizStatus.DRAFT, QuizStatus.READY}
@@ -21,8 +23,6 @@ _EDITABLE_STATUSES = {QuizStatus.DRAFT, QuizStatus.READY}
 _DELETABLE_STATUSES = {QuizStatus.DRAFT, QuizStatus.READY, QuizStatus.ARCHIVED}
 
 _MAX_QUESTIONS = 100
-_MIN_OPTIONS = 2
-_MAX_OPTIONS = 6
 
 
 class QuizService:
@@ -196,6 +196,7 @@ class QuizService:
                 "QUIZ_NOT_READY",
                 "Quiz does not meet the Ready checklist",
                 details=errors,
+                status_code=400,
             )
 
         quiz.status = QuizStatus.READY
@@ -244,6 +245,7 @@ class QuizService:
                 "QUIZ_NOT_READY",
                 "Quiz no longer meets the Ready checklist; restored as Draft",
                 details=errors,
+                status_code=400,
             )
         quiz.status = QuizStatus.READY
         self._quizzes.flush()
@@ -341,8 +343,6 @@ class QuizService:
             for question in questions:
                 total_questions += 1
                 q_path = f"questions.{question.id}"
-                from app.services.question_crypto import open_option_fields, open_prompt
-
                 prompt = open_prompt(question.prompt_text) or ""
                 if not prompt.strip():
                     errors.append({"field": f"{q_path}.promptText", "message": "Question text is required"})
@@ -350,20 +350,14 @@ class QuizService:
                     errors.append({"field": f"{q_path}.basePoints", "message": "Base points must be ≥ 1"})
 
                 options = list(question.options or [])
-                if len(options) < _MIN_OPTIONS or len(options) > _MAX_OPTIONS:
-                    errors.append(
-                        {
-                            "field": f"{q_path}.options",
-                            "message": f"Each question needs {_MIN_OPTIONS}–{_MAX_OPTIONS} options",
-                        }
+                snapshots = []
+                for opt in options:
+                    text, is_correct = open_option_fields(opt.text, opt.is_correct)
+                    snapshots.append(
+                        OptionSnapshot(text=text or "", is_correct=bool(is_correct))
                     )
-                elif not any(open_option_fields(opt.text, opt.is_correct)[1] for opt in options):
-                    errors.append(
-                        {
-                            "field": f"{q_path}.options",
-                            "message": "At least one option must be marked correct",
-                        }
-                    )
+                for message in collect_mcq_option_errors(snapshots):
+                    errors.append({"field": f"{q_path}.options", "message": message})
 
                 if question.question_type in {QuestionType.IMAGE, QuestionType.AUDIO}:
                     if question.media_file_id is None:

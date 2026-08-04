@@ -52,5 +52,12 @@ class ConflictError(QuizArenaError):
 class ValidationError(QuizArenaError):
     """Business rule or validation failure."""
 
-    def __init__(self, code: str, message: str, *, details: list[Any] | None = None) -> None:
-        super().__init__(code, message, details=details, status_code=422)
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        details: list[Any] | None = None,
+        status_code: int = 422,
+    ) -> None:
+        super().__init__(code, message, details=details, status_code=status_code)

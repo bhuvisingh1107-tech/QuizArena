@@ -25,6 +25,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api-client'
 import { queryKeys } from '@/hooks/queries/keys'
+import { firstMcqOptionError } from '@/lib/mcq-validation'
 import { useQueryClient } from '@tanstack/react-query'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
 import { cn } from '@/lib/utils'
@@ -104,7 +105,6 @@ export function QuestionEditorDialog({
   const [explanation, setExplanation] = useState('')
   const [basePoints, setBasePoints] = useState(1)
   const [timeLimitSeconds, setTimeLimitSeconds] = useState<string>('')
-  const [allowMultipleCorrect, setAllowMultipleCorrect] = useState(false)
   const [options, setOptions] = useState<DraftOption[]>(defaultMcqOptions())
   const [mediaFileId, setMediaFileId] = useState<string | null>(null)
   const [questionId, setQuestionId] = useState<string | null>(null)
@@ -128,7 +128,6 @@ export function QuestionEditorDialog({
         setExplanation('')
         setBasePoints(1)
         setTimeLimitSeconds('')
-        setAllowMultipleCorrect(false)
         setOptions(defaultMcqOptions())
         setMediaFileId(null)
         setQuestionId(null)
@@ -142,7 +141,6 @@ export function QuestionEditorDialog({
       setTimeLimitSeconds(
         question.timeLimitSeconds != null ? String(question.timeLimitSeconds) : '',
       )
-      setAllowMultipleCorrect(question.allowMultipleCorrect)
       setMediaFileId(question.mediaFileId ?? null)
       setLoadingOptions(true)
 
@@ -162,7 +160,6 @@ export function QuestionEditorDialog({
               id: ordered[i]?.id,
             })),
           )
-          setAllowMultipleCorrect(false)
         } else {
           const drafts: DraftOption[] = [0, 1, 2, 3].map((i) => {
             const existing = ordered[i]
@@ -175,8 +172,13 @@ export function QuestionEditorDialog({
                 }
               : { text: '', isCorrect: false, sortOrder: i }
           })
-          if (!drafts.some((d) => d.isCorrect) && drafts[0]) {
-            drafts[0].isCorrect = true
+          const correctIndexes = drafts
+            .map((d, i) => (d.isCorrect ? i : -1))
+            .filter((i) => i >= 0)
+          if (correctIndexes.length !== 1 && drafts[0]) {
+            drafts.forEach((d, i) => {
+              d.isCorrect = i === (correctIndexes[0] ?? 0)
+            })
           }
           setOptions(drafts)
         }
@@ -197,7 +199,6 @@ export function QuestionEditorDialog({
     setKind(next)
     setOptionsError(null)
     if (next === 'true_false') {
-      setAllowMultipleCorrect(false)
       setOptions(defaultTrueFalseOptions())
     } else {
       setOptions(defaultMcqOptions())
@@ -212,18 +213,11 @@ export function QuestionEditorDialog({
     }
     setPromptError(null)
 
-    if (kind === 'mcq') {
-      const filled = options.filter((o) => o.text.trim().length > 0)
-      if (filled.length < 2) {
-        setOptionsError('Add at least two options with text')
-        return false
-      }
-      if (!options.some((o) => o.isCorrect && o.text.trim())) {
-        setOptionsError('Mark at least one correct option')
-        return false
-      }
-    } else if (!options.some((o) => o.isCorrect)) {
-      setOptionsError('Select True or False as the correct answer')
+    const optionError = firstMcqOptionError(
+      options.map((o) => ({ text: o.text, isCorrect: o.isCorrect })),
+    )
+    if (optionError) {
+      setOptionsError(optionError)
       return false
     }
     setOptionsError(null)
@@ -244,7 +238,8 @@ export function QuestionEditorDialog({
         explanation: explanation.trim() || null,
         basePoints: Math.max(1, basePoints),
         timeLimitSeconds: Number.isFinite(timeLimit) ? timeLimit : null,
-        allowMultipleCorrect: kind === 'mcq' ? allowMultipleCorrect : false,
+        // Builder MCQs are always single-correct.
+        allowMultipleCorrect: false,
       }
 
       let saved: Question
@@ -274,16 +269,13 @@ export function QuestionEditorDialog({
           ).items
         : []
 
-      const desired: DraftOption[] =
-        kind === 'true_false'
-          ? options.map((o, i) => ({ ...o, text: o.text, sortOrder: i }))
-          : options
-              .map((o, i) => ({
-                ...o,
-                text: o.text.trim(),
-                sortOrder: i,
-              }))
-              .filter((o) => o.text.length > 0)
+      // MCQ always persists all 4 slots; true/false keeps both.
+      const desired: DraftOption[] = options.map((o, i) => ({
+        ...o,
+        text: o.text.trim(),
+        sortOrder: i,
+        isCorrect: Boolean(o.isCorrect),
+      }))
 
       await syncOptions(quizId, sectionId, saved.id, desired, existing)
 
@@ -398,31 +390,10 @@ export function QuestionEditorDialog({
               </div>
             </div>
 
-            {kind === 'mcq' ? (
-              <label className="flex items-center justify-between rounded-md border border-[var(--border)] px-3 py-2">
-                <span className="text-sm">Allow multiple correct answers</span>
-                <Switch
-                  checked={allowMultipleCorrect}
-                  onCheckedChange={(checked) => {
-                    setAllowMultipleCorrect(checked)
-                    if (!checked) {
-                      const firstCorrect = options.findIndex((o) => o.isCorrect)
-                      setOptions(
-                        options.map((o, i) => ({
-                          ...o,
-                          isCorrect: i === (firstCorrect >= 0 ? firstCorrect : 0),
-                        })),
-                      )
-                    }
-                  }}
-                />
-              </label>
-            ) : null}
-
             <McqOptionsEditor
               kind={kind}
               options={options}
-              allowMultipleCorrect={allowMultipleCorrect}
+              allowMultipleCorrect={false}
               onChange={setOptions}
               error={optionsError}
             />

@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ValidationError
-from app.models.enums import AiJobStatus, AiQuestionKind, QuestionType, QuizStatus
+from app.models.enums import AiJobStatus, QuestionType, QuizStatus
 from app.repositories.ai_generation_repository import AiGenerationRepository
 from app.schemas.answer_option import AnswerOptionCreateRequest
 from app.schemas.question import QuestionCreateRequest
@@ -82,12 +82,31 @@ class AiSaveService:
             )
             for q_draft in sorted(section_draft.questions, key=lambda q: q.sort_order):
                 options = q_draft.options_json or []
-                if not isinstance(options, list) or len(options) < 2:
+                if not isinstance(options, list):
                     raise ValidationError(
-                        "VALIDATION_ERROR",
-                        f"Question '{q_draft.prompt_text[:40]}' needs at least 2 options",
+                        "MCQ_INVALID",
+                        "MCQ must contain exactly 4 options.",
+                        status_code=400,
                     )
-                allow_multiple = q_draft.kind == AiQuestionKind.MULTIPLE_CORRECT
+                from app.services.mcq_validation import OptionSnapshot, assert_mcq_options_valid
+
+                snapshots = [
+                    OptionSnapshot(
+                        text=str(raw.get("text") or "").strip() if isinstance(raw, dict) else "",
+                        is_correct=bool(
+                            isinstance(raw, dict)
+                            and (raw.get("isCorrect") or raw.get("is_correct"))
+                        ),
+                    )
+                    for raw in options
+                ]
+                assert_mcq_options_valid(
+                    snapshots,
+                    field=f"questions.{q_draft.id}.options",
+                    code="MCQ_INVALID",
+                )
+                # Builder MCQ rules require exactly one correct answer.
+                allow_multiple = False
                 question = self._questions.create(
                     quiz.id,
                     section.id,

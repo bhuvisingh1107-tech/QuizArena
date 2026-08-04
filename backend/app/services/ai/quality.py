@@ -55,9 +55,12 @@ def assert_no_placeholders(text: str, *, field: str) -> None:
 
 def validate_question_payload(item: dict[str, Any], *, index: int) -> None:
     """Raise if a single LLM question payload is invalid or templated."""
+    from app.services.mcq_validation import OptionSnapshot, assert_mcq_options_valid
+
     prompt = str(item.get("promptText") or item.get("prompt_text") or "").strip()
     explanation = str(item.get("explanation") or "").strip()
     options = item.get("options") or []
+    kind = str(item.get("kind") or "mcq").strip().lower()
 
     if len(prompt) < 12:
         raise ValidationError(
@@ -69,44 +72,46 @@ def validate_question_payload(item: dict[str, Any], *, index: int) -> None:
             "AI_QUESTION_INVALID",
             f"Question {index + 1} is missing a real explanation grounded in the source.",
         )
-    if not isinstance(options, list) or len(options) < 2:
+    if not isinstance(options, list):
         raise ValidationError(
             "AI_QUESTION_INVALID",
-            f"Question {index + 1} must include at least 2 options.",
+            f"Question {index + 1} has malformed options.",
+            status_code=400,
         )
 
     assert_no_placeholders(prompt, field=f"question[{index}].prompt")
     assert_no_placeholders(explanation, field=f"question[{index}].explanation")
 
-    correct = 0
-    seen_texts: set[str] = set()
+    snapshots: list[OptionSnapshot] = []
     for opt_i, raw in enumerate(options):
         if not isinstance(raw, dict):
             raise ValidationError(
                 "AI_QUESTION_INVALID",
                 f"Question {index + 1} has a malformed option.",
+                status_code=400,
             )
         text = str(raw.get("text") or "").strip()
-        if len(text) < 1:
-            raise ValidationError(
-                "AI_QUESTION_INVALID",
-                f"Question {index + 1} has an empty option.",
+        if text:
+            assert_no_placeholders(text, field=f"question[{index}].option[{opt_i}]")
+        snapshots.append(
+            OptionSnapshot(
+                text=text,
+                is_correct=bool(raw.get("isCorrect") or raw.get("is_correct")),
             )
-        assert_no_placeholders(text, field=f"question[{index}].option[{opt_i}]")
-        key = text.lower()
-        if key in seen_texts:
-            raise ValidationError(
-                "AI_QUESTION_INVALID",
-                f"Question {index + 1} has duplicate option text.",
-            )
-        seen_texts.add(key)
-        if raw.get("isCorrect") or raw.get("is_correct"):
-            correct += 1
+        )
 
-    if correct < 1:
-        raise ValidationError(
-            "AI_QUESTION_INVALID",
-            f"Question {index + 1} has no correct option marked.",
+    if kind in {"true_false", "true/false", "tf"}:
+        # Normalize to True/False labels when the model used those strings.
+        assert_mcq_options_valid(
+            snapshots,
+            field=f"question[{index}].options",
+            code="AI_QUESTION_INVALID",
+        )
+    else:
+        assert_mcq_options_valid(
+            snapshots,
+            field=f"question[{index}].options",
+            code="AI_QUESTION_INVALID",
         )
 
 

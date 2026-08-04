@@ -24,13 +24,52 @@ def _build_ready_content(client: TestClient, token: str, title: str) -> str:
         headers=_auth(token),
         json={"questionType": "Text", "promptText": "Capital of France?", "basePoints": 1},
     ).json()["data"]
-    for text, correct, order in (("Paris", True, 0), ("Lyon", False, 1)):
+    for text, correct, order in (
+        ("Paris", True, 0),
+        ("Lyon", False, 1),
+        ("Marseille", False, 2),
+        ("Nice", False, 3),
+    ):
         client.post(
             f"/api/v1/quizzes/{quiz_id}/sections/{section['id']}/questions/{question['id']}/options",
             headers=_auth(token),
             json={"text": text, "isCorrect": correct, "sortOrder": order},
         )
     return quiz_id
+
+
+def test_validate_rejects_mcq_with_three_options(client: TestClient, admin_token: str) -> None:
+    quiz = client.post(
+        "/api/v1/quizzes",
+        headers=_auth(admin_token),
+        json={"title": "Bad MCQ"},
+    ).json()["data"]
+    quiz_id = quiz["id"]
+    section = client.post(
+        f"/api/v1/quizzes/{quiz_id}/sections",
+        headers=_auth(admin_token),
+        json={"name": "Section 1"},
+    ).json()["data"]
+    question = client.post(
+        f"/api/v1/quizzes/{quiz_id}/sections/{section['id']}/questions",
+        headers=_auth(admin_token),
+        json={"questionType": "Text", "promptText": "Pick one", "basePoints": 1},
+    ).json()["data"]
+    for text, correct, order in (("A", True, 0), ("B", False, 1), ("C", False, 2)):
+        client.post(
+            f"/api/v1/quizzes/{quiz_id}/sections/{section['id']}/questions/{question['id']}/options",
+            headers=_auth(admin_token),
+            json={"text": text, "isCorrect": correct, "sortOrder": order},
+        )
+    response = client.post(
+        f"/api/v1/quizzes/{quiz_id}/validate",
+        headers=_auth(admin_token),
+    )
+    assert response.status_code == 400, response.text
+    body = response.json()["error"]
+    assert body["code"] == "QUIZ_NOT_READY"
+    messages = [d.get("message") for d in body["details"]]
+    assert "MCQ must contain exactly 4 options." in messages
 
 
 def test_validate_promotes_to_ready(client: TestClient, admin_token: str) -> None:
@@ -53,7 +92,7 @@ def test_validate_rejects_incomplete_quiz(client: TestClient, admin_token: str) 
         f"/api/v1/quizzes/{quiz['id']}/validate",
         headers=_auth(admin_token),
     )
-    assert response.status_code == 422
+    assert response.status_code == 400
     body = response.json()["error"]
     assert body["code"] == "QUIZ_NOT_READY"
     assert body["details"]

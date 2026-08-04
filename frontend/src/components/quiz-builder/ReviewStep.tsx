@@ -1,5 +1,6 @@
 import { Loader2, Radio } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
@@ -13,10 +14,11 @@ import { useLiveRoomMutations } from '@/hooks/queries/useLiveRoomMutations'
 import { useOptions } from '@/hooks/queries/useOptions'
 import { useQuestions } from '@/hooks/queries/useQuestions'
 import { useQuizMutations } from '@/hooks/queries/useQuizMutations'
+import { useQuizMcqIssues } from '@/hooks/useQuizMcqIssues'
 import { ApiError } from '@/lib/api-client'
+import { firstMcqOptionError } from '@/lib/mcq-validation'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
 import type { Quiz, Section } from '@/types/api'
-import { useNavigate } from 'react-router-dom'
 
 interface ChecklistItem {
   field?: string
@@ -61,6 +63,11 @@ function QuestionPreview({
     () => [...(optionsQuery.data?.items ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
     [optionsQuery.data],
   )
+  const validationError = useMemo(
+    () =>
+      firstMcqOptionError(options.map((o) => ({ text: o.text, isCorrect: o.isCorrect }))),
+    [options],
+  )
 
   return (
     <li className="rounded-lg border border-[var(--border)] bg-[var(--color-ink)]/40 px-4 py-3">
@@ -71,6 +78,9 @@ function QuestionPreview({
       <p className="font-medium text-[#f0f4fa]">{promptText || 'Untitled question'}</p>
       {explanation ? (
         <p className="mt-1 text-xs text-[var(--muted-foreground)]">Explanation: {explanation}</p>
+      ) : null}
+      {validationError ? (
+        <p className="mt-1 text-xs text-[var(--destructive)]">{validationError}</p>
       ) : null}
       <ul className="mt-3 space-y-1">
         {options.map((opt) => (
@@ -153,11 +163,17 @@ export function ReviewStep({ quiz, sections, onBack, onPublished }: ReviewStepPr
   const { createRoom } = useLiveRoomMutations()
   const [checklist, setChecklist] = useState<ChecklistItem[]>([])
   const [publishing, setPublishing] = useState(false)
+  const { hasInvalidMcq, issues, loading: mcqLoading } = useQuizMcqIssues(quiz.id, sections)
 
   const config = quiz.config
   const hasSections = sections.length > 0
+  const actionsDisabled = publishing || mcqLoading || hasInvalidMcq
 
   const onPublish = async () => {
+    if (hasInvalidMcq) {
+      toastError(new Error(issues[0]?.message ?? 'Fix invalid MCQ questions before publishing'))
+      return
+    }
     setPublishing(true)
     setChecklist([])
     try {
@@ -165,7 +181,11 @@ export function ReviewStep({ quiz, sections, onBack, onPublished }: ReviewStepPr
       toastSuccess('Quiz published', 'Status is now Ready')
       onPublished?.()
     } catch (error) {
-      if (error instanceof ApiError && error.status === 422 && error.details.length) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 422 || error.status === 400) &&
+        error.details.length
+      ) {
         setChecklist(parseChecklist(error.details))
         toastError(error)
       } else {
@@ -177,6 +197,10 @@ export function ReviewStep({ quiz, sections, onBack, onPublished }: ReviewStepPr
   }
 
   const hostLiveRoom = async () => {
+    if (hasInvalidMcq) {
+      toastError(new Error(issues[0]?.message ?? 'Fix invalid MCQ questions before starting'))
+      return
+    }
     try {
       const room = await createRoom.mutateAsync({ quizId: quiz.id })
       toastSuccess('Live room created')
@@ -258,6 +282,21 @@ export function ReviewStep({ quiz, sections, onBack, onPublished }: ReviewStepPr
             )}
           </div>
 
+          {hasInvalidMcq ? (
+            <Alert variant="destructive">
+              <AlertTitle>Invalid MCQ questions</AlertTitle>
+              <AlertDescription>
+                <ul className="mt-2 list-disc space-y-1 pl-4">
+                  {issues.map((issue) => (
+                    <li key={issue.questionId}>
+                      {issue.promptText || 'Untitled'}: {issue.message}
+                    </li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           {checklist.length > 0 ? (
             <Alert variant="destructive">
               <AlertTitle>Ready checklist failed</AlertTitle>
@@ -283,12 +322,16 @@ export function ReviewStep({ quiz, sections, onBack, onPublished }: ReviewStepPr
             <Button variant="outline" onClick={() => onBack(2)}>
               Edit questions
             </Button>
-            <Button onClick={() => void onPublish()} disabled={publishing}>
+            <Button onClick={() => void onPublish()} disabled={actionsDisabled}>
               {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Publish
             </Button>
             {quiz.status === 'Ready' ? (
-              <Button variant="secondary" onClick={() => void hostLiveRoom()}>
+              <Button
+                variant="secondary"
+                onClick={() => void hostLiveRoom()}
+                disabled={hasInvalidMcq || createRoom.isPending}
+              >
                 <Radio className="h-4 w-4" />
                 Host live room
               </Button>

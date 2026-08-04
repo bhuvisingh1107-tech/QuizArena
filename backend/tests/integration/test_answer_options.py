@@ -284,11 +284,12 @@ def test_single_correct_violation(client: TestClient, admin_token: str) -> None:
         headers=_auth(admin_token),
         json={"text": "Also correct?", "isCorrect": True},
     )
-    assert second.status_code == 422
-    assert second.json()["error"]["code"] == "SINGLE_CORRECT_VIOLATION"
+    assert second.status_code == 400
+    assert second.json()["error"]["code"] == "MCQ_INVALID"
 
 
-def test_multiple_correct_allowed(client: TestClient, admin_token: str) -> None:
+def test_multiple_correct_rejected(client: TestClient, admin_token: str) -> None:
+    """Even allowMultipleCorrect=true is rejected — MCQs require exactly one correct."""
     quiz_id, section_id, question_id = _setup(
         client,
         admin_token,
@@ -306,25 +307,25 @@ def test_multiple_correct_allowed(client: TestClient, admin_token: str) -> None:
         json={"text": "B", "isCorrect": True, "sortOrder": 1},
     )
     assert first.status_code == 201
-    assert second.status_code == 201
-    assert second.json()["data"]["isCorrect"] is True
+    assert second.status_code == 400
+    assert second.json()["error"]["code"] == "MCQ_INVALID"
 
 
 def test_option_limit(client: TestClient, admin_token: str) -> None:
     quiz_id, section_id, question_id = _setup(
         client, admin_token, quiz_title="Option Limit Quiz"
     )
-    for i in range(6):
+    for i in range(4):
         response = client.post(
             _opath(quiz_id, section_id, question_id),
             headers=_auth(admin_token),
-            json={"text": f"Opt {i}", "sortOrder": i},
+            json={"text": f"Opt {i}", "sortOrder": i, "isCorrect": i == 0},
         )
         assert response.status_code == 201, response.text
     overflow = client.post(
         _opath(quiz_id, section_id, question_id),
         headers=_auth(admin_token),
-        json={"text": "Too many", "sortOrder": 6},
+        json={"text": "Too many", "sortOrder": 4},
     )
-    assert overflow.status_code == 422
-    assert overflow.json()["error"]["code"] == "OPTION_LIMIT_EXCEEDED"
+    assert overflow.status_code == 400
+    assert overflow.json()["error"]["code"] == "MCQ_INVALID"

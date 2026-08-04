@@ -103,11 +103,25 @@ def test_update_section(client: TestClient, admin_token: str) -> None:
 
 def test_delete_section(client: TestClient, admin_token: str) -> None:
     quiz_id = _create_quiz(client, admin_token, title="Delete Section Quiz")
+    keep = client.post(
+        f"/api/v1/quizzes/{quiz_id}/sections",
+        headers=_auth(admin_token),
+        json={"name": "Keep", "sortOrder": 0},
+    ).json()["data"]
     created = client.post(
         f"/api/v1/quizzes/{quiz_id}/sections",
         headers=_auth(admin_token),
-        json={"name": "Gone"},
+        json={"name": "Gone", "sortOrder": 1},
     ).json()["data"]
+
+    # Seed a question in the deleted section — cascade must remove it.
+    question = client.post(
+        f"/api/v1/quizzes/{quiz_id}/sections/{created['id']}/questions",
+        headers=_auth(admin_token),
+        json={"questionType": "Text", "promptText": "Will be deleted", "basePoints": 1},
+    )
+    assert question.status_code == 201, question.text
+
     response = client.delete(
         f"/api/v1/quizzes/{quiz_id}/sections/{created['id']}",
         headers=_auth(admin_token),
@@ -121,6 +135,31 @@ def test_delete_section(client: TestClient, admin_token: str) -> None:
     )
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "SECTION_NOT_FOUND"
+
+    remaining = client.get(
+        f"/api/v1/quizzes/{quiz_id}/sections",
+        headers=_auth(admin_token),
+    )
+    assert remaining.status_code == 200
+    assert remaining.json()["data"]["total"] == 1
+    assert remaining.json()["data"]["items"][0]["id"] == keep["id"]
+
+
+def test_delete_last_section_rejected(client: TestClient, admin_token: str) -> None:
+    quiz_id = _create_quiz(client, admin_token, title="Last Section Guard")
+    created = client.post(
+        f"/api/v1/quizzes/{quiz_id}/sections",
+        headers=_auth(admin_token),
+        json={"name": "Only"},
+    ).json()["data"]
+    response = client.delete(
+        f"/api/v1/quizzes/{quiz_id}/sections/{created['id']}",
+        headers=_auth(admin_token),
+    )
+    assert response.status_code == 400
+    body = response.json()["error"]
+    assert body["code"] == "LAST_SECTION"
+    assert body["message"] == "A quiz must contain at least one section"
 
 
 def test_unauthorized_access(client: TestClient) -> None:

@@ -22,6 +22,7 @@ import { useQuizMutations } from '@/hooks/queries/useQuizMutations'
 import { useSectionMutations, useSections } from '@/hooks/queries/useSections'
 import { apiPost } from '@/lib/api-client'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
+import type { Section } from '@/types/api'
 
 function parseStep(raw: string | null): BuilderStep {
   const n = Number(raw)
@@ -123,6 +124,25 @@ export function QuizBuilderPage() {
       toastSuccess('Section renamed')
     } catch (error) {
       toastError(error)
+    }
+  }
+
+  const onDeleteSection = async (target: Section) => {
+    if (!quizId) return
+    if (sections.length <= 1) {
+      toastError(new Error('A quiz must contain at least one section'))
+      throw new Error('A quiz must contain at least one section')
+    }
+    try {
+      await sectionMutations.deleteSection.mutateAsync(target.id)
+      if (selectedSectionId === target.id) {
+        const remaining = sections.filter((s) => s.id !== target.id)
+        setSelectedSectionId(remaining[0]?.id ?? null)
+      }
+      toastSuccess('Section deleted')
+    } catch (error) {
+      toastError(error)
+      throw error
     }
   }
 
@@ -278,6 +298,8 @@ export function QuizBuilderPage() {
           onSelectSection={setSelectedSectionId}
           onAddSection={() => void onAddSection()}
           onRenameSection={(target) => void onRenameSection(target)}
+          onDeleteSection={onDeleteSection}
+          deletingSection={sectionMutations.deleteSection.isPending}
           sectionsLoading={sectionsQuery.isLoading}
           sectionsError={sectionsQuery.isError}
           onRetrySections={() => void sectionsQuery.refetch()}

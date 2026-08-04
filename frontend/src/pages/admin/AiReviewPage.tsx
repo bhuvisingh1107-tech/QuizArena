@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { queryKeys } from '@/hooks/queries/keys'
 import { useAiGenerationMutations, useAiJobQuery } from '@/hooks/queries/useAiGeneration'
+import { firstMcqOptionError } from '@/lib/mcq-validation'
 import { toastError, toastSuccess } from '@/lib/toast-helpers'
 import type { AiGeneratedQuestion, AiJobStatus, AiOption } from '@/types/ai-generation'
 import { cn } from '@/lib/utils'
@@ -68,7 +69,32 @@ export function AiReviewPage() {
 
   const selected = allQuestions.find((q) => q.question.id === selectedQuestionId)
 
+  const mcqIssues = useMemo(() => {
+    return allQuestions
+      .map(({ question }) => {
+        const message = firstMcqOptionError(
+          (question.options ?? []).map((o) => ({
+            text: o.text,
+            isCorrect: o.isCorrect,
+          })),
+        )
+        return message
+          ? { questionId: question.id, promptText: question.promptText, message }
+          : null
+      })
+      .filter((item): item is { questionId: string; promptText: string; message: string } =>
+        Boolean(item),
+      )
+  }, [allQuestions])
+
+  const hasInvalidMcq = mcqIssues.length > 0
+  const canSaveQuiz = !hasInvalidMcq
+
   const onSave = async () => {
+    if (hasInvalidMcq) {
+      toastError(new Error(mcqIssues[0]?.message ?? 'Fix invalid MCQ questions before saving'))
+      return
+    }
     try {
       const result = await mutations.save.mutateAsync(jobId)
       toastSuccess('Quiz updated in My Quizzes')
@@ -159,7 +185,10 @@ export function AiReviewPage() {
                   <RefreshCw className="h-4 w-4" />
                   Regenerate quiz
                 </Button>
-                <Button onClick={() => void onSave()} disabled={mutations.save.isPending}>
+                <Button
+                  onClick={() => void onSave()}
+                  disabled={mutations.save.isPending || !canSaveQuiz}
+                >
                   <Save className="h-4 w-4" />
                   {job.resultQuizId ? 'Re-save quiz' : 'Save quiz'}
                 </Button>
@@ -168,6 +197,21 @@ export function AiReviewPage() {
           </div>
         }
       />
+
+      {job.status === 'completed' && hasInvalidMcq ? (
+        <Card>
+          <CardContent className="space-y-2 pt-6 text-sm text-[var(--destructive)]">
+            <p className="font-medium">Fix invalid MCQs before saving:</p>
+            <ul className="list-disc space-y-1 pl-5">
+              {mcqIssues.map((issue) => (
+                <li key={issue.questionId}>
+                  {issue.promptText || 'Untitled'}: {issue.message}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {inProgress || job.status === 'failed' ? (
         <Card>
@@ -357,6 +401,9 @@ function QuestionEditor({
   const [explanation, setExplanation] = useState(question.explanation || '')
   const [estimatedTimeSeconds, setEstimatedTimeSeconds] = useState(question.estimatedTimeSeconds)
   const [options, setOptions] = useState<AiOption[]>(question.options)
+  const optionsError = firstMcqOptionError(
+    options.map((o) => ({ text: o.text, isCorrect: o.isCorrect })),
+  )
 
   return (
     <Card>
@@ -379,13 +426,17 @@ function QuestionEditor({
             {options.map((opt, idx) => (
               <div key={idx} className="flex items-center gap-2">
                 <input
-                  type="checkbox"
+                  type="radio"
+                  name={`correct-${question.id}`}
                   checked={opt.isCorrect}
                   aria-label={`Mark option ${idx + 1} correct`}
-                  onChange={(e) => {
-                    const next = [...options]
-                    next[idx] = { ...next[idx], isCorrect: e.target.checked }
-                    setOptions(next)
+                  onChange={() => {
+                    setOptions(
+                      options.map((item, i) => ({
+                        ...item,
+                        isCorrect: i === idx,
+                      })),
+                    )
                   }}
                 />
                 <Input
@@ -399,7 +450,13 @@ function QuestionEditor({
               </div>
             ))}
           </div>
-          <p className="text-xs text-[var(--muted-foreground)]">Checked options are correct answers.</p>
+          {optionsError ? (
+            <p className="text-xs text-[var(--destructive)]">{optionsError}</p>
+          ) : (
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Select exactly one correct answer. MCQs need exactly 4 filled options.
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -430,7 +487,7 @@ function QuestionEditor({
 
         <div className="flex flex-wrap gap-2 pt-2">
           <Button
-            disabled={busy}
+            disabled={busy || Boolean(optionsError)}
             onClick={() =>
               void onSave({
                 promptText,

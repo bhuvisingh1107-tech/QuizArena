@@ -17,8 +17,16 @@ from app.repositories.section_repository import SectionRepository
 from app.schemas.answer_option import AnswerOptionCreateRequest, AnswerOptionUpdateRequest
 from app.services.question_crypto import open_option_fields, seal_option_fields
 
+from app.services.mcq_validation import (
+    MCQ_OPTION_COUNT,
+    MSG_DUPLICATES,
+    MSG_EXACTLY_FOUR,
+    MSG_ONLY_ONE_CORRECT,
+    options_from_orm,
+)
+
 _MUTABLE_QUIZ_STATUSES = {QuizStatus.DRAFT, QuizStatus.READY}
-_MAX_OPTIONS_PER_QUESTION = 6  # FR-029
+_MAX_OPTIONS_PER_QUESTION = MCQ_OPTION_COUNT
 
 
 class AnswerOptionService:
@@ -45,10 +53,13 @@ class AnswerOptionService:
         self._require_section(quiz_id, section_id)
         question = self._require_question(section_id, question_id)
 
-        if self._options.count_for_question(question_id) >= _MAX_OPTIONS_PER_QUESTION:
+        existing = options_from_orm(self._options.list_for_question(question_id))
+        if len(existing) >= _MAX_OPTIONS_PER_QUESTION:
             raise ValidationError(
-                "OPTION_LIMIT_EXCEEDED",
-                f"A question may have at most {_MAX_OPTIONS_PER_QUESTION} answer options",
+                "MCQ_INVALID",
+                MSG_EXACTLY_FOUR,
+                details=[{"field": "options", "message": MSG_EXACTLY_FOUR}],
+                status_code=400,
             )
 
         sort_order = (
@@ -60,6 +71,16 @@ class AnswerOptionService:
 
         if payload.is_correct:
             self._ensure_correct_flag_allowed(question, marking_correct=True)
+
+        # Reject duplicate text against current options before insert.
+        new_key = payload.text.strip().lower()
+        if new_key and any(s.text.strip().lower() == new_key for s in existing):
+            raise ValidationError(
+                "MCQ_INVALID",
+                MSG_DUPLICATES,
+                details=[{"field": "options", "message": MSG_DUPLICATES}],
+                status_code=400,
+            )
 
         sealed_text, sealed_correct = seal_option_fields(payload.text, payload.is_correct)
         option = self._options.create(
@@ -228,10 +249,8 @@ class AnswerOptionService:
         marking_correct: bool,
         exclude_option_id: UUID | None = None,
     ) -> None:
-        """Respect allow_multiple_correct when marking options correct (FR-023)."""
+        """MCQ rules: exactly one correct option (ignore allow_multiple_correct)."""
         if not marking_correct:
-            return
-        if question.allow_multiple_correct:
             return
         existing = [
             opt
@@ -243,9 +262,10 @@ class AnswerOptionService:
         )
         if existing_correct >= 1:
             raise ValidationError(
-                "SINGLE_CORRECT_VIOLATION",
-                "This question allows only one correct answer option "
-                "(allowMultipleCorrect is false)",
+                "MCQ_INVALID",
+                MSG_ONLY_ONE_CORRECT,
+                details=[{"field": "options", "message": MSG_ONLY_ONE_CORRECT}],
+                status_code=400,
             )
 
     @staticmethod
