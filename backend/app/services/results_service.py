@@ -6,7 +6,7 @@ import csv
 import io
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -31,27 +31,52 @@ from app.schemas.results import (
 )
 
 
+# Indian Standard Time — display-only conversion for Excel export.
+IST = timezone(timedelta(hours=5, minutes=30), name="IST")
+
+
 @dataclass(frozen=True)
 class RankedParticipant:
     participant: Participant
     rank: int
 
 
-def format_export_timestamp(value: datetime | None) -> str | None:
-    """ISO-8601 UTC with millisecond precision for Excel audit columns."""
-    if value is None:
+def format_export_timestamp(value: datetime | str | None) -> str | None:
+    """Format a UTC (or aware) datetime for Excel as IST.
+
+    Internal storage remains UTC. Export display uses::
+
+        YYYY-MM-DD HH:mm:ss.SSS IST
+
+    Example: ``2026-08-04 18:39:47.842 IST``
+    """
+    dt = _coerce_datetime(value)
+    if dt is None:
         return None
-    dt = value
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     else:
         dt = dt.astimezone(UTC)
-    dt = truncate_to_milliseconds(dt)
-    return dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    dt = truncate_to_milliseconds(dt).astimezone(IST)
+    return f"{dt.strftime('%Y-%m-%d %H:%M:%S')}.{dt.microsecond // 1000:03d} IST"
+
+
+def _coerce_datetime(value: datetime | str | None) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def truncate_to_milliseconds(value: datetime) -> datetime:
-    """Drop sub-millisecond noise so export math matches ISO-8601 ms strings."""
+    """Drop sub-millisecond noise so export math matches displayed ms precision."""
     return value.replace(microsecond=(value.microsecond // 1000) * 1000)
 
 
@@ -70,6 +95,15 @@ def _ms_between(start: datetime, end: datetime) -> int:
     s = truncate_to_milliseconds(s.astimezone(UTC) if s.tzinfo else s.replace(tzinfo=UTC))
     e = truncate_to_milliseconds(e.astimezone(UTC) if e.tzinfo else e.replace(tzinfo=UTC))
     return max(0, int((e - s).total_seconds() * 1000))
+
+
+def _looks_like_iso_datetime(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if "T" not in text or len(text) < 19:
+        return False
+    return _coerce_datetime(text) is not None
 
 
 def assign_competition_ranks(participants: list[Participant]) -> list[RankedParticipant]:
@@ -519,12 +553,18 @@ class ResultsService:
                         question_number = None
                 question_id = payload.get("questionId") or ""
                 selected_option = payload.get("selectedOption") or ""
-                ts = payload.get("submittedAt") if event.event_type == ANSWER_SUBMITTED else None
-                if not ts:
+                if event.event_type == ANSWER_SUBMITTED and payload.get("submittedAt"):
+                    ts = format_export_timestamp(payload.get("submittedAt"))
+                else:
                     ts = format_export_timestamp(event.created_at)
                 details = ""
                 if payload:
-                    details = json.dumps(payload, default=str, sort_keys=True)
+                    # Convert any ISO datetime strings in Details to IST for readability.
+                    details_payload = {
+                        key: format_export_timestamp(val) if _looks_like_iso_datetime(val) else val
+                        for key, val in payload.items()
+                    }
+                    details = json.dumps(details_payload, default=str, sort_keys=True)
                 rows.append(
                     [
                         ts,

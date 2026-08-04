@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import re
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from uuid import UUID
 
@@ -14,7 +15,12 @@ from app.models.live_room import LiveRoom
 from app.models.response import Response
 from app.models.session_question import SessionQuestion
 from app.services.response_service import ResponseService
-from app.services.results_service import ResultsService, _ms_between, format_export_timestamp
+from app.services.results_service import (
+    IST,
+    ResultsService,
+    _ms_between,
+    format_export_timestamp,
+)
 from tests.integration.test_scoring import _close_and_reveal, _setup_open_question
 
 EVERY_ANSWERS_HEADERS = (
@@ -53,9 +59,26 @@ TIMELINE_HEADERS = (
     "Details",
 )
 
+IST_TIMESTAMP_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} IST$"
+)
 
-def _parse_iso(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+def _parse_export_ts(value: str) -> datetime:
+    """Parse ``YYYY-MM-DD HH:mm:ss.SSS IST`` back to an aware datetime."""
+    assert IST_TIMESTAMP_RE.match(value), value
+    assert not value.endswith("Z")
+    body = value.removesuffix(" IST")
+    dt = datetime.strptime(body, "%Y-%m-%d %H:%M:%S.%f")
+    return dt.replace(tzinfo=IST)
+
+
+def _assert_ist_timestamp(value: object) -> str:
+    assert isinstance(value, str), value
+    assert not value.endswith("Z"), value
+    assert "+00:00" not in value, value
+    assert IST_TIMESTAMP_RE.match(value), value
+    return value
 
 
 def test_export_xlsx_sheets_and_columns(
@@ -96,9 +119,9 @@ def test_export_xlsx_sheets_and_columns(
     assert row[3] == str(live_room.quiz_id)
     assert row[4] == 1
     assert row[9] is True
-    assert isinstance(row[10], str) and row[10].endswith("Z")
-    assert isinstance(row[11], str) and row[11].endswith("Z")
-    assert isinstance(row[12], str) and "." in row[12]
+    _assert_ist_timestamp(row[10])
+    _assert_ist_timestamp(row[11])
+    _assert_ist_timestamp(row[12])
     assert row[13] == 1
     assert row[15] == 10
     assert row[18] == 10
@@ -115,15 +138,29 @@ def test_export_xlsx_sheets_and_columns(
     assert db_response.submitted_at is not None
     assert row[12] == format_export_timestamp(db_response.submitted_at)
 
+    # UTC → IST is +05:30
+    utc_submitted = db_response.submitted_at
+    if utc_submitted.tzinfo is None:
+        utc_submitted = utc_submitted.replace(tzinfo=UTC)
+    else:
+        utc_submitted = utc_submitted.astimezone(UTC)
+    ist_expected = utc_submitted + timedelta(hours=5, minutes=30)
+    parsed = _parse_export_ts(str(row[12]))
+    assert parsed.hour == ist_expected.hour or abs(
+        (parsed.astimezone(UTC) - utc_submitted).total_seconds()
+    ) < 1
+
     broadcast = question.broadcast_at or question.opened_at
     assert broadcast is not None
     expected_ms = _ms_between(broadcast, db_response.submitted_at)
     assert row[14] == expected_ms
-    # Stored submit-time value may differ by SQLite timestamp rounding; export is authoritative.
     assert abs(int(db_response.response_time_ms or 0) - expected_ms) <= 1
 
     timeline = list(wb["Timeline"].iter_rows(values_only=True))
     assert timeline[0] == TIMELINE_HEADERS
+    for event_row in timeline[1:]:
+        if event_row[0]:
+            _assert_ist_timestamp(event_row[0])
     events = {r[1] for r in timeline[1:]}
     assert "Answer Submitted" in events
     assert "Question Broadcast" in events
@@ -135,9 +172,13 @@ def test_export_xlsx_sheets_and_columns(
     assert answer_rows[0][5]
 
 
-def test_format_export_timestamp_millisecond_precision() -> None:
+def test_format_export_timestamp_is_ist_not_utc() -> None:
     dt = datetime(2026, 8, 4, 12, 0, 0, 123456, tzinfo=UTC)
-    assert format_export_timestamp(dt) == "2026-08-04T12:00:00.123Z"
+    formatted = format_export_timestamp(dt)
+    assert formatted == "2026-08-04 17:30:00.123 IST"
+    assert formatted is not None
+    assert not formatted.endswith("Z")
+    assert "+00:00" not in formatted
 
 
 def test_export_answer_order_and_response_time_for_multiple_participants(
@@ -181,12 +222,14 @@ def test_export_answer_order_and_response_time_for_multiple_participants(
     assert by_name["Charlie"][13] == 3
 
     ordered = sorted(answers[1:], key=lambda r: int(r[13]))
-    times = [_parse_iso(str(r[12])) for r in ordered]
+    times = [_parse_export_ts(str(r[12])) for r in ordered]
     assert times[0] <= times[1] <= times[2]
 
     for row in answers[1:]:
-        broadcast = _parse_iso(str(row[10]))
-        submitted = _parse_iso(str(row[12]))
+        _assert_ist_timestamp(row[10])
+        _assert_ist_timestamp(row[12])
+        broadcast = _parse_export_ts(str(row[10]))
+        submitted = _parse_export_ts(str(row[12]))
         expected = max(0, int((submitted - broadcast).total_seconds() * 1000))
         assert row[14] == expected
 
@@ -194,6 +237,8 @@ def test_export_answer_order_and_response_time_for_multiple_participants(
     submitted_events = [r for r in timeline[1:] if r[1] == "Answer Submitted"]
     assert len(submitted_events) == 3
     assert {r[2] for r in submitted_events} == {"Alice", "Bob", "Charlie"}
+    for event_row in submitted_events:
+        _assert_ist_timestamp(event_row[0])
 
 
 def test_export_xlsx_ranks_and_streaks(
