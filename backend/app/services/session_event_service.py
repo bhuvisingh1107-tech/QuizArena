@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -49,6 +50,7 @@ def log_session_event(
     event_type: str,
     payload: dict[str, Any] | None = None,
     *,
+    created_at: datetime | None = None,
     flush: bool = True,
 ) -> SessionEvent:
     """Persist a timeline row. Caller owns the surrounding transaction/commit."""
@@ -57,6 +59,8 @@ def log_session_event(
         event_type=event_type,
         payload_json=payload,
     )
+    if created_at is not None:
+        event.created_at = created_at
     session.add(event)
     if flush:
         session.flush()

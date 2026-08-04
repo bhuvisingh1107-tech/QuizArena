@@ -56,6 +56,9 @@ class Response(Base, CreatedAtMixin):
     response_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="submitted")
     scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Leaderboard standing immediately before/after this answer was scored (reveal).
+    rank_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rank_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
     participant: Mapped["Participant"] = relationship("Participant", back_populates="responses")
     session_question: Mapped["SessionQuestion"] = relationship(
         "SessionQuestion",

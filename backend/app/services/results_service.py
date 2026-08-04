@@ -6,6 +6,7 @@ import csv
 import io
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -34,6 +35,27 @@ from app.schemas.results import (
 class RankedParticipant:
     participant: Participant
     rank: int
+
+
+def format_export_timestamp(value: datetime | None) -> str | None:
+    """ISO-8601 UTC with millisecond precision for Excel audit columns."""
+    if value is None:
+        return None
+    dt = value
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    else:
+        dt = dt.astimezone(UTC)
+    return dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _as_uuid(value: Any) -> UUID | None:
+    if value is None:
+        return None
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def assign_competition_ranks(participants: list[Participant]) -> list[RankedParticipant]:
@@ -276,22 +298,27 @@ class ResultsService:
                 ]
             )
 
-        # ── Sheet 2: Every answer ─────────────────────────────────────────
-        ws_q = wb.create_sheet("Every answer")
+        # ── Sheet 2: Every Answers ────────────────────────────────────────
+        ws_q = wb.create_sheet("Every Answers")
         ws_q.append(
             [
-                "Participant",
+                "Participant Name",
+                "Participant ID",
                 "Question Number",
                 "Question ID",
                 "Question Text",
                 "Selected Option",
                 "Correct Option",
-                "Correct/Incorrect",
-                "Points Awarded",
-                "Time Taken",
-                "Timestamp",
+                "Correct",
+                "Question Shown Timestamp",
+                "Answer Submitted Timestamp",
+                "Response Time (milliseconds)",
+                "Base Score",
                 "Time Bonus",
                 "Streak Bonus",
+                "Total Score Awarded",
+                "Rank Before Submission",
+                "Rank After Submission",
             ]
         )
         participant_name = {p.id: p.display_name for p in participants}
@@ -312,32 +339,44 @@ class ResultsService:
                     selected_texts.append(opt_map.get(UUID(str(raw_id)), str(raw_id)))
                 except (TypeError, ValueError):
                     selected_texts.append(str(raw_id))
-            if response.is_unanswered:
-                verdict = "Unanswered"
-            elif response.is_correct:
-                verdict = "Correct"
+            if response.is_unanswered or response.submitted_at is None:
+                correct_cell = False
             else:
-                verdict = "Incorrect"
+                correct_cell = bool(response.is_correct)
+            shown_at = question.opened_at if question is not None else None
             ws_q.append(
                 [
                     participant_name.get(response.participant_id, ""),
+                    str(response.participant_id),
                     (q_index + 1) if q_index is not None else None,
                     str(qid),
                     question.prompt_text if question is not None else "",
                     "; ".join(selected_texts),
                     "; ".join(correct_options_by_question.get(qid, [])),
-                    verdict,
-                    int(response.total_points_earned or 0),
+                    correct_cell,
+                    format_export_timestamp(shown_at),
+                    format_export_timestamp(response.submitted_at),
                     response.response_time_ms,
-                    response.submitted_at.isoformat() if response.submitted_at else None,
+                    int(response.base_points_earned or 0),
                     int(response.time_bonus_earned or 0),
                     int(response.streak_bonus_earned or 0),
+                    int(response.total_points_earned or 0),
+                    response.rank_before,
+                    response.rank_after,
                 ]
             )
 
         # ── Sheet 3: Timeline ─────────────────────────────────────────────
         ws_t = wb.create_sheet("Timeline")
-        ws_t.append(["Event", "Timestamp", "Details"])
+        ws_t.append(
+            [
+                "Timestamp",
+                "Event",
+                "Participant",
+                "Question Number",
+                "Selected Option",
+            ]
+        )
         for row in self._timeline_rows(room, responses, questions, participants):
             ws_t.append(row)
 
@@ -366,11 +405,18 @@ class ResultsService:
         questions: list[SessionQuestion],
         participants: list[Participant] | None = None,
     ) -> list[list[Any]]:
-        """Prefer session_events; otherwise synthesize from room + responses."""
-        import json
+        """Prefer session_events; otherwise synthesize from room + responses.
 
+        Columns: Timestamp | Event | Participant | Question Number | Selected Option
+        """
         from app.models.session_event import SessionEvent
-        from app.services.session_event_service import TIMELINE_LABELS
+        from app.services.session_event_service import ANSWER_SUBMITTED, TIMELINE_LABELS
+
+        name_by_id = {p.id: p.display_name for p in (participants or [])}
+        question_number_by_id = {q.id: q.sort_order + 1 for q in questions}
+        options_by_question: dict[UUID, dict[UUID, str]] = {
+            q.id: {opt.id: opt.text for opt in q.options} for q in questions
+        }
 
         events = list(
             self._session.scalars(
@@ -386,24 +432,36 @@ class ResultsService:
                     event.event_type,
                     event.event_type.replace("_", " ").title(),
                 )
-                details = ""
-                if event.payload_json is not None:
-                    details = json.dumps(event.payload_json, default=str)
+                payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+                participant = (
+                    payload.get("displayName")
+                    or name_by_id.get(_as_uuid(payload.get("participantId")), "")
+                    or ""
+                )
+                question_number = payload.get("questionNumber")
+                if question_number is None and payload.get("questionIndex") is not None:
+                    try:
+                        question_number = int(payload["questionIndex"]) + 1
+                    except (TypeError, ValueError):
+                        question_number = None
+                selected_option = payload.get("selectedOption") or ""
+                ts = payload.get("submittedAt") if event.event_type == ANSWER_SUBMITTED else None
+                if not ts:
+                    ts = format_export_timestamp(event.created_at)
                 rows.append(
                     [
+                        ts,
                         label,
-                        event.created_at.isoformat() if event.created_at else None,
-                        details,
+                        participant,
+                        question_number,
+                        selected_option,
                     ]
                 )
             return rows
 
-        name_by_id = {p.id: p.display_name for p in (participants or [])}
-        synthetic: list[tuple[Any, str, str]] = []
+        synthetic: list[tuple[Any, str, str, Any, str]] = []
         if room.created_at:
-            synthetic.append(
-                (room.created_at, "Room Created", f"code={room.room_code}")
-            )
+            synthetic.append((room.created_at, "Room Created", "", None, ""))
         for participant in participants or []:
             if participant.joined_at:
                 synthetic.append(
@@ -411,35 +469,56 @@ class ResultsService:
                         participant.joined_at,
                         "Participant Joined",
                         participant.display_name,
+                        None,
+                        "",
                     )
                 )
         if room.started_at:
-            synthetic.append((room.started_at, "Quiz Started", ""))
+            synthetic.append((room.started_at, "Quiz Started", "", None, ""))
         for question in questions:
             if question.opened_at:
                 synthetic.append(
                     (
                         question.opened_at,
                         "Question Shown",
-                        f"#{question.sort_order + 1}: {question.prompt_text or ''}",
+                        "",
+                        question.sort_order + 1,
+                        "",
                     )
                 )
         for response in responses:
-            if response.submitted_at:
-                synthetic.append(
-                    (
-                        response.submitted_at,
-                        "Answer Submitted",
-                        name_by_id.get(response.participant_id, str(response.participant_id)),
-                    )
+            if response.submitted_at is None:
+                continue
+            qid = response.session_question_id
+            opt_map = options_by_question.get(qid, {})
+            selected_texts: list[str] = []
+            for raw_id in response.selected_option_ids or []:
+                try:
+                    selected_texts.append(opt_map.get(UUID(str(raw_id)), str(raw_id)))
+                except (TypeError, ValueError):
+                    selected_texts.append(str(raw_id))
+            synthetic.append(
+                (
+                    response.submitted_at,
+                    "Answer Submitted",
+                    name_by_id.get(response.participant_id, str(response.participant_id)),
+                    question_number_by_id.get(qid),
+                    "; ".join(selected_texts),
                 )
+            )
         if room.completed_at:
-            synthetic.append((room.completed_at, "Quiz Ended", ""))
+            synthetic.append((room.completed_at, "Quiz Ended", "", None, ""))
 
-        synthetic.sort(key=lambda item: item[0] or "")
+        synthetic.sort(key=lambda item: item[0] or datetime.min.replace(tzinfo=UTC))
         return [
-            [label, ts.isoformat() if hasattr(ts, "isoformat") else ts, details]
-            for ts, label, details in synthetic
+            [
+                format_export_timestamp(ts) if hasattr(ts, "isoformat") else ts,
+                label,
+                participant,
+                question_number,
+                selected_option,
+            ]
+            for ts, label, participant, question_number, selected_option in synthetic
         ]
 
     def _list_responses_for_room(self, room_id: UUID) -> list[Response]:

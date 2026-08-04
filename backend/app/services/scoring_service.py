@@ -113,6 +113,14 @@ class ScoringService:
             if p.state not in {ParticipantState.BANNED, ParticipantState.KICKED}
         ]
 
+        from app.services.results_service import assign_competition_ranks
+
+        rank_before_by_id = {
+            rp.participant.id: rp.rank
+            for rp in assign_competition_ranks(participants)
+        }
+        scored_responses: list[Response] = []
+
         for participant in participants:
             response = self._responses.get_by_participant_and_question(
                 participant.id,
@@ -140,6 +148,15 @@ class ScoringService:
                 continue
 
             self.score_response(response, question, participant, room.config)
+            scored_responses.append(response)
+
+        rank_after_by_id = {
+            rp.participant.id: rp.rank
+            for rp in assign_competition_ranks(participants)
+        }
+        for response in scored_responses:
+            response.rank_before = rank_before_by_id.get(response.participant_id)
+            response.rank_after = rank_after_by_id.get(response.participant_id)
 
         question.state = question_fsm.transition(question.state, "mark_scored")
         self._session.flush()

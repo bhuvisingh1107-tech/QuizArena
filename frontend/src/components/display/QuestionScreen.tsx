@@ -90,6 +90,8 @@ export function QuestionScreen({
 
       {question.imageUrl || question.mediaFileId ? (
         <DisplayMedia
+          key={question.id}
+          questionId={question.id}
           imageUrl={question.imageUrl}
           mediaFileId={question.mediaFileId}
           questionType={question.questionType}

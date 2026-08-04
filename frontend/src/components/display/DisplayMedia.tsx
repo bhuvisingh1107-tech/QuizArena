@@ -1,6 +1,7 @@
 import { ImageIcon, Volume2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
+import { useImageLoadState } from '@/hooks/useImageLoadState'
 import { preloadLiveMedia, resolveLiveMediaUrl } from '@/lib/media-url'
 import type { QuestionType } from '@/types/api'
 import { cn } from '@/lib/utils'
@@ -10,6 +11,8 @@ interface DisplayMediaProps {
   imageUrl?: string | null
   questionType?: QuestionType
   secretToken: string
+  /** Remount / reset cache handling when the live question advances. */
+  questionId?: string | null
   className?: string
 }
 
@@ -18,16 +21,13 @@ export function DisplayMedia({
   imageUrl,
   questionType,
   secretToken,
+  questionId,
   className,
 }: DisplayMediaProps) {
-  const [failed, setFailed] = useState(false)
-  const [loaded, setLoaded] = useState(false)
   const url = resolveLiveMediaUrl({ imageUrl, mediaFileId, token: secretToken })
-
-  useEffect(() => {
-    setFailed(false)
-    setLoaded(false)
-  }, [imageUrl, mediaFileId, secretToken])
+  // Include questionId so shared apply-to-all URLs still reset + detect cache.
+  const loadKey = url ? `${questionId ?? ''}:${url}` : null
+  const { imgRef, failed, loaded, onLoad, onError } = useImageLoadState(loadKey)
 
   useEffect(() => {
     preloadLiveMedia(url)
@@ -84,7 +84,7 @@ export function DisplayMedia({
           preload="metadata"
           className="w-full"
           src={url}
-          onError={() => setFailed(true)}
+          onError={onError}
         >
           Your browser does not support audio playback.
         </audio>
@@ -119,6 +119,7 @@ export function DisplayMedia({
         </div>
       ) : null}
       <img
+        ref={imgRef}
         src={url}
         alt="Question media"
         className={cn(
@@ -127,8 +128,8 @@ export function DisplayMedia({
           loaded ? 'relative' : 'absolute inset-0 opacity-0',
         )}
         data-testid="display-media-img"
-        onLoad={() => setLoaded(true)}
-        onError={() => setFailed(true)}
+        onLoad={onLoad}
+        onError={onError}
       />
     </div>
   )

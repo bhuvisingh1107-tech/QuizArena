@@ -1,7 +1,8 @@
 import { ImageIcon, Volume2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 import { QuestionTimer } from '@/components/participant/QuestionTimer'
+import { useImageLoadState } from '@/hooks/useImageLoadState'
 import { resolveLiveMediaUrl, preloadLiveMedia } from '@/lib/media-url'
 import type { ParticipantLiveQuestion } from '@/types/api'
 import { cn } from '@/lib/utils'
@@ -32,26 +33,24 @@ function statusLabel(state: ParticipantLiveQuestion['state']): string {
 }
 
 function QuestionMedia({
+  questionId,
   mediaFileId,
   imageUrl,
   questionType,
   sessionToken,
 }: {
+  questionId: string
   mediaFileId?: string | null
   imageUrl?: string | null
   questionType?: ParticipantLiveQuestion['questionType']
   sessionToken?: string | null
 }) {
-  const [failed, setFailed] = useState(false)
-  const [loaded, setLoaded] = useState(false)
   const url = sessionToken
     ? resolveLiveMediaUrl({ imageUrl, mediaFileId, token: sessionToken })
     : null
-
-  useEffect(() => {
-    setFailed(false)
-    setLoaded(false)
-  }, [mediaFileId, imageUrl, sessionToken])
+  // Include questionId so apply-to-all (identical URL) still resets load state.
+  const loadKey = url ? `${questionId}:${url}` : null
+  const { imgRef, failed, loaded, onLoad, onError } = useImageLoadState(loadKey)
 
   // Warm HTTP cache; never blocks timer or answering.
   useEffect(() => {
@@ -59,21 +58,16 @@ function QuestionMedia({
   }, [url])
 
   if (!url || failed) {
-    const unavailable = !url || failed
     return (
       <div
         className="mt-4 flex min-h-36 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] bg-[var(--secondary)]/40 px-4 py-8 text-center"
         role="img"
-        aria-label={unavailable ? 'Media unavailable' : 'Media loading'}
+        aria-label={!url || failed ? 'Media unavailable' : 'Media loading'}
         data-testid="participant-media-placeholder"
       >
         <ImageIcon className="h-8 w-8 text-[var(--muted-foreground)]" aria-hidden />
         <p className="text-sm text-[var(--muted-foreground)]">
-          {failed
-            ? 'Could not load media.'
-            : !url
-              ? 'Media unavailable.'
-              : 'Media loading…'}
+          {failed ? 'Could not load media.' : !url ? 'Media unavailable.' : 'Media loading…'}
         </p>
       </div>
     )
@@ -93,7 +87,7 @@ function QuestionMedia({
           preload="metadata"
           className="w-full"
           src={url}
-          onError={() => setFailed(true)}
+          onError={onError}
         >
           Your browser does not support audio playback.
         </audio>
@@ -115,6 +109,7 @@ function QuestionMedia({
         </div>
       ) : null}
       <img
+        ref={imgRef}
         src={url}
         alt="Question media"
         className={cn(
@@ -123,8 +118,8 @@ function QuestionMedia({
           loaded ? 'relative' : 'absolute inset-0 opacity-0',
         )}
         data-testid="participant-media-img"
-        onLoad={() => setLoaded(true)}
-        onError={() => setFailed(true)}
+        onLoad={onLoad}
+        onError={onError}
       />
     </div>
   )
@@ -207,7 +202,9 @@ export function QuestionCard({
 
           {question.imageUrl || question.mediaFileId ? (
             <QuestionMedia
-              key={question.imageUrl || question.mediaFileId || 'media'}
+              // Key by question id so apply-to-all (same media URL) still remounts.
+              key={question.id}
+              questionId={question.id}
               imageUrl={question.imageUrl}
               mediaFileId={question.mediaFileId}
               questionType={question.questionType}

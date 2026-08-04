@@ -196,6 +196,11 @@ class ResponseService:
             # Do NOT score here — correctness / points stay server-side until reveal.
             from app.services.session_event_service import ANSWER_SUBMITTED, log_session_event
 
+            selected_labels = []
+            opt_by_id = {opt.id: opt.text for opt in question.options}
+            for oid in normalized_ids:
+                selected_labels.append(opt_by_id.get(oid, str(oid)))
+
             log_session_event(
                 self._session,
                 room_id,
@@ -205,8 +210,16 @@ class ResponseService:
                     "displayName": participant.display_name,
                     "questionId": str(question.id),
                     "questionIndex": execution.question_index,
+                    "questionNumber": (execution.question_index or 0) + 1,
+                    "selectedOptionIds": id_strings,
+                    "selectedOption": "; ".join(selected_labels),
                     "responseTimeMs": response.response_time_ms,
+                    "submittedAt": now.isoformat(timespec="milliseconds").replace(
+                        "+00:00",
+                        "Z",
+                    ),
                 },
+                created_at=now,
                 flush=False,
             )
             self._session.commit()
@@ -235,7 +248,7 @@ class ResponseService:
             "questionIndex": execution.question_index,
             "responseId": str(response.id),
             "selectedOptionIds": id_strings,
-            "submittedAt": now.isoformat(),
+            "submittedAt": now.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             "responseTimeMs": response.response_time_ms,
             "status": "submitted",
         }
