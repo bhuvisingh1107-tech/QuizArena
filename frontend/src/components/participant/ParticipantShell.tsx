@@ -15,6 +15,11 @@ interface ParticipantShellProps {
   subtitle?: string
   footer?: ReactNode
   className?: string
+  /**
+   * Wider content rail for layouts that need side panels (e.g. quiz + leaderboard).
+   * Defaults to the compact phone-first `max-w-lg` shell.
+   */
+  wide?: boolean
 }
 
 export function ParticipantShell({
@@ -27,7 +32,10 @@ export function ParticipantShell({
   subtitle,
   footer,
   className,
+  wide = false,
 }: ParticipantShellProps) {
+  const rail = wide ? 'max-w-6xl' : 'max-w-lg'
+
   return (
     <div className="relative flex min-h-svh flex-col">
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -36,7 +44,7 @@ export function ParticipantShell({
       </div>
 
       <header className="relative z-10 border-b border-[var(--border)]/60 bg-[var(--background)]/80 px-4 py-4 backdrop-blur">
-        <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
+        <div className={cn('mx-auto flex items-center justify-between gap-3', rail)}>
           <div>
             <p className="font-display text-2xl font-extrabold tracking-tight text-[var(--heading)]">
               Quiz<span className="text-[var(--primary)]">Arena</span>
@@ -59,7 +67,8 @@ export function ParticipantShell({
 
       <main
         className={cn(
-          'relative z-10 mx-auto flex w-full max-w-lg flex-1 flex-col px-4 py-6',
+          'relative z-10 mx-auto flex w-full flex-1 flex-col px-4 py-6',
+          rail,
           className,
         )}
       >
@@ -68,7 +77,7 @@ export function ParticipantShell({
 
       {footer ? (
         <footer className="relative z-10 border-t border-[var(--border)]/60 bg-[var(--background)]/90 px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur">
-          <div className="mx-auto max-w-lg">{footer}</div>
+          <div className={cn('mx-auto', rail)}>{footer}</div>
         </footer>
       ) : null}
     </div>

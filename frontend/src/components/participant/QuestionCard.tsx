@@ -118,15 +118,10 @@ export function QuestionCard({
   const progressPercent =
     total != null && total > 0 ? Math.round((number / total) * 100) : null
 
-  return (
-    <article
-      className={cn(
-        'rounded-xl border border-[var(--border)] bg-[var(--card)]/90 p-5',
-        className,
-      )}
-    >
+  const infoPanel = (
+    <aside className="w-full shrink-0 space-y-4 lg:w-[11.5rem] xl:w-[13rem]">
       {progressPercent != null ? (
-        <div className="mb-4 space-y-1">
+        <div className="space-y-1">
           <div className="flex justify-between text-xs text-[var(--muted-foreground)]">
             <span>
               Question {number}
@@ -143,19 +138,21 @@ export function QuestionCard({
         </div>
       ) : null}
 
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)]">
-        <span className="rounded-md bg-[var(--secondary)] px-2 py-1 font-medium text-[var(--primary)]">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)] lg:flex-col lg:items-stretch">
+        <span className="rounded-md bg-[var(--secondary)] px-2 py-1 font-medium text-[var(--primary)] lg:text-center">
           Q{number}
           {total != null ? ` / ${total}` : ''}
         </span>
         {question.sectionName ? (
-          <span className="rounded-md bg-[var(--secondary)] px-2 py-1">{question.sectionName}</span>
+          <span className="rounded-md bg-[var(--secondary)] px-2 py-1 lg:text-center">
+            {question.sectionName}
+          </span>
         ) : null}
-        <span className="rounded-md bg-[var(--secondary)] px-2 py-1">
+        <span className="rounded-md bg-[var(--secondary)] px-2 py-1 lg:text-center">
           {statusLabel(question.state)}
         </span>
         {typeof question.basePoints === 'number' ? (
-          <span className="rounded-md bg-[var(--secondary)] px-2 py-1">
+          <span className="rounded-md bg-[var(--secondary)] px-2 py-1 lg:text-center">
             {question.basePoints} pts
           </span>
         ) : null}
@@ -166,22 +163,35 @@ export function QuestionCard({
         timerEndsAt={question.timerEndsAt}
         openedAt={openedAt}
         paused={paused}
-        className="mb-4"
       />
+    </aside>
+  )
 
-      <h2 className="font-display text-xl font-semibold leading-snug text-[#f0f4fa] sm:text-2xl">
-        {question.promptText?.trim() || 'Question'}
-      </h2>
+  return (
+    <article
+      className={cn(
+        'rounded-xl border border-[var(--border)] bg-[var(--card)]/90 p-5',
+        className,
+      )}
+    >
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        {infoPanel}
+        <div className="min-w-0 flex-1">
+          <h2 className="font-display text-xl font-semibold leading-snug text-[#f0f4fa] break-words sm:text-2xl">
+            {question.promptText?.trim() || 'Question'}
+          </h2>
 
-      {question.imageUrl || question.mediaFileId ? (
-        <QuestionMedia
-          key={question.imageUrl || question.mediaFileId || 'media'}
-          imageUrl={question.imageUrl}
-          mediaFileId={question.mediaFileId}
-          questionType={question.questionType}
-          sessionToken={sessionToken}
-        />
-      ) : null}
+          {question.imageUrl || question.mediaFileId ? (
+            <QuestionMedia
+              key={question.imageUrl || question.mediaFileId || 'media'}
+              imageUrl={question.imageUrl}
+              mediaFileId={question.mediaFileId}
+              questionType={question.questionType}
+              sessionToken={sessionToken}
+            />
+          ) : null}
+        </div>
+      </div>
     </article>
   )
 }

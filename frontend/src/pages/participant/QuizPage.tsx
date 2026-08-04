@@ -66,12 +66,13 @@ export function QuizPage() {
       selfParticipantId={selfId}
       topN={10}
       title="Live leaderboard"
-      className="h-full"
+      className="h-full max-h-[min(70vh,36rem)]"
     />
   )
 
   return (
     <ParticipantShell
+      wide
       connectionStatus={live.connectionStatus}
       isOffline={live.isOffline}
       lastError={live.lastError}
@@ -89,8 +90,8 @@ export function QuizPage() {
         ) : null
       }
     >
-      <div className="flex flex-col gap-5 pb-4 lg:min-h-[28rem] lg:flex-row lg:items-stretch">
-        <div className="min-w-0 flex-1 space-y-5">
+      <div className="flex flex-col gap-5 pb-4 md:min-h-[28rem] md:flex-row md:items-stretch md:gap-5 lg:gap-6">
+        <div className="min-w-0 flex-1 space-y-5 md:min-w-0">
           {live.room?.state === 'Paused' ? (
             <div
               role="status"
@@ -178,7 +179,9 @@ export function QuizPage() {
           ) : null}
         </div>
 
-        <div className="w-full shrink-0 lg:w-80 xl:w-96">{leaderboardPanel}</div>
+        <aside className="w-full shrink-0 md:w-64 md:max-w-[38%] lg:w-[22rem] lg:max-w-[22rem] xl:w-[24rem] xl:max-w-[24rem]">
+          {leaderboardPanel}
+        </aside>
       </div>
     </ParticipantShell>
   )
