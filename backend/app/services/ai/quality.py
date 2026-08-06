@@ -25,6 +25,15 @@ _PLACEHOLDER_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"lorem ipsum", re.I),
     re.compile(r"sample question", re.I),
     re.compile(r"fill in the blank: the key term for .+ #\d+", re.I),
+    # Explicit stub / unfinished explanation markers
+    re.compile(r"\btodo\b", re.I),
+    re.compile(r"\btbd\b", re.I),
+    re.compile(r"explanation goes here", re.I),
+    re.compile(r"fill this later", re.I),
+    re.compile(r"fill in later", re.I),
+    re.compile(r"<\s*explanation\s*>", re.I),
+    re.compile(r"\{\{\s*explanation\s*\}\}", re.I),
+    re.compile(r"\{\{[^}]+\}\}"),
 )
 
 _GENERIC_SECTION_ONLY = re.compile(

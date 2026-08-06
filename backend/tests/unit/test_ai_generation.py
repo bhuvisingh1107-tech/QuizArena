@@ -57,3 +57,55 @@ def test_mock_questions_have_no_placeholders() -> None:
             ]
         )
         assert not find_placeholder_hits(blob), blob
+
+
+def test_mock_broad_topic_math_narrows_and_validates() -> None:
+    from app.services.ai.generation_service import AiGenerationService
+    from app.services.ai.prompts import QUESTIONS_SYSTEM, QUESTIONS_USER, TOPIC_OUTLINE_USER, load_prompt
+    from app.services.ai.provider import render_template
+    from app.services.ai.quality import validate_questions_batch
+    from app.services.ai.topic_focus import topic_narrowing_instruction
+
+    provider = get_ai_provider(Settings(ai_provider="mock", app_env="test"))
+    outline = provider.chat_json(
+        [
+            ChatMessage("system", "outline"),
+            ChatMessage(
+                "user",
+                render_template(
+                    load_prompt(TOPIC_OUTLINE_USER),
+                    topic="Math",
+                    language="en",
+                    topic_focus_guidance=topic_narrowing_instruction("Math"),
+                ),
+            ),
+        ]
+    )
+    assert outline["focusedSubtopic"] == "Algebra"
+    assert "Algebra" in outline["title"]
+    svc = object.__new__(AiGenerationService)
+    synthetic = AiGenerationService._build_topic_source_text(svc, outline, "Math")
+    assert len(synthetic) > 500
+    section = outline["sections"][0]
+    data = provider.chat_json(
+        [
+            ChatMessage("system", load_prompt(QUESTIONS_SYSTEM)),
+            ChatMessage(
+                "user",
+                render_template(
+                    load_prompt(QUESTIONS_USER),
+                    question_count=2,
+                    section_name=section["name"],
+                    difficulty="medium",
+                    question_kinds="mcq",
+                    language="en",
+                    section_summary=section["summary"],
+                    concepts=", ".join(section["concepts"]),
+                    source_text=synthetic,
+                ),
+            ),
+        ]
+    )
+    validated = validate_questions_batch(data["questions"])
+    assert len(validated) >= 2
+    assert all(len(q["explanation"]) >= 20 for q in validated)

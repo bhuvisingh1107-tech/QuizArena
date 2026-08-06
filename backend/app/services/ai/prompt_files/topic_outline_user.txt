@@ -2,11 +2,21 @@ Create a section outline for the topic: "{{topic}}"
 
 Language: {{language}}
 
+Topic focus guidance:
+{{topic_focus_guidance}}
+
+Requirements:
+- If the topic is broad, narrow to one subtopic first (see guidance above).
+- 3–6 sections, each with a specific name and a DETAILED summary (3–5+ sentences of real content).
+- Summaries must contain enough factual material that quiz questions can be written from them alone.
+- Include trustedSources URLs for the focused subtopic (Wikipedia / Khan / OCW style).
+
 Return JSON:
 {
-  "title": "string",
+  "title": "string (focused subtopic quiz title)",
+  "focusedSubtopic": "string (the narrowed subtopic if topic was broad, else same as topic)",
   "sections": [
-    {"name": "string", "summary": "string", "concepts": ["string"]}
+    {"name": "string", "summary": "string (rich multi-sentence teaching content)", "concepts": ["string"]}
   ],
   "trustedSources": [
     {"title": "string", "url": "string", "publisher": "string"}

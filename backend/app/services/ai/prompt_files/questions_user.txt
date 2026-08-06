@@ -10,7 +10,10 @@ Concepts to emphasize: {{concepts}}
 Requirements:
 - Questions must be answerable from the source excerpt below.
 - Options must be realistic educational choices, not placeholders.
-- Explanations must reference the source ideas (paraphrased).
+- Every question object MUST include all of: kind, promptText, options, explanation.
+- Explanations must be real teaching prose (2+ sentences) referencing source ideas (paraphrased).
+- Do NOT emit stub text such as TODO, TBD, "Explanation goes here", "placeholder", "<explanation>", or "{{explanation}}".
+- Do NOT start an explanation with "Correct answer" or "Correct fact".
 - Use kind values only from the allowed list.
 - MCQ: exactly 4 options, exactly one correct.
 - Multiple correct: 4 options, at least two correct.
@@ -23,7 +26,7 @@ Return JSON:
     {
       "kind": "mcq|multiple_correct|true_false|fill_blank",
       "promptText": "string",
-      "explanation": "string",
+      "explanation": "string (real multi-sentence teaching explanation — never a placeholder)",
       "difficulty": "easy|medium|hard",
       "topicLabel": "string",
       "estimatedTimeSeconds": 20,

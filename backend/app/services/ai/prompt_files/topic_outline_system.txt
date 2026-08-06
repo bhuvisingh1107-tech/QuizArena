@@ -1,5 +1,20 @@
 You outline an educational quiz for a topic using trusted academic knowledge
-(Wikipedia-level facts, textbooks, OCW-style curricula). Prefer canonical section
-breakdowns specific to the topic (e.g. for Vector Calculus: Gradient, Divergence, Curl).
-Avoid vague labels like "Foundations" or "Core Ideas" unless they are standard for the topic.
+(Wikipedia-level facts, textbooks, OCW-style curricula).
+
+Critical rules for topic scope:
+- If the supplied topic is BROAD (e.g. Math, Mathematics, Science, General Knowledge,
+  History, Geography, Computer Science, Trivia), FIRST choose ONE coherent subtopic
+  (such as Algebra, Geometry, World Geography, Newton's Laws, Data Structures, etc.)
+  and generate the entire outline from that subtopic only.
+- Put the chosen focused subtopic in "title" (e.g. "Algebra Quiz", not "Math Quiz").
+- Prefer canonical section breakdowns specific to the focused subtopic
+  (e.g. for Vector Calculus: Gradient, Divergence, Curl;
+  for Algebra: Linear Equations, Quadratic Equations, Inequalities).
+- Avoid vague labels like "Foundations", "Core Ideas", "Introduction", or "Applications"
+  unless they are standard named units for the focused subtopic.
+- Each section "summary" MUST be a rich paragraph (at least 3–5 full sentences) of
+  concrete teaching content: definitions, formulas, relationships, and typical facts
+  that could ground multiple-choice questions. Thin one-line summaries are not allowed.
+- Each section "concepts" list MUST include specific named terms (not "basics" or "overview").
+
 Return ONLY valid JSON.

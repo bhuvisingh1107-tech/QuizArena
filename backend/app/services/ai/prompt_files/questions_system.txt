@@ -4,10 +4,13 @@ Rules:
 - Ground every question in the source excerpt. Do not invent unrelated topics or hallucinate facts.
 - Do not copy source sentences verbatim; paraphrase into clear exam-style items.
 - Write meaningful, realistic options grounded in the material (never "Distractor A", "Correct answer", "Option B", or "concept #N").
-- Never use phrases like "concept #1", "Plausible distractor", "This checks understanding", "placeholder", or "sample question".
+- Never use phrases like "concept #1", "Plausible distractor", "This checks understanding", "placeholder", "sample question", "TODO", "TBD", "Explanation goes here", "Fill this later", "<explanation>", or "{{...}}" template markers.
 - Avoid duplicate questions and duplicate option text across the batch.
 - Match the requested difficulty mix and include estimatedTimeSeconds when asked.
-- Every question needs a clear explanation of WHY the correct answer is right, citing ideas from the source.
+- Every question MUST include: promptText, options, exactly one correct answer designation (or required multi-correct), and a real explanation.
+- Every explanation MUST be a complete, substantive paragraph (at least 2 sentences) that teaches WHY the correct choice is right using ideas from the source.
+- Never write template/stub explanations. Forbidden explanation content includes: TODO, TBD, "Explanation goes here", "Placeholder", "Fill this later", "<explanation>", "{{explanation}}", "Correct answer", "Correct fact", or "This checks understanding…".
+- Prefer explanations that name the concept and reason (e.g. "SJF minimizes average waiting time because …") rather than saying "the correct answer is …".
 - If the source is too thin to write a high-quality question, return fewer questions rather than fabricating filler.
 - Section-specific: stay within the named section's scope and use a specific section-relevant title when asked.
 - Return ONLY valid JSON (no markdown fences, no commentary).

@@ -42,10 +42,19 @@ from app.services.ai.prompts import (
 )
 from app.services.ai.provider import ChatMessage, get_ai_provider, render_template
 from app.services.ai.quality import validate_question_payload, validate_questions_batch
+from app.services.ai.topic_focus import (
+    is_broad_topic,
+    suggested_subtopic_example,
+    topic_narrowing_instruction,
+)
 from app.services.ai.trusted_sources import trusted_source_seeds
 from app.storage.local import LocalStorageBackend
 
 logger = logging.getLogger(__name__)
+
+# Temporary debug logging for AI generation pipeline (broad-topic diagnosis).
+_AI_DEBUG = True
+_MAX_QUESTION_ATTEMPTS = 3
 
 
 class AiGenerationService:
@@ -323,10 +332,41 @@ class AiGenerationService:
 
     def _run_topic(self, job: AiGenerationJob) -> None:
         assert job.topic
+        broad = is_broad_topic(job.topic)
+        logger.info(
+            "AI job %s topic pipeline topic=%r broad=%s suggested_focus=%s",
+            job.id,
+            job.topic,
+            broad,
+            suggested_subtopic_example(job.topic) if broad else "(n/a)",
+        )
         self._set_progress(job, 15, AiJobStatus.ANALYZING, "Planning sections from topic")
         outline = self._topic_outline(job)
 
-        for src in trusted_source_seeds(job.topic) if self._settings.ai_enable_topic_web else []:
+        focus = str(outline.get("focusedSubtopic") or outline.get("title") or job.topic).strip()
+        seed_topic = focus or job.topic
+        if _AI_DEBUG:
+            logger.info(
+                "AI DEBUG job %s focused_subtopic=%r outline_title=%r section_count=%s",
+                job.id,
+                focus,
+                outline.get("title"),
+                len(outline.get("sections") or []),
+            )
+            for idx, section in enumerate(outline.get("sections") or []):
+                if not isinstance(section, dict):
+                    continue
+                summary = str(section.get("summary") or "")
+                logger.info(
+                    "AI DEBUG job %s outline_section[%s] name=%r summary_chars=%s concepts=%s",
+                    job.id,
+                    idx,
+                    section.get("name"),
+                    len(summary),
+                    section.get("concepts"),
+                )
+
+        for src in trusted_source_seeds(seed_topic) if self._settings.ai_enable_topic_web else []:
             self._repo.add(
                 AiSourceReference(
                     id=uuid4(),
@@ -338,6 +378,13 @@ class AiGenerationService:
                     meta_json={},
                 )
             )
+            if _AI_DEBUG:
+                logger.info(
+                    "AI DEBUG job %s trusted_source_seed title=%r url=%s",
+                    job.id,
+                    src.get("title"),
+                    src.get("url"),
+                )
         for item in outline.get("trustedSources") or []:
             if not isinstance(item, dict):
                 continue
@@ -355,16 +402,55 @@ class AiGenerationService:
                     meta_json={},
                 )
             )
+            if _AI_DEBUG:
+                logger.info(
+                    "AI DEBUG job %s outline_trusted_source title=%r url=%s",
+                    job.id,
+                    item.get("title"),
+                    url,
+                )
 
         # Topic mode uses outline summaries as synthetic source text.
-        synthetic = "\n\n".join(
-            f"## {s.get('name')}\n{s.get('summary', '')}\nConcepts: "
-            f"{', '.join(s.get('concepts') or [])}"
-            for s in outline.get("sections") or []
-        )
+        # Note: embeddings are stored for future RAG; generation today passes this
+        # synthetic excerpt wholesale (URLs are attribution-only, not fetched).
+        synthetic = self._build_topic_source_text(outline, job.topic)
+        if _AI_DEBUG:
+            logger.info(
+                "AI DEBUG job %s synthetic_source_chars=%s preview=%r",
+                job.id,
+                len(synthetic),
+                synthetic[:500],
+            )
         self._store_chunks(job, synthetic or job.topic)
         self._set_progress(job, 55, AiJobStatus.GENERATING, "Generating questions")
         self._generate_questions_for_outline(job, outline, synthetic or job.topic)
+
+    def _build_topic_source_text(self, outline: dict[str, Any], topic: str) -> str:
+        """Build a dense synthetic source excerpt from the topic outline."""
+        parts: list[str] = []
+        focused = str(outline.get("focusedSubtopic") or outline.get("title") or topic).strip()
+        parts.append(f"# Quiz focus: {focused}")
+        parts.append(
+            "The following teaching notes are the authoritative source for all questions. "
+            "Use only these facts; do not invent unrelated material."
+        )
+        for raw in outline.get("sections") or []:
+            if not isinstance(raw, dict):
+                continue
+            name = str(raw.get("name") or "").strip() or "Section"
+            summary = str(raw.get("summary") or "").strip()
+            concepts = [str(c).strip() for c in (raw.get("concepts") or []) if str(c).strip()]
+            block = f"## {name}\n{summary}" if summary else f"## {name}"
+            if concepts:
+                block += f"\nKey concepts: {', '.join(concepts)}."
+            if summary:
+                # Reinforce teachable content so thin outlines still cue the LLM.
+                block += (
+                    f"\nExam focus: Write questions that test understanding of {name}"
+                    f" within {focused}, using the definitions and relationships above."
+                )
+            parts.append(block)
+        return "\n\n".join(parts).strip()
 
     def _store_chunks(self, job: AiGenerationJob, text: str) -> None:
         for existing in list(job.chunks):
@@ -416,27 +502,36 @@ class AiGenerationService:
 
     def _topic_outline(self, job: AiGenerationJob) -> dict[str, Any]:
         system = load_prompt(TOPIC_OUTLINE_SYSTEM)
+        guidance = topic_narrowing_instruction(job.topic or "")
         user = render_template(
             load_prompt(TOPIC_OUTLINE_USER),
             topic=job.topic or "",
             language=job.language,
+            topic_focus_guidance=guidance,
         )
         logger.info(
-            "AI job %s topic outline prompt ready provider=%s user_chars=%s topic=%s",
+            "AI job %s topic outline prompt ready provider=%s user_chars=%s topic=%s broad=%s",
             job.id,
             self._provider.name,
             len(user),
             job.topic,
+            is_broad_topic(job.topic or ""),
         )
+        if _AI_DEBUG:
+            logger.info("AI DEBUG job %s FINAL topic_outline SYSTEM prompt:\n%s", job.id, system)
+            logger.info("AI DEBUG job %s FINAL topic_outline USER prompt:\n%s", job.id, user)
         data = self._chat_json_with_retry(
             [ChatMessage("system", system), ChatMessage("user", user)],
             temperature=0.3,
             expect_key="sections",
         )
+        if _AI_DEBUG:
+            logger.info("AI DEBUG job %s topic_outline PARSED JSON: %s", job.id, data)
         logger.info(
-            "AI job %s topic outline response sections=%s",
+            "AI job %s topic outline response sections=%s focused=%r",
             job.id,
             len(data.get("sections") or []),
+            data.get("focusedSubtopic") or data.get("title"),
         )
         return data
 
@@ -538,6 +633,19 @@ class AiGenerationService:
             len(user),
             question_count,
         )
+        if _AI_DEBUG:
+            logger.info(
+                "AI DEBUG job %s FINAL questions SYSTEM prompt (section=%s):\n%s",
+                job.id,
+                section_name,
+                system,
+            )
+            logger.info(
+                "AI DEBUG job %s FINAL questions USER prompt (section=%s):\n%s",
+                job.id,
+                section_name,
+                user,
+            )
         if len(source_text.strip()) < 20:
             raise ValidationError(
                 "AI_SOURCE_TOO_SHORT",
@@ -545,13 +653,30 @@ class AiGenerationService:
             )
 
         last_error: Exception | None = None
-        for attempt in range(1, 3):
+        messages = [ChatMessage("system", system), ChatMessage("user", user)]
+        for attempt in range(1, _MAX_QUESTION_ATTEMPTS + 1):
             try:
                 data = self._provider.chat_json(
-                    [ChatMessage("system", system), ChatMessage("user", user)],
+                    messages,
                     temperature=0.35 if attempt == 1 else 0.15,
                 )
+                if _AI_DEBUG:
+                    logger.info(
+                        "AI DEBUG job %s section=%s attempt=%s RAW parsed JSON keys=%s payload=%s",
+                        job.id,
+                        section_name,
+                        attempt,
+                        list(data.keys()),
+                        data,
+                    )
                 raw_questions = [q for q in (data.get("questions") or []) if isinstance(q, dict)]
+                if raw_questions and _AI_DEBUG:
+                    logger.info(
+                        "AI DEBUG job %s section=%s question[0].explanation before validation: %r",
+                        job.id,
+                        section_name,
+                        raw_questions[0].get("explanation"),
+                    )
                 logger.info(
                     "AI job %s section=%s attempt=%s parsed_questions=%s keys=%s",
                     job.id,
@@ -570,13 +695,44 @@ class AiGenerationService:
                 return validated[:question_count] if question_count else validated
             except Exception as exc:
                 last_error = exc
+                code = getattr(exc, "code", None)
                 logger.warning(
-                    "AI job %s section=%s question generation attempt %s failed: %s",
+                    "AI job %s section=%s question generation attempt %s failed code=%s: %s",
                     job.id,
                     section_name,
                     attempt,
+                    code,
                     exc,
                 )
+                # Automatically regenerate when the model returned placeholder/stub text.
+                if (
+                    attempt < _MAX_QUESTION_ATTEMPTS
+                    and isinstance(exc, ValidationError)
+                    and code in {"AI_PLACEHOLDER_CONTENT", "AI_QUESTION_INVALID"}
+                ):
+                    repair = (
+                        "Your previous JSON was rejected by the quality gate.\n"
+                        f"Rejection: {getattr(exc, 'message', None) or exc}\n"
+                        "Regenerate the FULL questions JSON now.\n"
+                        "Requirements: every question must include promptText, options, "
+                        "a correctly marked answer, and a real multi-sentence explanation "
+                        "grounded in the source. Never use TODO, TBD, placeholder, "
+                        "'Explanation goes here', '<explanation>', '{{...}}', "
+                        "'Correct answer', 'Correct fact', or 'This checks understanding'."
+                    )
+                    messages = [
+                        ChatMessage("system", system),
+                        ChatMessage("user", user),
+                        ChatMessage("user", repair),
+                    ]
+                    if _AI_DEBUG:
+                        logger.info(
+                            "AI DEBUG job %s section=%s scheduling placeholder repair attempt %s",
+                            job.id,
+                            section_name,
+                            attempt + 1,
+                        )
+                    continue
 
         raise ValidationError(
             getattr(last_error, "code", None) or "AI_GENERATION_FAILED",
@@ -636,16 +792,84 @@ class AiGenerationService:
             f"Language: {job.language}\n"
             f"Previous prompt: {question.prompt_text}"
         )
-        data = self._chat_json_with_retry(
-            [ChatMessage("system", system), ChatMessage("user", user)],
-            temperature=0.5,
-            expect_key=None,
-        )
-        # Provider may return {question: {...}} or the object itself.
-        payload = data.get("question") if isinstance(data.get("question"), dict) else data
-        if not isinstance(payload, dict):
-            raise ValidationError("AI_PARSE_ERROR", "Regenerated question payload was invalid")
-        validate_question_payload(payload, index=0)
+        if _AI_DEBUG:
+            logger.info(
+                "AI DEBUG job %s regenerate_question FINAL SYSTEM:\n%s",
+                job.id,
+                system,
+            )
+            logger.info(
+                "AI DEBUG job %s regenerate_question FINAL USER:\n%s",
+                job.id,
+                user,
+            )
+        last_error: Exception | None = None
+        messages = [ChatMessage("system", system), ChatMessage("user", user)]
+        payload: dict[str, Any] | None = None
+        for attempt in range(1, _MAX_QUESTION_ATTEMPTS + 1):
+            try:
+                data = self._provider.chat_json(messages, temperature=0.5 if attempt == 1 else 0.2)
+                if _AI_DEBUG:
+                    logger.info(
+                        "AI DEBUG job %s regenerate_question attempt=%s RAW=%s",
+                        job.id,
+                        attempt,
+                        data,
+                    )
+                # Provider may return {question: {...}} or the object itself.
+                candidate = data.get("question") if isinstance(data.get("question"), dict) else data
+                if not isinstance(candidate, dict):
+                    raise ValidationError(
+                        "AI_PARSE_ERROR", "Regenerated question payload was invalid"
+                    )
+                if _AI_DEBUG:
+                    logger.info(
+                        "AI DEBUG job %s regenerate_question explanation before validation: %r",
+                        job.id,
+                        candidate.get("explanation"),
+                    )
+                validate_question_payload(candidate, index=0)
+                payload = candidate
+                break
+            except Exception as exc:
+                last_error = exc
+                code = getattr(exc, "code", None)
+                logger.warning(
+                    "AI job %s regenerate_question attempt %s failed code=%s: %s",
+                    job.id,
+                    attempt,
+                    code,
+                    exc,
+                )
+                if (
+                    attempt < _MAX_QUESTION_ATTEMPTS
+                    and isinstance(exc, ValidationError)
+                    and code in {"AI_PLACEHOLDER_CONTENT", "AI_QUESTION_INVALID", "AI_PARSE_ERROR"}
+                ):
+                    messages = [
+                        ChatMessage("system", system),
+                        ChatMessage("user", user),
+                        ChatMessage(
+                            "user",
+                            "Previous regenerate output was rejected: "
+                            f"{getattr(exc, 'message', None) or exc}. "
+                            "Return one complete question JSON with a real multi-sentence "
+                            "explanation and no placeholder/stub text.",
+                        ),
+                    ]
+                    continue
+                if attempt >= _MAX_QUESTION_ATTEMPTS:
+                    break
+
+        if payload is None:
+            raise ValidationError(
+                getattr(last_error, "code", None) or "AI_GENERATION_FAILED",
+                str(
+                    getattr(last_error, "message", None)
+                    or last_error
+                    or "Question regeneration failed"
+                ),
+            )
         updated = self._question_from_payload(job, section, payload, question.sort_order)
         question.kind = updated.kind
         question.prompt_text = updated.prompt_text

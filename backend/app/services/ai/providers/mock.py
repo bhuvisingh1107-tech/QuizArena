@@ -81,14 +81,21 @@ class MockAiProvider(AiProvider):
         if "section outline for the topic" in user.lower() or "trustedSources" in user:
             topic = _extract_quoted(user) or "General Topic"
             sections = _topic_sections(topic)
-            logger.info("mock topic outline sections=%s", len(sections))
+            key = topic.lower().strip()
+            focused = topic
+            if key in {"math", "maths", "mathematics"}:
+                focused = "Algebra"
+            elif key in {"general knowledge", "gk"}:
+                focused = "World Geography"
+            logger.info("mock topic outline sections=%s focused=%s", len(sections), focused)
             return {
-                "title": f"{topic} Quiz",
+                "title": f"{focused} Quiz",
+                "focusedSubtopic": focused,
                 "sections": sections,
                 "trustedSources": [
                     {
-                        "title": f"{topic} — Overview",
-                        "url": f"https://en.wikipedia.org/wiki/{topic.replace(' ', '_')}",
+                        "title": f"{focused} — Overview",
+                        "url": f"https://en.wikipedia.org/wiki/{focused.replace(' ', '_')}",
                         "publisher": "Wikipedia",
                     }
                 ],
@@ -228,9 +235,47 @@ def _topic_sections(topic: str) -> list[dict[str, Any]]:
             "Neural Networks",
             "Feature Engineering",
         ],
+        # Broad topics narrow to a coherent subtopic (mirrors topic_focus guidance).
+        "math": [
+            "Linear Equations",
+            "Quadratic Equations",
+            "Inequalities",
+            "Systems of Equations",
+        ],
+        "maths": [
+            "Linear Equations",
+            "Quadratic Equations",
+            "Inequalities",
+            "Systems of Equations",
+        ],
+        "mathematics": [
+            "Linear Equations",
+            "Quadratic Equations",
+            "Inequalities",
+            "Systems of Equations",
+        ],
+        "general knowledge": [
+            "Continents and Oceans",
+            "World Capitals",
+            "Major Landmarks",
+            "Climate Zones",
+        ],
+        "gk": [
+            "Continents and Oceans",
+            "World Capitals",
+            "Major Landmarks",
+            "Climate Zones",
+        ],
     }
-    names = presets.get(topic.lower())
-    if not names:
+    key = topic.lower().strip()
+    names = presets.get(key)
+    focused = topic
+    if names:
+        if key in {"math", "maths", "mathematics"}:
+            focused = "Algebra"
+        elif key in {"general knowledge", "gk"}:
+            focused = "World Geography"
+    else:
         # Derive section-like phrases from the topic words — avoid bare Foundations/Applications.
         parts = [p for p in re.split(r"[\s,/]+", topic) if len(p) > 2]
         if len(parts) >= 2:
@@ -250,8 +295,13 @@ def _topic_sections(topic: str) -> list[dict[str, Any]]:
     return [
         {
             "name": name,
-            "summary": f"Study focus: {name} within {topic}, including definitions and typical exam-style reasoning.",
-            "concepts": [name, topic],
+            "summary": (
+                f"{name} is a core unit within {focused}. Students learn definitions, "
+                f"standard notation, worked relationships, and typical exam reasoning for {name}. "
+                f"Key relationships connect {name} to neighbouring ideas in {focused}, "
+                f"including how to apply the ideas to short problems and identify common mistakes."
+            ),
+            "concepts": [name, focused, topic],
         }
         for name in names
     ]

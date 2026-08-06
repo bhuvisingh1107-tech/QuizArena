@@ -18,6 +18,31 @@ def test_detects_classic_placeholders() -> None:
     assert find_placeholder_hits("Plausible distractor A")
     assert find_placeholder_hits("Correct Foundations fact")
     assert find_placeholder_hits("This checks understanding of Arrays.")
+    assert find_placeholder_hits("TODO: write explanation")
+    assert find_placeholder_hits("Explanation goes here")
+    assert find_placeholder_hits("TBD")
+    assert find_placeholder_hits("<explanation>")
+    assert find_placeholder_hits("{{explanation}}")
+    assert find_placeholder_hits("Fill this later")
+
+
+def test_rejects_stub_explanation() -> None:
+    with pytest.raises(ValidationError) as exc:
+        validate_question_payload(
+            {
+                "promptText": "What is the capital of France?",
+                "explanation": "Explanation goes here",
+                "options": [
+                    {"text": "Paris", "isCorrect": True},
+                    {"text": "Lyon", "isCorrect": False},
+                    {"text": "Marseille", "isCorrect": False},
+                    {"text": "Nice", "isCorrect": False},
+                ],
+            },
+            index=0,
+        )
+    assert exc.value.code == "AI_PLACEHOLDER_CONTENT"
+    assert "question[0].explanation" in str(exc.value.message)
 
 
 def test_rejects_placeholder_question() -> None:
